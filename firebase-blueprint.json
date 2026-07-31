@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "AppState": {
+      "title": "AppState",
+      "description": "Estado general de órdenes, vehículos, transportadoras y novedades",
+      "type": "object",
+      "properties": {
+        "data": { "type": "array", "description": "Datos estructurados guardados en el documento" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "PedidosState": {
+      "title": "PedidosState",
+      "description": "Estado del portal de pedidos de empleados",
+      "type": "object",
+      "properties": {
+        "data": { "type": "array", "description": "Productos, pedidos y configuración" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "CitasState": {
+      "title": "CitasState",
+      "description": "Estado de citas y agendamiento",
+      "type": "object",
+      "properties": {
+        "data": { "type": "array", "description": "Lista de citas y clientes" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "LiquidadorState": {
+      "title": "LiquidadorState",
+      "description": "Catálogo y valoraciones de liquidación",
+      "type": "object",
+      "properties": {
+        "data": { "type": "array", "description": "Catálogo y clientes del liquidador" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ProvisionesState": {
+      "title": "ProvisionesState",
+      "description": "Comprobantes de provisión y fletes guardados",
+      "type": "object",
+      "properties": {
+        "data": { "type": "array", "description": "Lista de comprobantes de provisión" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "HorasState": {
+      "title": "HorasState",
+      "description": "Registros y trabajadores para liquidación de horas extras",
+      "type": "object",
+      "properties": {
+        "data": { "type": "array", "description": "Registros de horas extras" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/app_state/{docId}": {
+      "schema": { "$ref": "#/entities/AppState" },
+      "description": "Colección de estado global del sistema de logística"
+    },
+    "/pedidos_empleados_state/{docId}": {
+      "schema": { "$ref": "#/entities/PedidosState" },
+      "description": "Colección de estado de pedidos de empleados"
+    },
+    "/citas_state/{docId}": {
+      "schema": { "$ref": "#/entities/CitasState" },
+      "description": "Colección de estado del módulo de citas"
+    },
+    "/liq_state/{docId}": {
+      "schema": { "$ref": "#/entities/LiquidadorState" },
+      "description": "Colección de estado del liquidador"
+    },
+    "/provisiones_state/{docId}": {
+      "schema": { "$ref": "#/entities/ProvisionesState" },
+      "description": "Colección de estado de provisiones"
+    },
+    "/horas_extras_state/{docId}": {
+      "schema": { "$ref": "#/entities/HorasState" },
+      "description": "Colección de estado del módulo de horas extras"
+    }
+  }
+}

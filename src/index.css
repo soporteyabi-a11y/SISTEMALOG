@@ -1,0 +1,256 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-hud-bg: #040814;
+  --color-hud-card: #091124;
+  --color-hud-accent: #00d2ff;
+  --color-hud-green: #00ffa3;
+  --color-hud-orange: #ff9100;
+  --color-hud-red: #ef4444;
+  --color-hud-border: rgba(0, 210, 255, 0.15);
+}
+
+@layer base {
+  body {
+    background-color: var(--color-hud-bg);
+    color: #f1f5f9;
+    font-family: var(--font-sans);
+  }
+
+  input[type="text"], textarea {
+    text-transform: uppercase;
+  }
+
+  /* Custom Scrollbar for professional HUD style */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #02040a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #0d2847;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #00d2ff;
+  }
+}
+
+/* Custom interactive animation classes */
+.glow-border {
+  position: relative;
+  transition: all 0.3s ease;
+}
+.glow-border::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid var(--color-hud-accent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+.glow-border:hover::after {
+  opacity: 0.5;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.9; }
+}
+
+.pulse-led {
+  animation: pulse-soft 2s infinite ease-in-out;
+}
+
+/* Hide printable containers by default in screen view */
+#printReceipt,
+#printProvision,
+#printReport {
+  display: none !important;
+}
+
+/* ========================================================================= */
+/* 🖨️ DETAILED PRINT STYLING FOR COMPROBANTES DE PEDIDO Y PROVISIONES       */
+/* ========================================================================= */
+@media print {
+  /* Set standard margins and paper size */
+  @page {
+    size: letter;
+    margin: 10mm 12mm 10mm 12mm !important;
+  }
+
+  /* Clean slate for print layouts */
+  html, body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide the react app root completely during print modes to prevent extra blank pages or background layout leaking */
+  body.print-provision-mode #root,
+  body.print-receipt-mode #root {
+    display: none !important;
+  }
+
+  /* Make only the relevant print container and its children explicitly visible */
+  body.print-provision-mode #printProvision,
+  body.print-receipt-mode #printReceipt {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Explicit table printing decorations for excellent clarity and legibility */
+  body.print-receipt-mode #printReceipt table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    color: #000000 !important;
+    background-color: #ffffff !important;
+    margin-top: 15px !important;
+    margin-bottom: 15px !important;
+  }
+ 
+  body.print-receipt-mode #printReceipt th, 
+  body.print-receipt-mode #printReceipt td {
+    border: 1px solid #000000 !important;
+    padding: 8px 12px !important;
+    color: #000000 !important;
+    text-align: left !important;
+  }
+ 
+  body.print-receipt-mode #printReceipt th {
+    background-color: #f1f5f9 !important;
+    font-weight: bold !important;
+  }
+ 
+  body.print-receipt-mode #printReceipt .text-right {
+    text-align: right !important;
+  }
+ 
+  body.print-receipt-mode #printReceipt .text-center {
+    text-align: center !important;
+  }
+
+  /* 🧾 COMPACT ACCOUNTING STYLE FOR LIQUIDADOR PRINT */
+  body.print-liquidador-mode #root {
+    display: none !important;
+  }
+
+  body.print-liquidador-mode #printLiquidador {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0px !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif !important;
+  }
+
+  body.print-liquidador-mode #printLiquidador table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    border: 1px solid #000000 !important;
+    margin-top: 4px !important;
+    margin-bottom: 4px !important;
+    background-color: #ffffff !important;
+  }
+
+  body.print-liquidador-mode #printLiquidador th,
+  body.print-liquidador-mode #printLiquidador td {
+    border: 1px solid #000000 !important;
+    padding: 1.5px 3.5px !important;
+    color: #000000 !important;
+    font-size: 8px !important;
+    font-weight: 500 !important;
+    line-height: 1.1 !important;
+  }
+
+  body.print-liquidador-mode #printLiquidador th {
+    background-color: #e2e8f0 !important;
+    font-weight: bold !important;
+    text-transform: capitalize !important;
+    font-size: 8.5px !important;
+    text-align: center !important;
+    padding: 2.5px 3.5px !important;
+  }
+
+  /* 📊 COMPACT STYLE FOR ADVANCED REPORTS PRINT */
+  body.print-report-mode #root {
+    display: none !important;
+  }
+
+  body.print-report-mode #printReport {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif !important;
+  }
+
+  body.print-report-mode #printReport table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    border: 1px solid #000000 !important;
+    margin-top: 10px !important;
+    margin-bottom: 10px !important;
+    background-color: #ffffff !important;
+  }
+
+  body.print-report-mode #printReport th,
+  body.print-report-mode #printReport td {
+    border: 1px solid #000000 !important;
+    padding: 6px 10px !important;
+    color: #000000 !important;
+    font-size: 9.5px !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
+  }
+
+  body.print-report-mode #printReport th {
+    background-color: #f1f5f9 !important;
+    font-weight: bold !important;
+    text-transform: uppercase !important;
+    font-size: 9.5px !important;
+    text-align: left !important;
+  }
+
+  body.print-report-mode #printReport .text-center {
+    text-align: center !important;
+  }
+
+  body.print-report-mode #printReport .text-right {
+    text-align: right !important;
+  }
+}

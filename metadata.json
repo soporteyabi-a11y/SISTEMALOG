@@ -1,0 +1,8 @@
+{
+  "name": "SISTEMALOG — Sistema Logístico",
+  "description": "Plataforma de liquidación de despachos, pedidos y auditoría de provisiones y fletes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

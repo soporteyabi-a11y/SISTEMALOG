@@ -1,0 +1,59 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to validate document ID format
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Helper function to validate application state payload structure
+    function isValidStateDoc() {
+      return request.resource.data.keys().hasAll(['data', 'updatedAt'])
+          && request.resource.data.updatedAt is string
+          && request.resource.data.updatedAt.size() <= 100;
+    }
+
+    // Application operational state collections
+    match /app_state/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId) && isValidStateDoc();
+    }
+
+    match /provisiones_state/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId) && isValidStateDoc();
+    }
+
+    match /citas_state/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId) && isValidStateDoc();
+    }
+
+    match /pedidos_empleados_state/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId) && isValidStateDoc();
+    }
+
+    match /liq_state/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId) && isValidStateDoc();
+    }
+
+    match /horas_extras_state/{docId} {
+      allow read: if true;
+      allow write: if isValidId(docId) && isValidStateDoc();
+    }
+
+    match /test/{docId} {
+      allow read, write: if isValidId(docId);
+    }
+
+    // Default deny for all other paths to remove security warnings
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
