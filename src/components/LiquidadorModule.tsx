@@ -482,7 +482,7 @@ export default function LiquidadorModule() {
     setExtractedPeso(null);
     setPedido({});
     setPreciosPV({});
-    setSelectedProdIndex({});
+    setSelectedProductIndex({});
     
     setPdfStatus('Leyendo archivo...');
     setPdfRefFound(null);

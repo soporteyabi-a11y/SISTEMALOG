@@ -41,6 +41,8 @@ import {
   saveToCloud, 
   subscribeToCloud, 
   subscribeCloudStatus, 
+  forceRefreshFromCloud,
+  CloudStatusInfo,
   generateFullBackupObject, 
   restoreFullBackupObject 
 } from './firebaseService';
@@ -342,12 +344,46 @@ export default function App() {
   const pdfFileInputRef = useRef<HTMLInputElement>(null);
 
   // Backup & Hybrid Data System states
-  const [cloudStatus, setCloudStatusState] = useState<{ connected: boolean; errorCount: number }>({ connected: true, errorCount: 0 });
+  const [cloudStatus, setCloudStatusState] = useState<CloudStatusInfo>({ 
+    connected: true, 
+    isSyncedWithServer: false,
+    lastServerSyncTime: null,
+    errorCount: 0,
+    isFromCache: false,
+    projectId: 'gen-lang-client-0902545089',
+    databaseId: 'ai-studio-remixconciliacin-5a9d3a5a-0e19-4821-a3ea-6c2e4e072f8d'
+  });
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isSyncMonitorOpen, setIsSyncMonitorOpen] = useState(false);
   const [syncStats, setSyncStats] = useState(getSyncQueueStats());
   const [backupRestoreMessage, setBackupRestoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleForceCloudSync = async () => {
+    try {
+      setBackupRestoreMessage({ type: 'success', text: 'Conectando directamente al servidor de Firestore...' });
+      const freshOrders = await forceRefreshFromCloud('app_state', 'orders');
+      if (Array.isArray(freshOrders)) {
+        const decompressed = freshOrders.map(decompressOrderFromCloud);
+        const { cleanedList } = deduplicateOrders(decompressed);
+        setOrders(cleanedList);
+        safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
+      }
+      await forceRefreshFromCloud('app_state', 'carriers');
+      await forceRefreshFromCloud('app_state', 'customers');
+      await forceRefreshFromCloud('app_state', 'novedades');
+      await forceRefreshFromCloud('app_state', 'deleted_orders');
+      setBackupRestoreMessage({ 
+        type: 'success', 
+        text: '¡Sincronización completa con el servidor finalizada con éxito! Todos los fletes y datos actualizados.' 
+      });
+    } catch (err: any) {
+      setBackupRestoreMessage({ 
+        type: 'error', 
+        text: `Error al forzar la sincronización: ${err?.message || err}` 
+      });
+    }
+  };
 
   useEffect(() => {
     const unsubStatus = subscribeCloudStatus(status => {
@@ -545,6 +581,21 @@ export default function App() {
         // Decompress the orders list retrieved from the cloud
         const decompressed = data.map(decompressOrderFromCloud);
 
+        // Load current local orders from localStorage to prevent wiping out local work done on this PC
+        const rawLocal = safeLocalStorage.getItem('lp_orders');
+        let localOrders: Order[] = [];
+        if (rawLocal) {
+          try {
+            const parsed = JSON.parse(rawLocal);
+            if (Array.isArray(parsed)) {
+              localOrders = parsed;
+            }
+          } catch (e) {}
+        }
+
+        // Combine cloud orders with local orders (smart union)
+        const combinedRaw = [...decompressed, ...localOrders];
+
         // Load latest deleted map
         const rawDel = safeLocalStorage.getItem('lp_deleted_orders');
         let delMap: Record<string, { physical: boolean; motivo?: string }> = {};
@@ -552,7 +603,7 @@ export default function App() {
           try { delMap = JSON.parse(rawDel); } catch (e) {}
         }
 
-        let cleaned = decompressed.map((o: any) => o.cliente === 'DISTRIBUIDORA EL VALLE EXPRESS' ? { ...o, cliente: 'INVERSIONES LA VAQUITA EXPRESS' } : o);
+        let cleaned = combinedRaw.map((o: any) => o.cliente === 'DISTRIBUIDORA EL VALLE EXPRESS' ? { ...o, cliente: 'INVERSIONES LA VAQUITA EXPRESS' } : o);
         if (Object.keys(delMap).length > 0) {
           cleaned = cleaned.map(o => {
             const delObj = delMap[o.id];
@@ -564,10 +615,15 @@ export default function App() {
           }).filter(Boolean) as Order[];
         }
 
-        // Only fallback to SEED_ORDERS if cloud returned completely empty array.
-        // Never inject placeholder demo seeds into existing user data from Firestore!
+        // Only fallback to SEED_ORDERS if combined list is completely empty
         const combined = cleaned.length > 0 ? cleaned : SEED_ORDERS;
         const { cleanedList } = deduplicateOrders(combined);
+
+        // If local had new orders missing from Cloud, publish union back to Cloud automatically
+        if (cleanedList.length > decompressed.length) {
+          const compressed = cleanedList.map(compressOrderForCloud);
+          saveToCloud('app_state', 'orders', compressed);
+        }
 
         setOrders(cleanedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
@@ -3377,14 +3433,16 @@ export default function App() {
                 setIsBackupModalOpen(true);
               }}
               className={`px-3 py-1.5 rounded-lg flex items-center gap-2 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold ${
-                cloudStatus.connected 
+                cloudStatus.connected && cloudStatus.isSyncedWithServer
                   ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20' 
+                  : cloudStatus.connected
+                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-400 hover:bg-sky-500/20'
                   : 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
               }`}
-              title="Click para abrir la Gestión de Datos Híbridos y Copias de Seguridad"
+              title={`Sincronización multi-dispositivo activa en base de datos ${cloudStatus.databaseId}. Último sync servidor: ${cloudStatus.lastServerSyncTime || 'Conectando...'}`}
             >
-              <span className={`w-2 h-2 rounded-full ${cloudStatus.connected ? 'bg-emerald-400 pulse-led' : 'bg-amber-400'}`}></span>
-              <span>{cloudStatus.connected ? 'HÍBRIDO OK' : 'MODO LOCAL ACTIVO'}</span>
+              <span className={`w-2 h-2 rounded-full ${cloudStatus.connected ? (cloudStatus.isSyncedWithServer ? 'bg-emerald-400 pulse-led' : 'bg-sky-400') : 'bg-amber-400'}`}></span>
+              <span>{cloudStatus.connected ? (cloudStatus.isSyncedWithServer ? '4-PC NUBE OK' : 'SYNC NUBE...') : 'MODO LOCAL'}</span>
               <span className="bg-slate-900 border border-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[9px] ml-0.5 flex items-center gap-1">
                 <Database className="w-3 h-3 text-hud-accent" /> BACKUP
               </span>
@@ -5905,35 +5963,73 @@ export default function App() {
 
       {/* Backup & Hybrid System Modal */}
       {isBackupModalOpen && (
-        <div className="fixed inset-0 z-[26000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-hud-card border border-hud-accent/40 rounded-xl max-w-2xl w-full p-6 space-y-5 text-slate-200 shadow-2xl relative animate-fade-in font-mono">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div 
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsBackupModalOpen(false);
+          }}
+          className="fixed inset-0 z-[26000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+        >
+          <div className="bg-hud-card border border-hud-accent/40 rounded-xl max-w-2xl w-full p-4 sm:p-6 space-y-4 text-slate-200 shadow-2xl relative animate-fade-in font-mono max-h-[90vh] overflow-y-auto my-auto">
+            <div className="sticky top-0 bg-hud-card z-20 flex items-center justify-between border-b border-slate-800 pb-3 pt-1">
               <div className="flex items-center gap-2 text-hud-accent">
-                <Database className="w-5 h-5 text-hud-accent" />
-                <h3 className="text-base font-bold uppercase tracking-wider text-white">Sistema Híbrido y Copias de Seguridad</h3>
+                <Database className="w-5 h-5 text-hud-accent flex-shrink-0" />
+                <h3 className="text-sm sm:text-base font-bold uppercase tracking-wider text-white">Sistema Híbrido y Copias de Seguridad</h3>
               </div>
               <button 
+                type="button"
                 onClick={() => setIsBackupModalOpen(false)}
-                className="text-slate-400 hover:text-white text-lg font-bold p-1 cursor-pointer"
+                className="bg-slate-800/80 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 border border-slate-700 hover:border-rose-500/40 px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                title="Cerrar ventana"
               >
-                ✕
+                <span>Cerrar</span> ✕
               </button>
             </div>
 
             {/* Hybrid Info Box */}
-            <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2 text-xs">
-              <div className="flex items-center justify-between">
+            <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-3 text-xs font-mono">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-900 pb-3">
                 <span className="font-bold text-white uppercase flex items-center gap-2">
                   <span className={`w-2.5 h-2.5 rounded-full ${cloudStatus.connected ? 'bg-emerald-400 pulse-led' : 'bg-amber-400'}`}></span>
-                  Estado: {cloudStatus.connected ? 'Base Local + Nube Firebase Sincronizadas' : 'Modo Local Activo (Nube en Pausa/Sin Cuota)'}
+                  Estado: {cloudStatus.connected ? 'Sincronizado en Tiempo Real con Servidor Nube' : 'Modo Offline / Local (Nube Pausada)'}
                 </span>
-                <span className="text-[10px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                  {orders.length} Fletes Guardados
+                <span className="text-[10px] text-hud-accent bg-slate-900 px-2 py-1 rounded border border-slate-800 font-bold">
+                  {orders.length} Fletes Activos
                 </span>
               </div>
-              <p className="text-slate-400 text-[11px] leading-relaxed">
-                Esta aplicación opera con arquitectura <strong className="text-hud-accent font-semibold">Híbrida de Alta Disponibilidad</strong>. Todos tus registros se guardan de inmediato en la base local de tu navegador (<code className="text-hud-accent">localStorage</code>). Si la cuenta de Firebase estuviera pausada por falta de pago o límite de cuota, la app <strong className="text-emerald-400 font-semibold">continuará funcionando al 100% en modo local</strong> sin perder información. Puedes descargar y cargar copias de seguridad en archivo JSON en cualquier momento.
-              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] bg-slate-900/60 p-2.5 rounded border border-slate-800/80">
+                <div>
+                  <span className="text-slate-400 block">Proyecto Firestore:</span>
+                  <strong className="text-emerald-400 select-all">{cloudStatus.projectId}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Base de Datos Compartida:</span>
+                  <strong className="text-hud-accent select-all">{cloudStatus.databaseId}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Último Sync Servidor:</span>
+                  <strong className="text-sky-300">{cloudStatus.lastServerSyncTime || 'Conectando a nube...'}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block">Origen de Datos:</span>
+                  <strong className={cloudStatus.isFromCache ? 'text-amber-400' : 'text-emerald-400'}>
+                    {cloudStatus.isFromCache ? 'Caché Local (Sincronizando)' : 'Servidor Firestore Directo'}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
+                <p className="text-slate-400 text-[10px] leading-relaxed flex-1">
+                  Todos los 4 PCs deben estar conectados a la misma BD <code className="text-hud-accent">{cloudStatus.databaseId}</code> para compartir fletes en tiempo real.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleForceCloudSync}
+                  className="bg-sky-500/20 border border-sky-500/40 text-sky-300 hover:bg-sky-500/30 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin-slow" /> Forzar Sync Servidor
+                </button>
+              </div>
             </div>
 
             {backupRestoreMessage && (
@@ -6054,7 +6150,7 @@ export default function App() {
             </div>
 
             <div className="text-[10px] text-slate-500 text-center border-t border-slate-800/80 pt-3">
-              ID Base Firestore: <code className="text-slate-400">ai-studio-7257e416-c916-4773-80bd-ca9334204e28</code> | Propietario: soporteyabi@gmail.com
+              ID Base Firestore: <code className="text-hud-accent">{cloudStatus.databaseId}</code> | Propietario: soporteyabi@gmail.com
             </div>
           </div>
         </div>

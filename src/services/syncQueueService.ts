@@ -386,7 +386,7 @@ function updateLocalModulesState(item: SyncQueueItem) {
  * Identifies any missing links and automatically enqueues missing sync events.
  */
 export function runConsistencyReconciliation(orders: any[], savedVouchers: any[]): ReconciliationReport {
-  const completedStatuses = ['despachado', 'en sitio / bodega', 'entregado', 'finalizado'];
+  const completedStatuses = ['despachado', 'entregado'];
   const completedOrders = orders.filter(o => o && o.estado && completedStatuses.includes(String(o.estado).toLowerCase().trim()));
 
   let matched = 0;

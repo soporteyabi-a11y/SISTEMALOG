@@ -357,10 +357,10 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
     return null;
   };
 
-  // Filtered orders for Provision checking
+  // Filtered orders for Provision checking (ONLY 'Despachado' or 'Entregado' as requested)
   const filteredOrders = useMemo(() => {
-    // Exclude only 'Anulado' orders so newly registered and pending orders in July are visible
-    let result = orders.filter(o => o.estado !== 'Anulado');
+    // Only include orders marked as 'Despachado' or 'Entregado' (orders that already left the company to the client)
+    let result = orders.filter(o => o.estado === 'Despachado' || o.estado === 'Entregado');
     
     // 1. Status Filter (TODOS, SIN_FP, CON_FP)
     if (selectedStatusFilter === 'SIN_FP') {
@@ -454,7 +454,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
     }
     if (orders && Array.isArray(orders)) {
       orders.forEach(o => {
-        if (o.estado !== 'Anulado' && o.transportadora && o.transportadora.trim()) {
+        if ((o.estado === 'Despachado' || o.estado === 'Entregado') && o.transportadora && o.transportadora.trim()) {
           const trimmed = o.transportadora.trim();
           if (!map.has(trimmed.toLowerCase())) {
             map.set(trimmed.toLowerCase(), trimmed);
