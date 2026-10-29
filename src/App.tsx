@@ -37,6 +37,7 @@ import {
   processSyncQueue, 
   getSyncQueueStats 
 } from './services/syncQueueService';
+import { firebaseConfig } from './firebase';
 import { 
   saveToCloud, 
   subscribeToCloud, 
@@ -350,9 +351,17 @@ export default function App() {
     lastServerSyncTime: null,
     errorCount: 0,
     isFromCache: false,
-    projectId: 'gen-lang-client-0902545089',
-    databaseId: 'ai-studio-remixconciliacin-5a9d3a5a-0e19-4821-a3ea-6c2e4e072f8d'
+    projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
+    databaseId: firebaseConfig.firestoreDatabaseId || 'ai-studio-7257e416-c916-4773-80bd-ca9334204e28',
+    lastError: null
   });
+
+  const handleSwitchDatabase = (targetDbId: string) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('override_firestore_db_id', targetDbId);
+      window.location.reload();
+    }
+  };
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isSyncMonitorOpen, setIsSyncMonitorOpen] = useState(false);
   const [syncStats, setSyncStats] = useState(getSyncQueueStats());
@@ -381,6 +390,27 @@ export default function App() {
       setBackupRestoreMessage({ 
         type: 'error', 
         text: `Error al forzar la sincronización: ${err?.message || err}` 
+      });
+    }
+  };
+
+  const handlePushLocalToCloud = async () => {
+    try {
+      setBackupRestoreMessage({ type: 'success', text: 'Subiendo todos los fletes y catálogos locales a Firestore...' });
+      const compressed = orders.map(compressOrderForCloud);
+      await saveToCloud('app_state', 'orders', compressed, 'soporteyabi@gmail.com', true);
+      await saveToCloud('app_state', 'carriers', carriers, 'soporteyabi@gmail.com', true);
+      await saveToCloud('app_state', 'customers', customers, 'soporteyabi@gmail.com', true);
+      await saveToCloud('app_state', 'novedades', novedades, 'soporteyabi@gmail.com', true);
+      await saveToCloud('app_state', 'reminders', reminders, 'soporteyabi@gmail.com', true);
+      setBackupRestoreMessage({
+        type: 'success',
+        text: '¡Publicación exitosa! Todos los datos de este PC han sido subidos a la Nube Firestore. Los demás PCs se actualizarán de inmediato.'
+      });
+    } catch (err: any) {
+      setBackupRestoreMessage({
+        type: 'error',
+        text: `Error al publicar a la nube: ${err?.message || err}`
       });
     }
   };
@@ -581,21 +611,6 @@ export default function App() {
         // Decompress the orders list retrieved from the cloud
         const decompressed = data.map(decompressOrderFromCloud);
 
-        // Load current local orders from localStorage to prevent wiping out local work done on this PC
-        const rawLocal = safeLocalStorage.getItem('lp_orders');
-        let localOrders: Order[] = [];
-        if (rawLocal) {
-          try {
-            const parsed = JSON.parse(rawLocal);
-            if (Array.isArray(parsed)) {
-              localOrders = parsed;
-            }
-          } catch (e) {}
-        }
-
-        // Combine cloud orders with local orders (smart union)
-        const combinedRaw = [...decompressed, ...localOrders];
-
         // Load latest deleted map
         const rawDel = safeLocalStorage.getItem('lp_deleted_orders');
         let delMap: Record<string, { physical: boolean; motivo?: string }> = {};
@@ -603,7 +618,7 @@ export default function App() {
           try { delMap = JSON.parse(rawDel); } catch (e) {}
         }
 
-        let cleaned = combinedRaw.map((o: any) => o.cliente === 'DISTRIBUIDORA EL VALLE EXPRESS' ? { ...o, cliente: 'INVERSIONES LA VAQUITA EXPRESS' } : o);
+        let cleaned = decompressed.map((o: any) => o.cliente === 'DISTRIBUIDORA EL VALLE EXPRESS' ? { ...o, cliente: 'INVERSIONES LA VAQUITA EXPRESS' } : o);
         if (Object.keys(delMap).length > 0) {
           cleaned = cleaned.map(o => {
             const delObj = delMap[o.id];
@@ -615,15 +630,27 @@ export default function App() {
           }).filter(Boolean) as Order[];
         }
 
-        // Only fallback to SEED_ORDERS if combined list is completely empty
-        const combined = cleaned.length > 0 ? cleaned : SEED_ORDERS;
-        const { cleanedList } = deduplicateOrders(combined);
-
-        // If local had new orders missing from Cloud, publish union back to Cloud automatically
-        if (cleanedList.length > decompressed.length) {
-          const compressed = cleanedList.map(compressOrderForCloud);
-          saveToCloud('app_state', 'orders', compressed);
+        // If cloud returned empty, check local storage or seed orders as fallback
+        let targetList = cleaned;
+        if (targetList.length === 0) {
+          const rawLocal = safeLocalStorage.getItem('lp_orders');
+          if (rawLocal) {
+            try {
+              const parsed = JSON.parse(rawLocal);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                targetList = parsed;
+                // Sync initial local orders to cloud if cloud was empty
+                const compressed = targetList.map(compressOrderForCloud);
+                saveToCloud('app_state', 'orders', compressed);
+              }
+            } catch (e) {}
+          }
+          if (targetList.length === 0) {
+            targetList = SEED_ORDERS;
+          }
         }
+
+        const { cleanedList } = deduplicateOrders(targetList);
 
         setOrders(cleanedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
@@ -6004,7 +6031,17 @@ export default function App() {
                 </div>
                 <div>
                   <span className="text-slate-400 block">Base de Datos Compartida:</span>
-                  <strong className="text-hud-accent select-all">{cloudStatus.databaseId}</strong>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <strong className="text-hud-accent select-all">{cloudStatus.databaseId}</strong>
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchDatabase(cloudStatus.databaseId === '(default)' ? 'ai-studio-7257e416-c916-4773-80bd-ca9334204e28' : '(default)')}
+                      className="text-[9px] font-mono px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                      title="Alternar entre la base de datos (default) y la personalizada de AI Studio"
+                    >
+                      Cambiar a {cloudStatus.databaseId === '(default)' ? 'ai-studio-7257e416...' : '(default)'}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Último Sync Servidor:</span>
@@ -6018,17 +6055,44 @@ export default function App() {
                 </div>
               </div>
 
+              {cloudStatus.lastError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-lg text-rose-300 text-[11px] leading-relaxed font-sans">
+                  <div className="font-bold flex items-center gap-1.5 text-rose-400 mb-1">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    Atención: Error detectado en Firebase Firestore
+                  </div>
+                  <p className="font-mono text-[10px] bg-slate-950 p-2 rounded border border-rose-900/50 mb-2 overflow-x-auto text-rose-200">
+                    {cloudStatus.lastError}
+                  </p>
+                  <div className="text-[10px] text-slate-300 space-y-1">
+                    <p>• <strong>Si dice "Missing or insufficient permissions":</strong> Las Reglas de Seguridad en la consola de Firebase están bloqueando las lecturas/escrituras. En la consola de Firebase &gt; Firestore &gt; Reglas (Rules), asegúrate de establecer <code className="text-amber-300">allow read, write: if true;</code> para la base de datos active.</p>
+                    <p>• <strong>Prueba cambiar de Base de Datos:</strong> Usa el botón "Cambiar a..." de arriba para probar la base de datos <code className="text-emerald-300">(default)</code> o la de AI Studio.</p>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
                 <p className="text-slate-400 text-[10px] leading-relaxed flex-1">
                   Todos los 4 PCs deben estar conectados a la misma BD <code className="text-hud-accent">{cloudStatus.databaseId}</code> para compartir fletes en tiempo real.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleForceCloudSync}
-                  className="bg-sky-500/20 border border-sky-500/40 text-sky-300 hover:bg-sky-500/30 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin-slow" /> Forzar Sync Servidor
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePushLocalToCloud}
+                    className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
+                    title="Subir inmediatamente los fletes y datos de este PC a la nube Firestore"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" /> Publicar a Nube
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleForceCloudSync}
+                    className="bg-sky-500/20 border border-sky-500/40 text-sky-300 hover:bg-sky-500/30 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
+                    title="Cargar la última versión directa del servidor de Firestore"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin-slow" /> Descargar de Nube
+                  </button>
+                </div>
               </div>
             </div>
 

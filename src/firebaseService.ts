@@ -1,9 +1,10 @@
-import { db, firebaseConfig } from './firebase';
+import { db, firebaseConfig, databaseId } from './firebase';
 import { doc, getDoc, getDocFromServer, setDoc, onSnapshot } from 'firebase/firestore';
 
 // Cache for tracking last saved payloads per document to eliminate duplicate cloud writes
 const lastSavedPayloads = new Map<string, string>();
 const saveCooldowns = new Map<string, number>();
+const pendingSaveTimers = new Map<string, any>();
 
 // Cloud connection status tracker with real-time metadata
 let isCloudConnected = true;
@@ -11,6 +12,7 @@ let isSyncedWithServer = false;
 let lastServerSyncTime: string | null = null;
 let cloudErrorCount = 0;
 let isFromCacheState = false;
+let lastErrorMessage: string | null = null;
 
 export interface CloudStatusInfo {
   connected: boolean;
@@ -20,6 +22,7 @@ export interface CloudStatusInfo {
   isFromCache: boolean;
   projectId: string;
   databaseId: string;
+  lastError: string | null;
 }
 
 const statusListeners = new Set<(status: CloudStatusInfo) => void>();
@@ -32,7 +35,8 @@ function notifyStatusListeners() {
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
     projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
-    databaseId: firebaseConfig.firestoreDatabaseId || 'ai-studio-remixconciliacin-5a9d3a5a-0e19-4821-a3ea-6c2e4e072f8d'
+    databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
+    lastError: lastErrorMessage
   };
   statusListeners.forEach(cb => cb(info));
 }
@@ -46,7 +50,8 @@ export function subscribeCloudStatus(callback: (status: CloudStatusInfo) => void
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
     projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
-    databaseId: firebaseConfig.firestoreDatabaseId || 'ai-studio-remixconciliacin-5a9d3a5a-0e19-4821-a3ea-6c2e4e072f8d'
+    databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
+    lastError: lastErrorMessage
   });
   return () => {
     statusListeners.delete(callback);
@@ -61,32 +66,76 @@ export function getCloudStatus(): CloudStatusInfo {
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
     projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
-    databaseId: firebaseConfig.firestoreDatabaseId || 'ai-studio-remixconciliacin-5a9d3a5a-0e19-4821-a3ea-6c2e4e072f8d'
+    databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
+    lastError: lastErrorMessage
   };
+}
+
+/**
+ * Recursively cleans objects and arrays to ensure no `undefined` values are sent to Firestore,
+ * preventing 'Unsupported field value: undefined' errors.
+ */
+export function sanitizeForFirestore(val: any): any {
+  if (val === undefined) return null;
+  if (val === null || typeof val !== 'object') return val;
+  if (val instanceof Date) return val.toISOString();
+  if (Array.isArray(val)) {
+    return val.map(item => sanitizeForFirestore(item));
+  }
+  const cleanObj: Record<string, any> = {};
+  for (const [key, value] of Object.entries(val)) {
+    if (value !== undefined) {
+      cleanObj[key] = sanitizeForFirestore(value);
+    }
+  }
+  return cleanObj;
 }
 
 /**
  * Save data to Firestore with strict duplicate prevention, rate limiting, and concurrency audit fields.
  * Guarantees that identical payloads are NEVER written twice to Cloud Firestore.
  */
-export async function saveToCloud(collectionName: string, docId: string, data: any, userEmail: string = 'soporteyabi@gmail.com'): Promise<boolean> {
+export async function saveToCloud(
+  collectionName: string, 
+  docId: string, 
+  data: any, 
+  userEmail: string = 'soporteyabi@gmail.com', 
+  force: boolean = false
+): Promise<boolean> {
   const key = `${collectionName}/${docId}`;
   
   try {
-    const serialized = JSON.stringify(data);
+    const cleanData = sanitizeForFirestore(data);
+    const serialized = JSON.stringify(cleanData);
     
-    // 1. Strict Payload Deduplication: Skip if the data is identical to what was last saved
-    if (lastSavedPayloads.get(key) === serialized) {
-      return true; // Already saved, return immediately without performing a write
+    // 1. Strict Payload Deduplication: Skip if identical payload UNLESS force is true
+    if (!force && lastSavedPayloads.get(key) === serialized && !pendingSaveTimers.has(key)) {
+      return true; // Already saved, return immediately
     }
 
-    // 2. Rate Limiting: Prevent more than 1 write per 300ms for the exact same document path
+    // 2. Rate Limiting: Throttle to max 1 write per 300ms, but ALWAYS schedule a trailing write for fast sequence changes
     const now = Date.now();
     const lastWriteTime = saveCooldowns.get(key) || 0;
-    if (now - lastWriteTime < 300) {
-      // Cooldown active - update cache to latest, but skip redundant rapid write
-      lastSavedPayloads.set(key, serialized);
+    const timeSinceLastWrite = now - lastWriteTime;
+
+    if (!force && timeSinceLastWrite < 300) {
+      if (pendingSaveTimers.has(key)) {
+        clearTimeout(pendingSaveTimers.get(key));
+      }
+
+      const delay = 300 - timeSinceLastWrite;
+      const timer = setTimeout(() => {
+        pendingSaveTimers.delete(key);
+        saveToCloud(collectionName, docId, cleanData, userEmail, force);
+      }, delay);
+
+      pendingSaveTimers.set(key, timer);
       return true;
+    }
+
+    if (pendingSaveTimers.has(key)) {
+      clearTimeout(pendingSaveTimers.get(key));
+      pendingSaveTimers.delete(key);
     }
 
     // Update trackers before writing
@@ -97,7 +146,7 @@ export async function saveToCloud(collectionName: string, docId: string, data: a
     const timestamp = new Date().toISOString();
     
     await setDoc(docRef, { 
-      data, 
+      data: cleanData, 
       updatedAt: timestamp,
       updatedBy: userEmail,
       deviceAppletId: 'multi-pc-shared-v1'
@@ -105,13 +154,15 @@ export async function saveToCloud(collectionName: string, docId: string, data: a
     
     isCloudConnected = true;
     isSyncedWithServer = true;
+    lastErrorMessage = null;
     lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     notifyStatusListeners();
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.warn(`[Firebase] Error saving to ${collectionName}/${docId}:`, error);
     isCloudConnected = false;
     cloudErrorCount++;
+    lastErrorMessage = error?.message || String(error);
     notifyStatusListeners();
     // Reset cache on error to allow retry
     lastSavedPayloads.delete(key);
@@ -121,22 +172,33 @@ export async function saveToCloud(collectionName: string, docId: string, data: a
 
 // Force a fresh read directly from the cloud server bypassing IndexedDB cache
 export async function forceRefreshFromCloud(collectionName: string, docId: string): Promise<any | null> {
+  const docRef = doc(db, collectionName, docId);
   try {
-    const docRef = doc(db, collectionName, docId);
     const docSnap = await getDocFromServer(docRef);
+    isCloudConnected = true;
+    isSyncedWithServer = true;
+    lastErrorMessage = null;
+    lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    isFromCacheState = false;
+    notifyStatusListeners();
     if (docSnap.exists()) {
       const docData = docSnap.data();
-      isCloudConnected = true;
-      isSyncedWithServer = true;
-      lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      isFromCacheState = false;
-      notifyStatusListeners();
       return docData ? docData.data : null;
     }
-  } catch (error) {
-    console.warn(`[Firebase] Force refresh from server failed for ${collectionName}/${docId}, falling back to standard read:`, error);
+    return null;
+  } catch (error: any) {
+    console.warn(`[Firebase] Server read attempt for ${collectionName}/${docId} note:`, error?.message || error);
+    // Server fetch fell back to standard read (cache or network)
   }
-  return loadFromCloud(collectionName, docId);
+
+  // Fallback to standard getDoc
+  const res = await loadFromCloud(collectionName, docId);
+  if (res !== null) {
+    lastErrorMessage = null;
+    isCloudConnected = true;
+    notifyStatusListeners();
+  }
+  return res;
 }
 
 // Load data once from Firestore
@@ -144,17 +206,26 @@ export async function loadFromCloud(collectionName: string, docId: string): Prom
   try {
     const docRef = doc(db, collectionName, docId);
     const docSnap = await getDoc(docRef);
+    isCloudConnected = true;
+    lastErrorMessage = null;
+    isFromCacheState = docSnap.metadata.fromCache;
+    notifyStatusListeners();
     if (docSnap.exists()) {
       const docData = docSnap.data();
-      isCloudConnected = true;
-      isFromCacheState = docSnap.metadata.fromCache;
-      notifyStatusListeners();
       return docData ? docData.data : null;
     }
-  } catch (error) {
+    return null;
+  } catch (error: any) {
     console.warn(`[Firebase] Error loading from ${collectionName}/${docId}:`, error);
-    isCloudConnected = false;
-    cloudErrorCount++;
+    const msg = error?.message || String(error);
+    if (!msg.toLowerCase().includes('offline')) {
+      isCloudConnected = false;
+      cloudErrorCount++;
+      lastErrorMessage = msg;
+    } else {
+      isCloudConnected = true; // Served or handled via offline local cache
+      lastErrorMessage = null;
+    }
     notifyStatusListeners();
   }
   return null;
@@ -176,6 +247,7 @@ export function subscribeToCloud(
     return onSnapshot(docRef, { includeMetadataChanges: true }, (docSnap) => {
       try {
         isCloudConnected = true;
+        lastErrorMessage = null;
         isFromCacheState = docSnap.metadata.fromCache;
 
         if (!docSnap.metadata.fromCache) {
@@ -201,16 +273,27 @@ export function subscribeToCloud(
       } catch (innerErr) {
         console.warn(`[Firebase] Error parsing snapshot data for ${collectionName}/${docId}:`, innerErr);
       }
-    }, (error) => {
+    }, (error: any) => {
       console.warn(`[Firebase] Subscription error/paused for ${collectionName}/${docId}:`, error);
-      isCloudConnected = false;
-      cloudErrorCount++;
+      const msg = error?.message || String(error);
+      if (!msg.toLowerCase().includes('offline')) {
+        isCloudConnected = false;
+        cloudErrorCount++;
+        lastErrorMessage = msg;
+      } else {
+        isCloudConnected = true;
+        lastErrorMessage = null;
+      }
       notifyStatusListeners();
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[Firebase] Failed to establish subscription for ${collectionName}/${docId}:`, error);
-    isCloudConnected = false;
-    cloudErrorCount++;
+    const msg = error?.message || String(error);
+    if (!msg.toLowerCase().includes('offline')) {
+      isCloudConnected = false;
+      cloudErrorCount++;
+      lastErrorMessage = msg;
+    }
     notifyStatusListeners();
     return () => {};
   }

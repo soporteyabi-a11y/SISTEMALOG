@@ -190,25 +190,15 @@ export default function LiquidadorModule() {
     // Now mark initial load as completed BEFORE establishing subscriptions
     isInitialLoadCompleted.current = true;
 
-    // 2. Subscribe to live Firestore state updates using safe non-destructive merging
+    // 2. Subscribe to live Firestore state updates
     const unsubCatalog = subscribeToCloud('liq_state', 'catalog', (data, rawDoc) => {
       if (Array.isArray(data) && data.length > 0) {
         const rawCloud = JSON.stringify(data);
         if (rawCloud === lastSavedCatalog.current) return;
 
-        const cloudUpdatedAt = rawDoc?.updatedAt || "";
-        const localUpdatedAt = localStorage.getItem('liq_catalog_updatedAt') || "";
-        
-        const shouldPullFromCloud = !localUpdatedAt || (cloudUpdatedAt && new Date(cloudUpdatedAt) > new Date(localUpdatedAt));
-
-        if (shouldPullFromCloud) {
-          lastSavedCatalog.current = rawCloud;
-          setCatalog(data);
-          localStorage.setItem('liq_catalog', rawCloud);
-          if (cloudUpdatedAt) {
-            localStorage.setItem('liq_catalog_updatedAt', cloudUpdatedAt);
-          }
-        }
+        lastSavedCatalog.current = rawCloud;
+        setCatalog(data);
+        localStorage.setItem('liq_catalog', rawCloud);
       }
     });
 
@@ -217,33 +207,13 @@ export default function LiquidadorModule() {
         const rawCloud = JSON.stringify(data);
         if (rawCloud === lastSavedLiqClientes.current) return;
 
-        const cloudUpdatedAt = rawDoc?.updatedAt || "";
-        const localUpdatedAt = localStorage.getItem('liq_clientes_updatedAt') || "";
-        
-        const shouldPullFromCloud = !localUpdatedAt || (cloudUpdatedAt && new Date(cloudUpdatedAt) > new Date(localUpdatedAt));
-
-        if (shouldPullFromCloud) {
-          setClientes(prev => {
-            const currentLocal = prev && Object.keys(prev).length > 0 
-              ? prev 
-              : (() => {
-                  try {
-                    return JSON.parse(localStorage.getItem('liq_clientes') || '{}');
-                  } catch {
-                    return {};
-                  }
-                })();
-            // Safely merge seed, local user-created clients, and cloud data so no client is deleted
-            const merged = { ...seedClientes, ...currentLocal, ...data };
-            const mergedRaw = JSON.stringify(merged);
-            lastSavedLiqClientes.current = mergedRaw;
-            localStorage.setItem('liq_clientes', mergedRaw);
-            if (cloudUpdatedAt) {
-              localStorage.setItem('liq_clientes_updatedAt', cloudUpdatedAt);
-            }
-            return merged;
-          });
-        }
+        setClientes(prev => {
+          const merged = { ...seedClientes, ...data };
+          const mergedRaw = JSON.stringify(merged);
+          lastSavedLiqClientes.current = mergedRaw;
+          localStorage.setItem('liq_clientes', mergedRaw);
+          return merged;
+        });
       }
     });
 
@@ -252,39 +222,9 @@ export default function LiquidadorModule() {
         const rawCloud = JSON.stringify(data);
         if (rawCloud === lastSavedHistorial.current) return;
 
-        const cloudUpdatedAt = rawDoc?.updatedAt || "";
-        const localUpdatedAt = localStorage.getItem('liq_historial_updatedAt') || "";
-        
-        const shouldPullFromCloud = !localUpdatedAt || (cloudUpdatedAt && new Date(cloudUpdatedAt) > new Date(localUpdatedAt));
-
-        if (shouldPullFromCloud) {
-          setHistorial(prev => {
-            const currentLocal = prev && prev.length > 0 
-              ? prev 
-              : (() => {
-                  try {
-                    return JSON.parse(localStorage.getItem('liq_historial') || '[]');
-                  } catch {
-                    return [];
-                  }
-                })();
-            const map = new Map();
-            data.forEach((item: any) => map.set(item.id, item));
-            currentLocal.forEach((item: any) => {
-              if (!map.has(item.id)) {
-                map.set(item.id, item);
-              }
-            });
-            const merged = Array.from(map.values());
-            const mergedRaw = JSON.stringify(merged);
-            lastSavedHistorial.current = mergedRaw;
-            localStorage.setItem('liq_historial', mergedRaw);
-            if (cloudUpdatedAt) {
-              localStorage.setItem('liq_historial_updatedAt', mergedRaw);
-            }
-            return merged;
-          });
-        }
+        lastSavedHistorial.current = rawCloud;
+        setHistorial(data);
+        localStorage.setItem('liq_historial', rawCloud);
       }
     });
 

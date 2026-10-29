@@ -1,5 +1,6 @@
 import { db } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, runTransaction, writeBatch } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../firebaseService';
 
 export interface SyncQueueItem {
   id: string;
@@ -95,7 +96,7 @@ export function addAuditLog(log: Omit<SyncAuditLog, 'id' | 'timestamp'>) {
 async function saveLogToCloud(log: SyncAuditLog) {
   try {
     const docRef = doc(db, 'sync_logs', log.id);
-    await setDoc(docRef, log);
+    await setDoc(docRef, sanitizeForFirestore(log));
   } catch (err) {
     // Silent catch, log remains safely in local storage audit log
   }
@@ -162,7 +163,7 @@ export async function enqueueSyncEvent(
   // Best-effort write to cloud queue
   try {
     const docRef = doc(db, 'sync_queue', item.id);
-    await setDoc(docRef, item);
+    await setDoc(docRef, sanitizeForFirestore(item));
   } catch (err) {
     // Persistent local queue handles offline/quota state seamlessly
   }
