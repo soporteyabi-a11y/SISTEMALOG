@@ -8,16 +8,12 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 // Target the official shared Firestore database for multi-PC synchronization
 const primaryDbId = firebaseConfig.firestoreDatabaseId || '(default)';
 
-// Clear obsolete ai-studio project override if present
+// Clear obsolete database overrides to guarantee connection to the official database
 if (typeof window !== 'undefined') {
-  const currentOverride = localStorage.getItem('override_firestore_db_id');
-  if (currentOverride && currentOverride.startsWith('ai-studio-')) {
-    localStorage.removeItem('override_firestore_db_id');
-  }
+  localStorage.removeItem('override_firestore_db_id');
 }
 
-const overrideDbId = typeof window !== 'undefined' ? localStorage.getItem('override_firestore_db_id') : null;
-const databaseId = overrideDbId || primaryDbId;
+const databaseId = primaryDbId;
 
 let db: any;
 try {

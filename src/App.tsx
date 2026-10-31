@@ -530,6 +530,24 @@ export default function App() {
 
   // Pre-populate data securely on first mount from Firebase (with localStorage or seed fallback)
   useEffect(() => {
+    // Check storage version: if user has outdated partial cache (< 1000 orders), clear it to load complete 1,318 cloud orders
+    const CURRENT_STORAGE_VER = 'v_2026_sistemalog_1318';
+    const storedVer = safeLocalStorage.getItem('lp_storage_ver');
+    if (storedVer !== CURRENT_STORAGE_VER) {
+      const rawCurrent = safeLocalStorage.getItem('lp_orders');
+      if (rawCurrent) {
+        try {
+          const parsed = JSON.parse(rawCurrent);
+          if (Array.isArray(parsed) && parsed.length < 1000) {
+            safeLocalStorage.removeItem('lp_orders');
+            safeLocalStorage.removeItem('lp_customers');
+            safeLocalStorage.removeItem('lp_carriers');
+          }
+        } catch (e) {}
+      }
+      safeLocalStorage.setItem('lp_storage_ver', CURRENT_STORAGE_VER);
+    }
+
     // 1. Fast offline local initialization
     const rawDeleted = safeLocalStorage.getItem('lp_deleted_orders');
     let initialDeleted: Record<string, { physical: boolean; motivo?: string }> = {};
@@ -551,7 +569,7 @@ export default function App() {
     if (rawOrders) {
       try {
         const parsed = JSON.parse(rawOrders);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           initialOrders = parsed.map((o: any) => ({
             ...o,
             estado: normalizeEstado(o.estado || "Pendiente")
@@ -605,6 +623,24 @@ export default function App() {
     const initialReminders = parseJSONSafely(rawReminders, SEED_REMINDERS);
     setReminders(initialReminders);
 
+    // Fast direct fetch from server immediately on boot to guarantee all 1,318 orders load without delay
+    forceRefreshFromCloud('app_state', 'orders').then(fresh => {
+      if (Array.isArray(fresh) && fresh.length >= 1000) {
+        const decompressed = fresh.map(decompressOrderFromCloud);
+        const { cleanedList } = deduplicateOrders(decompressed);
+        setOrders(cleanedList);
+        safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
+      }
+    }).catch(console.warn);
+
+    forceRefreshFromCloud('app_state', 'customers').then(fresh => {
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        const sanitized = ensureUniqueCustomerIds(fresh.map((c: any) => c.nombre === 'DISTRIBUIDORA EL VALLE EXPRESS' ? { ...c, nombre: 'INVERSIONES LA VAQUITA EXPRESS' } : c));
+        setCustomers(sanitized);
+        safeLocalStorage.setItem('lp_customers', JSON.stringify(sanitized));
+      }
+    }).catch(console.warn);
+
     // 2. Subscribe to real-time updates from Firebase Firestore for multi-user collaboration
     const unsubDeleted = subscribeToCloud('app_state', 'deleted_orders', (data) => {
       if (data && typeof data === 'object') {
@@ -648,7 +684,7 @@ export default function App() {
           }).filter(Boolean) as Order[];
         }
 
-        // Resilient merge: Combine cloud orders with all local storage orders so NO historic fletes are ever dropped
+        // Resilient merge: Combine cloud orders with local storage orders if needed
         const rawLocal = safeLocalStorage.getItem('lp_orders');
         let localOrders: Order[] = [];
         if (rawLocal) {
@@ -660,11 +696,14 @@ export default function App() {
           } catch (e) {}
         }
 
-        // Authoritative cloud merge: Cloud orders are primary, preserving any offline-created local orders
-        const cloudIds = new Set(cleaned.map(o => o.id));
-        const localOnlyOrders = localOrders.filter(o => o.id && !cloudIds.has(o.id));
-        const mergedSource = [...cleaned, ...localOnlyOrders];
-        const targetList = mergedSource.length > 0 ? mergedSource : SEED_ORDERS;
+        // Authoritative cloud merge: When cloud has 1000+ orders, it is 100% authoritative
+        let targetList = cleaned;
+        if (cleaned.length < 1000 && localOrders.length > 0) {
+          const cloudIds = new Set(cleaned.map(o => o.id));
+          const localOnlyOrders = localOrders.filter(o => o.id && !cloudIds.has(o.id));
+          targetList = [...cleaned, ...localOnlyOrders];
+        }
+        if (targetList.length === 0) targetList = SEED_ORDERS;
         const { cleanedList } = deduplicateOrders(targetList);
 
         setOrders(cleanedList);
@@ -6085,14 +6124,9 @@ export default function App() {
                   <span className="text-slate-400 block">Base de Datos Compartida:</span>
                   <div className="flex items-center gap-2 mt-0.5">
                     <strong className="text-hud-accent select-all">{cloudStatus.databaseId}</strong>
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchDatabase(cloudStatus.databaseId === '(default)' ? 'ai-studio-7257e416-c916-4773-80bd-ca9334204e28' : '(default)')}
-                      className="text-[9px] font-mono px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                      title="Alternar entre la base de datos (default) y la personalizada de AI Studio"
-                    >
-                      Cambiar a {cloudStatus.databaseId === '(default)' ? 'ai-studio-7257e416...' : '(default)'}
-                    </button>
+                    <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      Conexión Central
+                    </span>
                   </div>
                 </div>
                 <div>

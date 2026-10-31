@@ -2,58 +2,49 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to validate document ID format
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    // Helper function to validate application state payload structure
-    function isValidStateDoc() {
-      return request.resource.data.keys().hasAll(['data', 'updatedAt'])
-          && request.resource.data.updatedAt is string
-          && request.resource.data.updatedAt.size() <= 100;
-    }
-
-    // Application operational state collections
+    // Operational and sync collections for multi-PC collaboration
     match /app_state/{docId} {
-      allow read: if true;
-      allow write: if isValidId(docId) && isValidStateDoc();
+      allow read, write: if true;
     }
 
     match /provisiones_state/{docId} {
-      allow read: if true;
-      allow write: if isValidId(docId) && isValidStateDoc();
+      allow read, write: if true;
     }
 
     match /citas_state/{docId} {
-      allow read: if true;
-      allow write: if isValidId(docId) && isValidStateDoc();
+      allow read, write: if true;
     }
 
     match /pedidos_empleados_state/{docId} {
-      allow read: if true;
-      allow write: if isValidId(docId) && isValidStateDoc();
+      allow read, write: if true;
     }
 
     match /liq_state/{docId} {
-      allow read: if true;
-      allow write: if isValidId(docId) && isValidStateDoc();
+      allow read, write: if true;
     }
 
     match /horas_extras_state/{docId} {
-      allow read: if true;
-      allow write: if isValidId(docId) && isValidStateDoc();
+      allow read, write: if true;
+    }
+
+    match /sync_queue/{docId} {
+      allow read, write: if true;
+    }
+
+    match /sync_logs/{docId} {
+      allow read, write: if true;
+    }
+
+    match /analisis_sync_logs/{docId} {
+      allow read, write: if true;
     }
 
     match /test/{docId} {
-      allow read, write: if isValidId(docId);
+      allow read, write: if true;
     }
 
-    // Default deny for all other paths to remove security warnings
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }
-

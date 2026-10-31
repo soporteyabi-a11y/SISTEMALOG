@@ -301,29 +301,29 @@ async function executeAtomicSync(item: SyncQueueItem): Promise<void> {
     // 1. Target: App State Sync (Despacho / Orders)
     if (item.targetModule === 'Todos' || item.targetModule === 'Provisiones') {
       const provisionDocRef = doc(db, 'provisiones_state', `sync_${recordId}`);
-      batch.set(provisionDocRef, {
+      batch.set(provisionDocRef, sanitizeForFirestore({
         recordId,
         eventType,
         syncedData: payload,
         updatedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     }
 
     // 2. Target: Analytics / Reconciliation Sync
     if (item.targetModule === 'Todos' || item.targetModule === 'Análisis') {
       const analyticsDocRef = doc(db, 'analisis_sync_logs', `log_${recordId}`);
-      batch.set(analyticsDocRef, {
+      batch.set(analyticsDocRef, sanitizeForFirestore({
         recordId,
         eventType,
         payloadSummary: {
-          pv: payload?.pv,
-          cliente: payload?.cliente,
-          estado: payload?.estado,
-          venta: payload?.venta,
-          flete: payload?.flete
+          pv: payload?.pv || '',
+          cliente: payload?.cliente || '',
+          estado: payload?.estado || '',
+          venta: payload?.venta || '',
+          flete: payload?.flete || ''
         },
         processedAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
     }
 
     await batch.commit();
