@@ -378,10 +378,28 @@ export default function App() {
         setOrders(cleanedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
       }
-      await forceRefreshFromCloud('app_state', 'carriers');
-      await forceRefreshFromCloud('app_state', 'customers');
-      await forceRefreshFromCloud('app_state', 'novedades');
-      await forceRefreshFromCloud('app_state', 'deleted_orders');
+      const freshCarriers = await forceRefreshFromCloud('app_state', 'carriers');
+      if (Array.isArray(freshCarriers)) {
+        const sanitized = ensureUniqueCarrierIds(freshCarriers);
+        setCarriers(sanitized);
+        safeLocalStorage.setItem('lp_carriers', JSON.stringify(sanitized));
+      }
+      const freshCustomers = await forceRefreshFromCloud('app_state', 'customers');
+      if (Array.isArray(freshCustomers)) {
+        const sanitized = ensureUniqueCustomerIds(freshCustomers.map((c: any) => c.nombre === 'DISTRIBUIDORA EL VALLE EXPRESS' ? { ...c, nombre: 'INVERSIONES LA VAQUITA EXPRESS' } : c));
+        setCustomers(sanitized);
+        safeLocalStorage.setItem('lp_customers', JSON.stringify(sanitized));
+      }
+      const freshNovedades = await forceRefreshFromCloud('app_state', 'novedades');
+      if (Array.isArray(freshNovedades)) {
+        setNovedades(freshNovedades);
+        safeLocalStorage.setItem('lp_novedades', JSON.stringify(freshNovedades));
+      }
+      const freshDeleted = await forceRefreshFromCloud('app_state', 'deleted_orders');
+      if (freshDeleted && typeof freshDeleted === 'object') {
+        setDeletedOrderIds(freshDeleted);
+        safeLocalStorage.setItem('lp_deleted_orders', JSON.stringify(freshDeleted));
+      }
       setBackupRestoreMessage({ 
         type: 'success', 
         text: '¡Sincronización completa con el servidor finalizada con éxito! Todos los fletes y datos actualizados.' 
@@ -642,8 +660,10 @@ export default function App() {
           } catch (e) {}
         }
 
-        // Deduplicate and merge cloud updates with existing local orders
-        const mergedSource = [...cleaned, ...localOrders];
+        // Authoritative cloud merge: Cloud orders are primary, preserving any offline-created local orders
+        const cloudIds = new Set(cleaned.map(o => o.id));
+        const localOnlyOrders = localOrders.filter(o => o.id && !cloudIds.has(o.id));
+        const mergedSource = [...cleaned, ...localOnlyOrders];
         const targetList = mergedSource.length > 0 ? mergedSource : SEED_ORDERS;
         const { cleanedList } = deduplicateOrders(targetList);
 
@@ -662,14 +682,11 @@ export default function App() {
             if (Array.isArray(p)) localCarriers = p;
           } catch (e) {}
         }
-        const carrierMap: Record<string, Carrier> = {};
-        [...localCarriers, ...data].forEach(c => {
-          if (c && c.nombre) carrierMap[c.nombre.trim().toUpperCase()] = c;
-        });
-        const merged = Object.values(carrierMap);
-        const sanitized = ensureUniqueCarrierIds(merged.length > 0 ? merged : data);
-        setCarriers(sanitized);
-        safeLocalStorage.setItem('lp_carriers', JSON.stringify(sanitized));
+        const cloudCarrIds = new Set(data.map(c => c.id).filter(Boolean));
+        const localOnlyCarriers = localCarriers.filter(c => c.id && !cloudCarrIds.has(c.id));
+        const merged = ensureUniqueCarrierIds([...data, ...localOnlyCarriers]);
+        setCarriers(merged);
+        safeLocalStorage.setItem('lp_carriers', JSON.stringify(merged));
       }
     });
 
@@ -683,15 +700,14 @@ export default function App() {
             if (Array.isArray(p)) localCust = p;
           } catch (e) {}
         }
-        const custMap: Record<string, Customer> = {};
-        [...localCust, ...data].forEach(c => {
-          if (c && c.nombre) {
-            const name = c.nombre === 'DISTRIBUIDORA EL VALLE EXPRESS' ? 'INVERSIONES LA VAQUITA EXPRESS' : c.nombre;
-            custMap[name.trim().toUpperCase()] = { ...c, nombre: name };
-          }
+        const cloudCustIds = new Set(data.map(c => c.id).filter(Boolean));
+        const localOnlyCust = localCust.filter(c => c.id && !cloudCustIds.has(c.id));
+        const mergedList = [...data, ...localOnlyCust].map(c => {
+          if (!c) return c;
+          const name = c.nombre === 'DISTRIBUIDORA EL VALLE EXPRESS' ? 'INVERSIONES LA VAQUITA EXPRESS' : c.nombre;
+          return { ...c, nombre: name };
         });
-        const merged = Object.values(custMap);
-        const sanitized = ensureUniqueCustomerIds(merged.length > 0 ? merged : data);
+        const sanitized = ensureUniqueCustomerIds(mergedList.length > 0 ? mergedList : data);
         setCustomers(sanitized);
         safeLocalStorage.setItem('lp_customers', JSON.stringify(sanitized));
       }

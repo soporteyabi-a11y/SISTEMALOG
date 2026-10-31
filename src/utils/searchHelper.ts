@@ -184,71 +184,55 @@ export const getOrderSearchScore = (o: Order, rawTerm: string): number => {
  * Matches by ID, clean PV (+ Client), or clean Factura.
  * Merges missing data into the surviving record so no information is lost.
  */
-export const deduplicateOrders = (ordersList: Order[]): { cleanedList: Order[]; removedCount: number } => {
-  if (!Array.isArray(ordersList)) return { cleanedList: [], removedCount: 0 };
+export const deduplicateOrders = (ordersList: Order[]): { cleanedList: Order[]; removedCount: number; suspectedDuplicates?: any[] } => {
+  if (!Array.isArray(ordersList)) return { cleanedList: [], removedCount: 0, suspectedDuplicates: [] };
 
-  const seenIds = new Set<string>();
-  const seenPvs = new Map<string, Order>();
-  const seenFacturas = new Map<string, Order>();
+  const seenIds = new Map<string, Order>();
   const result: Order[] = [];
   let removedCount = 0;
+  const pvMap = new Map<string, Order>();
+  const suspectedDuplicates: any[] = [];
 
   for (const rawO of ordersList) {
     if (!rawO) continue;
-    const o = { ...rawO };
-    const normPv = o.pv ? String(o.pv).trim().toLowerCase() : '';
-    const normFact = o.factura ? String(o.factura).trim().toLowerCase() : '';
-    
-    // Ignore generic/placeholder strings
-    const cleanPv = (normPv && normPv !== 's/n' && normPv !== 'sin' && normPv !== '0' && normPv !== 'sin pv') ? normPv : '';
-    const cleanFact = (normFact && normFact !== 's/n' && normFact !== 'sin' && normFact !== '0' && normFact !== 'sin factura') ? normFact : '';
-    const clientKey = o.cliente ? String(o.cliente).trim().toLowerCase() : '';
-
-    let existing: Order | undefined = undefined;
-
-    // 1. Check matching by ID
-    if (o.id && seenIds.has(o.id)) {
-      existing = result.find(r => r.id === o.id);
-    } 
-    // 2. Check matching by PV + Client (if PV present)
-    else if (cleanPv && clientKey && seenPvs.has(`${cleanPv}_${clientKey}`)) {
-      existing = seenPvs.get(`${cleanPv}_${clientKey}`);
-    }
-    // 3. Check matching by PV alone (if PV has at least 2 chars)
-    else if (cleanPv && cleanPv.length >= 2 && seenPvs.has(cleanPv)) {
-      existing = seenPvs.get(cleanPv);
-    }
-    // 4. Check matching by Factura (if Factura present)
-    else if (cleanFact && cleanFact.length >= 2 && seenFacturas.has(cleanFact)) {
-      existing = seenFacturas.get(cleanFact);
-    }
-
-    if (existing) {
+    const l = { ...rawO };
+    if (l.id && seenIds.has(l.id)) {
+      const v = seenIds.get(l.id)!;
       removedCount++;
-      // Merge non-empty fields from 'o' into 'existing'
-      if (!existing.pv && o.pv) existing.pv = o.pv;
-      if (!existing.oc && o.oc) existing.oc = o.oc;
-      if (!existing.factura && o.factura) existing.factura = o.factura;
-      if (!existing.cliente && o.cliente) existing.cliente = o.cliente;
-      if (!existing.ciudad && o.ciudad) existing.ciudad = o.ciudad;
-      if (!existing.placa && o.placa) existing.placa = o.placa;
-      if (!existing.conductor && o.conductor) existing.conductor = o.conductor;
-      if (!existing.celular && o.celular) existing.celular = o.celular;
-      if (!existing.transportadora && o.transportadora) existing.transportadora = o.transportadora;
-      if (!existing.flete && o.flete) existing.flete = o.flete;
-      if (!existing.provision && o.provision) existing.provision = o.provision;
-      if (!existing.venta && o.venta) existing.venta = o.venta;
-      if (!existing.facturado && o.facturado) existing.facturado = o.facturado;
-      if (!existing.cajas && o.cajas) existing.cajas = o.cajas;
-      if (!existing.peso && o.peso) existing.peso = o.peso;
-      if (!existing.cajasFact && o.cajasFact) existing.cajasFact = o.cajasFact;
-      if (!existing.pesoFact && o.pesoFact) existing.pesoFact = o.pesoFact;
-      if (!existing.fechaIngreso && o.fechaIngreso) existing.fechaIngreso = o.fechaIngreso;
-      if (!existing.fechaSalida && o.fechaSalida) existing.fechaSalida = o.fechaSalida;
-      if (!existing.fechaFactura && o.fechaFactura) existing.fechaFactura = o.fechaFactura;
-      if (!existing.obs && o.obs) existing.obs = o.obs;
+      // Merge missing fields from l into existing record v
+      if (!v.pv && l.pv) v.pv = l.pv;
+      if (!v.oc && l.oc) v.oc = l.oc;
+      if (!v.factura && l.factura) v.factura = l.factura;
+      if (!v.cliente && l.cliente) v.cliente = l.cliente;
+      if (!v.ciudad && l.ciudad) v.ciudad = l.ciudad;
+      if (!v.placa && l.placa) v.placa = l.placa;
+      if (!v.conductor && l.conductor) v.conductor = l.conductor;
+      if (!v.celular && l.celular) v.celular = l.celular;
+      if (!v.transportadora && l.transportadora) v.transportadora = l.transportadora;
+      if (!v.flete && l.flete) v.flete = l.flete;
+      if (!v.provision && l.provision) v.provision = l.provision;
+      if (!v.venta && l.venta) v.venta = l.venta;
+      if (!v.facturado && l.facturado) v.facturado = l.facturado;
+      if (!v.cajas && l.cajas) v.cajas = l.cajas;
+      if (!v.peso && l.peso) v.peso = l.peso;
+      if (!v.cajasFact && l.cajasFact) v.cajasFact = l.cajasFact;
+      if (!v.pesoFact && l.pesoFact) v.pesoFact = l.pesoFact;
+      if (!v.fechaIngreso && l.fechaIngreso) v.fechaIngreso = l.fechaIngreso;
+      if (!v.fechaSalida && l.fechaSalida) v.fechaSalida = l.fechaSalida;
+      if (!v.fechaFactura && l.fechaFactura) v.fechaFactura = l.fechaFactura;
+      if (!v.obs && l.obs) v.obs = l.obs;
+      if (!(v as any).fechaEntregaReal && (l as any).fechaEntregaReal) (v as any).fechaEntregaReal = (l as any).fechaEntregaReal;
+      if (!(v as any).fechaConfirmacion && (l as any).fechaConfirmacion) (v as any).fechaConfirmacion = (l as any).fechaConfirmacion;
+      if (!(v as any).medioConfirmacion && (l as any).medioConfirmacion) (v as any).medioConfirmacion = (l as any).medioConfirmacion;
+      if ((v as any).entregaCompleta === undefined && (l as any).entregaCompleta !== undefined) (v as any).entregaCompleta = (l as any).entregaCompleta;
+      if (!(v as any).motivoFaltante && (l as any).motivoFaltante) (v as any).motivoFaltante = (l as any).motivoFaltante;
+      if (!(v as any).confirmadoPor && (l as any).confirmadoPor) (v as any).confirmadoPor = (l as any).confirmadoPor;
+      if ((v as any).entregaHistorica === undefined && (l as any).entregaHistorica !== undefined) (v as any).entregaHistorica = (l as any).entregaHistorica;
+      if ((v as any).porRevisar === undefined && (l as any).porRevisar !== undefined) (v as any).porRevisar = (l as any).porRevisar;
+      if (!(v as any).motivoRevision && (l as any).motivoRevision) (v as any).motivoRevision = (l as any).motivoRevision;
+      (v as any).syncVersion = Math.max((v as any).syncVersion || 0, (l as any).syncVersion || 0);
 
-      // Status precedence logic (prefer active states like Despachado / Entregado over Pendiente)
+      // Status precedence logic
       const statusPriority: Record<string, number> = {
         'Anulado': 0,
         'Pendiente': 1,
@@ -258,23 +242,36 @@ export const deduplicateOrders = (ordersList: Order[]): { cleanedList: Order[]; 
         'Entregado': 5,
         'Finalizado': 6
       };
-      if ((statusPriority[o.estado] || 0) > (statusPriority[existing.estado] || 0)) {
-        existing.estado = o.estado;
+      if ((statusPriority[l.estado] || 0) > (statusPriority[v.estado] || 0)) {
+        v.estado = l.estado;
       }
-    } else {
-      if (o.id) seenIds.add(o.id);
-      if (cleanPv) {
-        seenPvs.set(cleanPv, o);
-        if (clientKey) seenPvs.set(`${cleanPv}_${clientKey}`, o);
+      continue;
+    }
+
+    if (l.id) seenIds.set(l.id, l);
+    result.push(l);
+
+    // Track suspected duplicates without deleting distinct orders
+    const d = l.pv ? String(l.pv).trim().toLowerCase() : '';
+    const f = l.factura ? String(l.factura).trim().toLowerCase() : '';
+    const h = l.cliente ? String(l.cliente).trim().toLowerCase() : '';
+    const m = l.transportadora ? String(l.transportadora).trim().toLowerCase() : '';
+    const isWeakFact = !f || f === 's/n' || f === 'sin' || f === '0' || f === 'sin factura' || f.length < 3;
+    if (!(!d || d === 's/n' || d === '0' || d === 'sin pv' || d.length < 2) && !isWeakFact && h && m) {
+      const vKey = `${d}|${f}|${h}|${m}`;
+      if (pvMap.has(vKey)) {
+        suspectedDuplicates.push({
+          a: pvMap.get(vKey),
+          b: l,
+          reason: `Mismo PV="${l.pv}", Factura="${l.factura}", Cliente="${l.cliente}", Transportadora="${l.transportadora}"`
+        });
+      } else {
+        pvMap.set(vKey, l);
       }
-      if (cleanFact) {
-        seenFacturas.set(cleanFact, o);
-      }
-      result.push(o);
     }
   }
 
-  return { cleanedList: result, removedCount };
+  return { cleanedList: result, removedCount, suspectedDuplicates };
 };
 
 /**
