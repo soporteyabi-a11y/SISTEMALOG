@@ -1,17 +1,17 @@
 import { initializeApp, getApp, getApps } from 'firebase/app';
-import { initializeFirestore, memoryLocalCache } from 'firebase/firestore';
+import { initializeFirestore, memoryLocalCache, getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase App using the central platform project configuration
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Target the official shared Firestore database for multi-PC synchronization
-const primaryDbId = firebaseConfig.firestoreDatabaseId || 'ai-studio-7257e416-c916-4773-80bd-ca9334204e28';
+const primaryDbId = firebaseConfig.firestoreDatabaseId || '(default)';
 
-// Clear any accidental stale '(default)' database override from local storage
+// Clear obsolete ai-studio project override if present
 if (typeof window !== 'undefined') {
   const currentOverride = localStorage.getItem('override_firestore_db_id');
-  if (currentOverride === '(default)') {
+  if (currentOverride && currentOverride.startsWith('ai-studio-')) {
     localStorage.removeItem('override_firestore_db_id');
   }
 }
@@ -23,10 +23,13 @@ let db: any;
 try {
   db = initializeFirestore(app, {
     localCache: memoryLocalCache()
-  }, databaseId);
+  }, databaseId === '(default)' ? undefined : databaseId);
 } catch (e) {
-  const { getFirestore } = require('firebase/firestore');
-  db = getFirestore(app, databaseId);
+  try {
+    db = databaseId === '(default)' ? getFirestore(app) : getFirestore(app, databaseId);
+  } catch (err) {
+    db = getFirestore(app);
+  }
 }
 
 export { app, db, firebaseConfig, databaseId };

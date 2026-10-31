@@ -381,7 +381,7 @@ export default function PedidosModule() {
   useEffect(() => {
     // Live cloud subscriptions
     const unsubProds = subscribeToCloud('pedidos_empleados_state', 'products', (data) => {
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         const raw = JSON.stringify(data);
         lastSavedProducts.current = raw;
         setProducts(data);
@@ -390,7 +390,7 @@ export default function PedidosModule() {
     });
 
     const unsubOrders = subscribeToCloud('pedidos_empleados_state', 'orders', (data) => {
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         const sorted = [...data].sort((a, b) => {
           const t1 = a ? safeGetTime(a.date) : 0;
           const t2 = b ? safeGetTime(b.date) : 0;

@@ -176,29 +176,47 @@ export default function CitasModule({ customers = [] }: { customers?: Customer[]
   // Subscribe to real-time changes in Firestore
   useEffect(() => {
     const unsubAppts = subscribeToCloud('citas_state', 'appointments', (data) => {
-      if (Array.isArray(data)) {
-        const raw = JSON.stringify(data);
-        lastSavedAppointments.current = raw;
-        setAppointments(data);
-        safeLocalStorage.setItem('logicoord_appointments', raw);
+      if (Array.isArray(data) && data.length > 0) {
+        setAppointments(prev => {
+          const map = new Map<string, any>();
+          prev.forEach(item => { if (item && item.id !== undefined) map.set(String(item.id), item); });
+          data.forEach(item => { if (item && item.id !== undefined) map.set(String(item.id), item); });
+          const merged = Array.from(map.values());
+          const raw = JSON.stringify(merged);
+          lastSavedAppointments.current = raw;
+          safeLocalStorage.setItem('logicoord_appointments', raw);
+          return merged;
+        });
       }
     });
 
     const unsubClients = subscribeToCloud('citas_state', 'clients', (data) => {
-      if (Array.isArray(data)) {
-        const raw = JSON.stringify(data);
-        lastSavedClients.current = raw;
-        setClients(data);
-        safeLocalStorage.setItem('logicoord_clients', raw);
+      if (Array.isArray(data) && data.length > 0) {
+        setClients(prev => {
+          const map = new Map<string, any>();
+          prev.forEach(item => { if (item && (item.id !== undefined || item.name !== undefined)) map.set(String(item.id ?? item.name), item); });
+          data.forEach(item => { if (item && (item.id !== undefined || item.name !== undefined)) map.set(String(item.id ?? item.name), item); });
+          const merged = Array.from(map.values());
+          const raw = JSON.stringify(merged);
+          lastSavedClients.current = raw;
+          safeLocalStorage.setItem('logicoord_clients', raw);
+          return merged;
+        });
       }
     });
 
     const unsubArchived = subscribeToCloud('citas_state', 'archived', (data) => {
-      if (Array.isArray(data)) {
-        const raw = JSON.stringify(data);
-        lastSavedArchived.current = raw;
-        setArchived(data);
-        safeLocalStorage.setItem('logicoord_archived', raw);
+      if (Array.isArray(data) && data.length > 0) {
+        setArchived(prev => {
+          const map = new Map<string, any>();
+          prev.forEach(item => { if (item && item.id !== undefined) map.set(String(item.id), item); });
+          data.forEach(item => { if (item && item.id !== undefined) map.set(String(item.id), item); });
+          const merged = Array.from(map.values());
+          const raw = JSON.stringify(merged);
+          lastSavedArchived.current = raw;
+          safeLocalStorage.setItem('logicoord_archived', raw);
+          return merged;
+        });
       }
     });
 

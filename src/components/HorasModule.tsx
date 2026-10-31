@@ -257,7 +257,7 @@ export default function HorasModule() {
 
     // Establish live real-time Firestore subscriptions
     const unsubRecords = subscribeToCloud('horas_extras_state', 'records', (data) => {
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         const raw = JSON.stringify(data);
         lastSavedRecords.current = raw;
         setRecords(data);
@@ -267,7 +267,7 @@ export default function HorasModule() {
     });
 
     const unsubWorkers = subscribeToCloud('horas_extras_state', 'workers', (data) => {
-      if (Array.isArray(data)) {
+      if (Array.isArray(data) && data.length > 0) {
         const raw = JSON.stringify(data);
         lastSavedWorkers.current = raw;
         setWorkers(data);

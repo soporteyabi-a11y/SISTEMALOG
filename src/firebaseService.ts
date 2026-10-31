@@ -34,7 +34,7 @@ function notifyStatusListeners() {
     lastServerSyncTime,
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
-    projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
+    projectId: firebaseConfig.projectId || 'sistemalog',
     databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
     lastError: lastErrorMessage
   };
@@ -49,7 +49,7 @@ export function subscribeCloudStatus(callback: (status: CloudStatusInfo) => void
     lastServerSyncTime,
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
-    projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
+    projectId: firebaseConfig.projectId || 'sistemalog',
     databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
     lastError: lastErrorMessage
   });
@@ -65,30 +65,35 @@ export function getCloudStatus(): CloudStatusInfo {
     lastServerSyncTime,
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
-    projectId: firebaseConfig.projectId || 'gen-lang-client-0902545089',
+    projectId: firebaseConfig.projectId || 'sistemalog',
     databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
     lastError: lastErrorMessage
   };
 }
 
 /**
- * Recursively cleans objects and arrays to ensure no `undefined` values are sent to Firestore,
- * preventing 'Unsupported field value: undefined' errors.
+ * Recursively cleans objects and arrays to ensure NO `undefined` values can ever be sent to Firestore,
+ * preventing 'Unsupported field value: undefined' errors permanently.
  */
-export function sanitizeForFirestore(val: any): any {
-  if (val === undefined) return null;
-  if (val === null || typeof val !== 'object') return val;
-  if (val instanceof Date) return val.toISOString();
-  if (Array.isArray(val)) {
-    return val.map(item => sanitizeForFirestore(item));
-  }
-  const cleanObj: Record<string, any> = {};
-  for (const [key, value] of Object.entries(val)) {
-    if (value !== undefined) {
-      cleanObj[key] = sanitizeForFirestore(value);
+export function sanitizeForFirestore<T = any>(val: T): any {
+  if (val === undefined || val === null) return null;
+  try {
+    const jsonStr = JSON.stringify(val, (_key, v) => (v === undefined ? null : v));
+    if (jsonStr === undefined) return null;
+    return JSON.parse(jsonStr);
+  } catch (err) {
+    if (Array.isArray(val)) {
+      return (val as any[]).map(item => (item === undefined ? null : sanitizeForFirestore(item)));
     }
+    if (typeof val === 'object') {
+      const clean: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val as any)) {
+        clean[k] = v === undefined ? null : sanitizeForFirestore(v);
+      }
+      return clean;
+    }
+    return val;
   }
-  return cleanObj;
 }
 
 /**
@@ -145,12 +150,14 @@ export async function saveToCloud(
     const docRef = doc(db, collectionName, docId);
     const timestamp = new Date().toISOString();
     
-    await setDoc(docRef, { 
+    const payload = sanitizeForFirestore({ 
       data: cleanData, 
       updatedAt: timestamp,
       updatedBy: userEmail,
       deviceAppletId: 'multi-pc-shared-v1'
     });
+
+    await setDoc(docRef, payload);
     
     isCloudConnected = true;
     isSyncedWithServer = true;

@@ -175,13 +175,19 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
   // Real-time synchronization with Cloud Firestore
   useEffect(() => {
     const unsub = subscribeToCloud('provisiones_state', 'saved_vouchers', (data) => {
-      if (Array.isArray(data)) {
-        setSavedProvisionRecords(data);
-        try {
-          localStorage.setItem('prov_saved_vouchers', JSON.stringify(data));
-        } catch (e) {
-          console.error("Error writing prov_saved_vouchers to local storage", e);
-        }
+      if (Array.isArray(data) && data.length > 0) {
+        setSavedProvisionRecords(prev => {
+          const map = new Map<string, SavedProvisionRecord>();
+          prev.forEach(r => { if (r && r.id) map.set(r.id, r); });
+          data.forEach((r: SavedProvisionRecord) => { if (r && r.id) map.set(r.id, r); });
+          const merged = Array.from(map.values()).sort((a, b) => new Date(b.fechaGuardado || 0).getTime() - new Date(a.fechaGuardado || 0).getTime());
+          try {
+            localStorage.setItem('prov_saved_vouchers', JSON.stringify(merged));
+          } catch (e) {
+            console.error("Error writing prov_saved_vouchers to local storage", e);
+          }
+          return merged;
+        });
       }
     });
     return () => unsub();
@@ -672,22 +678,22 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
       otrosGastosMonto: currentOtrosMonto,
       otrosGastosConcepto: currentOtrosConcepto,
       totalPagar: currentTotal,
-      elaboradoPor: elaboradoPor,
-      autorizadoPor: autorizadoPor,
-      isSummaryView: isSummaryView,
+      elaboradoPor: elaboradoPor || 'LOGÍSTICA Y DESPACHOS',
+      autorizadoPor: autorizadoPor || 'MESA CONTABLE SAS',
+      isSummaryView: !!isSummaryView,
       orders: currentOrders.map(o => ({
-        id: o.id,
-        fechaSalida: o.fechaSalida,
-        pv: o.pv,
-        factura: o.factura,
-        cliente: o.cliente,
-        transportadora: o.transportadora || currentCarrier,
-        flete: o.flete,
-        facturaProvision: o.facturaProvision,
-        destino: o.destino,
-        oc: o.oc,
-        ciudad: o.ciudad,
-        cajas: o.cajas
+        id: o.id || '',
+        fechaSalida: o.fechaSalida || '',
+        pv: o.pv || '',
+        factura: o.factura || '',
+        cliente: o.cliente || '',
+        transportadora: o.transportadora || currentCarrier || '',
+        flete: Number(o.flete) || 0,
+        facturaProvision: o.facturaProvision || '',
+        destino: o.destino || '',
+        oc: o.oc || '',
+        ciudad: o.ciudad || '',
+        cajas: Number(o.cajas) || 0
       })),
       notas: notes || ''
     };
