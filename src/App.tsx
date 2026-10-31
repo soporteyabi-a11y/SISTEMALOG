@@ -32,6 +32,12 @@ import CitasModule from './components/CitasModule';
 import HorasModule from './components/HorasModule';
 import PedidosModule from './components/PedidosModule';
 import SyncQueueMonitorModal from './components/SyncQueueMonitorModal';
+import SupabaseMigrationModal from './components/SupabaseMigrationModal';
+import { 
+  syncStateToSupabase, 
+  migrateCustomersToSupabase, 
+  migrateCarriersToSupabase 
+} from './services/supabaseSyncService';
 import { 
   enqueueSyncEvent, 
   processSyncQueue, 
@@ -363,6 +369,7 @@ export default function App() {
     }
   };
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isSyncMonitorOpen, setIsSyncMonitorOpen] = useState(false);
   const [syncStats, setSyncStats] = useState(getSyncQueueStats());
   const [backupRestoreMessage, setBackupRestoreMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -802,18 +809,22 @@ export default function App() {
     safeLocalStorage.setItem('lp_orders', JSON.stringify(updated));
     const compressed = updated.map(compressOrderForCloud);
     saveToCloud('app_state', 'orders', compressed);
+    // Dual-Write active mirror to Supabase PostgreSQL
+    syncStateToSupabase('orders_master', updated);
   };
   const saveCarriers = (updated: Carrier[]) => {
     const sanitized = ensureUniqueCarrierIds(updated);
     setCarriers(sanitized);
     safeLocalStorage.setItem('lp_carriers', JSON.stringify(sanitized));
     saveToCloud('app_state', 'carriers', sanitized);
+    migrateCarriersToSupabase(sanitized);
   };
   const saveCustomers = (updated: Customer[]) => {
     const sanitized = ensureUniqueCustomerIds(updated);
     setCustomers(sanitized);
     safeLocalStorage.setItem('lp_customers', JSON.stringify(sanitized));
     saveToCloud('app_state', 'customers', sanitized);
+    migrateCustomersToSupabase(sanitized);
   };
   const saveNovedades = (updated: Novedad[]) => {
     setNovedades(updated);
@@ -3575,6 +3586,16 @@ export default function App() {
             >
               <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
               <span>RECARGAR NUBE</span>
+            </button>
+
+            {/* Supabase Migration Bridge Button */}
+            <button
+              onClick={() => setIsSupabaseModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold bg-emerald-500/15 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/25 shadow-sm"
+              title="Panel de Migración Segura y Doble Escritura hacia Supabase PostgreSQL"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>MIGRACIÓN SUPABASE</span>
             </button>
 
             {/* Sync Queue Monitor Button */}
@@ -6351,6 +6372,17 @@ export default function App() {
             }
           })()}
           onClose={() => setIsSyncMonitorOpen(false)}
+        />
+      )}
+
+      {/* Supabase Real-Time Migration & Dual-Write Modal */}
+      {isSupabaseModalOpen && (
+        <SupabaseMigrationModal
+          isOpen={isSupabaseModalOpen}
+          orders={orders}
+          customers={customers}
+          carriers={carriers}
+          onClose={() => setIsSupabaseModalOpen(false)}
         />
       )}
 
