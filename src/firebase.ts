@@ -18,7 +18,8 @@ const databaseId = primaryDbId;
 let db: any;
 try {
   db = initializeFirestore(app, {
-    localCache: memoryLocalCache()
+    localCache: memoryLocalCache(),
+    experimentalAutoDetectLongPolling: true
   }, databaseId === '(default)' ? undefined : databaseId);
 } catch (e) {
   try {

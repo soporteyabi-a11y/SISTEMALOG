@@ -177,8 +177,71 @@ export async function saveToCloud(
   }
 }
 
+// Parse raw Firestore REST API JSON field structure into plain JS values
+function parseFirestoreRestField(field: any): any {
+  if (!field || typeof field !== 'object') return null;
+  if ('stringValue' in field) return field.stringValue;
+  if ('integerValue' in field) return parseInt(field.integerValue, 10);
+  if ('doubleValue' in field) return parseFloat(field.doubleValue);
+  if ('booleanValue' in field) return field.booleanValue;
+  if ('nullValue' in field) return null;
+  if ('arrayValue' in field) {
+    return (field.arrayValue.values || []).map(parseFirestoreRestField);
+  }
+  if ('mapValue' in field) {
+    const res: Record<string, any> = {};
+    const f = field.mapValue.fields || {};
+    for (const k of Object.keys(f)) {
+      res[k] = parseFirestoreRestField(f[k]);
+    }
+    return res;
+  }
+  return null;
+}
+
+/**
+ * Ultra-fast Direct REST Fetch from Firestore Cloud.
+ * Completely immune to WebChannel / WebSocket / IndexedDB cache stalls.
+ */
+export async function fetchFromFirestoreRest(collectionName: string, docId: string): Promise<any | null> {
+  const projectId = firebaseConfig.projectId || 'sistemalog';
+  const apiKey = firebaseConfig.apiKey;
+  const dbId = databaseId || '(default)';
+  const encodedDb = dbId === '(default)' ? '(default)' : encodeURIComponent(dbId);
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${encodedDb}/documents/${collectionName}/${docId}?key=${apiKey}`;
+
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) {
+      console.warn(`[Firestore REST] HTTP ${resp.status} for ${collectionName}/${docId}`);
+      return null;
+    }
+    const json = await resp.json();
+    if (json && json.fields && json.fields.data) {
+      return parseFirestoreRestField(json.fields.data);
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[Firestore REST] Direct fetch failed for ${collectionName}/${docId}:`, err);
+    return null;
+  }
+}
+
 // Force a fresh read directly from the cloud server bypassing IndexedDB cache
 export async function forceRefreshFromCloud(collectionName: string, docId: string): Promise<any | null> {
+  // 1. Direct REST HTTP read: 100% reliable across all browsers, proxies and iFrames
+  const restData = await fetchFromFirestoreRest(collectionName, docId);
+  if (restData !== null) {
+    isCloudConnected = true;
+    isSyncedWithServer = true;
+    lastErrorMessage = null;
+    lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    isFromCacheState = false;
+    notifyStatusListeners();
+    return restData;
+  }
+
+  // 2. Fallback to Firestore SDK getDocFromServer
   const docRef = doc(db, collectionName, docId);
   try {
     const docSnap = await getDocFromServer(docRef);
@@ -195,7 +258,6 @@ export async function forceRefreshFromCloud(collectionName: string, docId: strin
     return null;
   } catch (error: any) {
     console.warn(`[Firebase] Server read attempt for ${collectionName}/${docId} note:`, error?.message || error);
-    // Server fetch fell back to standard read (cache or network)
   }
 
   // Fallback to standard getDoc

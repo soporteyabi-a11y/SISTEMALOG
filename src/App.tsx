@@ -372,9 +372,11 @@ export default function App() {
     try {
       setBackupRestoreMessage({ type: 'success', text: 'Conectando directamente al servidor de Firestore...' });
       const freshOrders = await forceRefreshFromCloud('app_state', 'orders');
+      let orderCount = 0;
       if (Array.isArray(freshOrders)) {
         const decompressed = freshOrders.map(decompressOrderFromCloud);
         const { cleanedList } = deduplicateOrders(decompressed);
+        orderCount = cleanedList.length;
         setOrders(cleanedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
       }
@@ -400,10 +402,16 @@ export default function App() {
         setDeletedOrderIds(freshDeleted);
         safeLocalStorage.setItem('lp_deleted_orders', JSON.stringify(freshDeleted));
       }
+      const successMsg = `¡Sincronización completa con Firestore exitosa! ${orderCount} fletes activos cargados.`;
       setBackupRestoreMessage({ 
         type: 'success', 
-        text: '¡Sincronización completa con el servidor finalizada con éxito! Todos los fletes y datos actualizados.' 
+        text: successMsg 
       });
+      setPSuccessToast({
+        title: 'Nube Firestore Sincronizada',
+        message: successMsg
+      });
+      setTimeout(() => setPSuccessToast(null), 4000);
     } catch (err: any) {
       setBackupRestoreMessage({ 
         type: 'error', 

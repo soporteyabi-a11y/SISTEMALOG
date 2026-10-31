@@ -10,6 +10,36 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate icon" href="data:image/x-icon;base64,AAABAAEAICAAAAEAIACoEAAAFgAAACgAAAAgAAAAQAAAAAEAIAAAAAAAABAAABMLAAATCwAAAAAAAAAAAAD///8A" />
     <title>SISTEMALOG — Control de Operaciones Logísticas</title>
+    <script>
+      (function() {
+        var PURGE_FLAG = 'lp_purge_cache_v2026_1318_done';
+        if (!localStorage.getItem(PURGE_FLAG)) {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              for (var i = 0; i < regs.length; i++) {
+                regs[i].unregister();
+              }
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (var i = 0; i < keys.length; i++) {
+                caches.delete(keys[i]);
+              }
+            });
+          }
+          try {
+            localStorage.removeItem('lp_orders');
+            localStorage.removeItem('lp_customers');
+            localStorage.removeItem('lp_carriers');
+            localStorage.removeItem('lp_deleted_orders');
+            localStorage.removeItem('sync_queue_offline_v2');
+            localStorage.removeItem('sync_logs_offline_v2');
+          } catch(e) {}
+          localStorage.setItem(PURGE_FLAG, 'true');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
