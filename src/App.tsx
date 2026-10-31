@@ -530,21 +530,14 @@ export default function App() {
 
   // Pre-populate data securely on first mount from Firebase (with localStorage or seed fallback)
   useEffect(() => {
-    // Check storage version: if user has outdated partial cache (< 1000 orders), clear it to load complete 1,318 cloud orders
-    const CURRENT_STORAGE_VER = 'v_2026_sistemalog_1318';
+    // Check storage version: purge any previous local session cache so the browser syncs all 1,318 authoritative cloud orders
+    const CURRENT_STORAGE_VER = 'v_2026_sistemalog_1318_force_v3';
     const storedVer = safeLocalStorage.getItem('lp_storage_ver');
     if (storedVer !== CURRENT_STORAGE_VER) {
-      const rawCurrent = safeLocalStorage.getItem('lp_orders');
-      if (rawCurrent) {
-        try {
-          const parsed = JSON.parse(rawCurrent);
-          if (Array.isArray(parsed) && parsed.length < 1000) {
-            safeLocalStorage.removeItem('lp_orders');
-            safeLocalStorage.removeItem('lp_customers');
-            safeLocalStorage.removeItem('lp_carriers');
-          }
-        } catch (e) {}
-      }
+      safeLocalStorage.removeItem('lp_orders');
+      safeLocalStorage.removeItem('lp_customers');
+      safeLocalStorage.removeItem('lp_carriers');
+      safeLocalStorage.removeItem('lp_deleted_orders');
       safeLocalStorage.setItem('lp_storage_ver', CURRENT_STORAGE_VER);
     }
 
@@ -625,7 +618,7 @@ export default function App() {
 
     // Fast direct fetch from server immediately on boot to guarantee all 1,318 orders load without delay
     forceRefreshFromCloud('app_state', 'orders').then(fresh => {
-      if (Array.isArray(fresh) && fresh.length >= 1000) {
+      if (Array.isArray(fresh) && fresh.length > 0) {
         const decompressed = fresh.map(decompressOrderFromCloud);
         const { cleanedList } = deduplicateOrders(decompressed);
         setOrders(cleanedList);
@@ -3564,6 +3557,16 @@ export default function App() {
               <span className="bg-slate-900 border border-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[9px] ml-0.5 flex items-center gap-1">
                 <Database className="w-3 h-3 text-hud-accent" /> BACKUP
               </span>
+            </button>
+
+            {/* Quick Force Cloud Refresh Button */}
+            <button
+              onClick={handleForceCloudSync}
+              className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200"
+              title="Forzar lectura directa desde Firestore para descargar todos los 1,318 fletes y 137 clientes"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+              <span>RECARGAR NUBE</span>
             </button>
 
             {/* Sync Queue Monitor Button */}
