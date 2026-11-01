@@ -5,13 +5,12 @@
 
 import React, { useState, useMemo } from 'react';
 import { Order } from '../types';
-import { matchOrderSearch } from '../utils/searchHelper';
 import { 
-  FileText, Users, Truck, CheckCircle2, Search, 
+  FileText, Users, Truck, CheckCircle2, 
   Terminal as TerminalIcon, Calendar, Clock, MapPin, Package, ArrowRight,
   Eye, EyeOff, Sparkles, ChevronDown, ChevronUp, Layers, DollarSign,
   Activity, Map, ShieldCheck, Database, FileSpreadsheet, Briefcase, 
-  Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check, Grid, List
+  Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check
 } from 'lucide-react';
 
 interface HomeModuleProps {
@@ -30,7 +29,6 @@ interface ModuleDefinition {
   description: string;
   tabTarget: string;
   icon: any;
-  badge?: string;
   actionType?: 'tab' | 'backup' | 'supabase';
 }
 
@@ -40,7 +38,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     id: 'mod_inicio',
     name: 'Inicio & Tablero',
     category: 'operativos',
-    description: 'Panel central de control y KPIs operativos en tiempo real',
+    description: 'Panel central de control y KPIs operativos',
     tabTarget: 'home',
     icon: Clock
   },
@@ -48,7 +46,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     id: 'mod_solicitudes',
     name: 'Solicitudes',
     category: 'operativos',
-    description: 'Registro, importación y escaneo OCR inteligente de órdenes de compra',
+    description: 'Registro, importación y escaneo OCR de órdenes...',
     tabTarget: 'orders',
     icon: FileText
   },
@@ -56,7 +54,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     id: 'mod_despachados',
     name: 'Despachados',
     category: 'operativos',
-    description: 'Historial de fletes despachados con número de factura asignado',
+    description: 'Historial de fletes despachados con factura',
     tabTarget: 'despachados',
     icon: CheckCircle2
   },
@@ -64,7 +62,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     id: 'mod_pendientes',
     name: 'Pendientes',
     category: 'operativos',
-    description: 'Cola de solicitudes en proceso de cargue y pendientes por despachar',
+    description: 'Cola de solicitudes en cargue y por despachar',
     tabTarget: 'pendientes',
     icon: Clock
   },
@@ -72,7 +70,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     id: 'mod_vehiculos',
     name: 'Vehículos & Flota',
     category: 'operativos',
-    description: 'Control de placas, conductores, celulares y capacidad vehicular',
+    description: 'Directorio de camiones, placas y conductores',
     tabTarget: 'vehiculos',
     icon: Truck
   },
@@ -80,7 +78,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     id: 'mod_citas',
     name: 'Agenda / Citas',
     category: 'operativos',
-    description: 'Programación de citas de entrega y horarios en centros de distribución',
+    description: 'Programación de entregas y citas en destino',
     tabTarget: 'citas',
     icon: Calendar
   },
@@ -207,12 +205,8 @@ export default function HomeModule({
   onOpenBackupModal,
   onOpenSupabaseModal
 }: HomeModuleProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
-
   // Visual categorization and private mode state
-  const [activeCategory, setActiveCategory] = useState<string>('todas');
+  const [activeCategory, setActiveCategory] = useState<string>('operativos');
   const [isPrivateMode, setIsPrivateMode] = useState<boolean>(true);
   const [cardSize, setCardSize] = useState<'mini' | 'mediana'>('mini');
   const [isFolded, setIsFolded] = useState<boolean>(false);
@@ -228,46 +222,14 @@ export default function HomeModule({
     return orders.filter(o => o.estado === 'Entregado').length;
   }, [orders]);
 
-  // Terminal log status messages
+  // Terminal log status messages matching screenshot
   const logs = useMemo(() => [
     `> Protocolos de transmisión listos... OK`,
-    `> Conectando a Base de Datos Central en la nube... OK`,
+    `> Conectando a Base de Datos Central en la nube... OK (Firebase Firestore)`,
     `> Canal seguro de encriptación TLS 1.3... Conectado`,
-    `> Puente Dual-Write activo: Firestore ⇄ Supabase PostgreSQL`,
-    `> Sincronizando registros de fletes de Yumbo... Sincronizado (${orders.length} registros cargados)`
-  ], [orders.length]);
-
-  // Pending activity filter
-  const pendingOrders = useMemo(() => {
-    return orders.filter(o => {
-      if (o.estado === 'Anulado') return false;
-      return o.estado === 'Pendiente' || o.estado === 'En Cargue';
-    });
-  }, [orders]);
-
-  const filteredPending = useMemo(() => {
-    if (!searchTerm.trim()) return pendingOrders;
-    const activeOrders = orders.filter(o => o.estado !== 'Anulado');
-    return activeOrders.filter(o => matchOrderSearch(o, searchTerm));
-  }, [pendingOrders, orders, searchTerm]);
-
-  React.useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm]);
-
-  const totalPages = Math.max(1, Math.ceil(filteredPending.length / itemsPerPage));
-  const paginatedPending = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredPending.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredPending, currentPage]);
-
-  const handlePageChange = (direction: number) => {
-    setCurrentPage(prev => {
-      const next = prev + direction;
-      if (next < 1 || next > totalPages) return prev;
-      return next;
-    });
-  };
+    `> Sincronizando registros de fletes de Yumbo... Sincronizado (${totalOrders} registros cargados)`,
+    `> Motor Ley 2466 / Cortes 12 y 27... Operativo`
+  ], [totalOrders]);
 
   const handleModuleClick = (mod: ModuleDefinition) => {
     if (mod.actionType === 'supabase') {
@@ -370,7 +332,7 @@ export default function HomeModule({
               </span>
             </div>
             <p className="text-[11px] text-slate-400">
-              {isPrivateMode ? 'Cifras confidenciales ocultas a terceros en pantalla' : 'Métricas y valores monetarios visibles'}
+              {isPrivateMode ? '— Cifras confidenciales ocultas a terceros' : 'Métricas y valores monetarios visibles'}
             </p>
           </div>
         </div>
@@ -384,7 +346,75 @@ export default function HomeModule({
         </button>
       </div>
 
-      {/* 3. Category Filter Tabs Header */}
+      {/* 3. The 4 Metric Cards (ONLY VISIBLE WHEN REVEALED 'ARRIBA', HIDDEN IN MODO PRIVADO) */}
+      {!isPrivateMode && (
+        <div className="animate-fade-in space-y-2 pt-1 pb-1">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <h3 className="text-xs font-mono font-extrabold text-slate-200 tracking-wider uppercase">
+              Métricas de Despacho & Flota
+            </h3>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* KPI 1 */}
+            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-accent shadow-lg flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <FileText className="w-3 h-3 text-hud-accent" /> Total Solicitudes
+                </span>
+                <div className="text-2xl font-display font-extrabold text-white">
+                  {totalOrders}
+                </div>
+              </div>
+              <div className="bg-hud-accent/10 p-3 rounded-full">
+                <FileText className="w-6 h-6 text-hud-accent" />
+              </div>
+            </div>
+
+            {/* KPI 2 */}
+            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-green shadow-lg flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <Users className="w-3 h-3 text-hud-green" /> Clientes Activos
+                </span>
+                <div className="text-2xl font-display font-extrabold text-white">{customersCount}</div>
+              </div>
+              <div className="bg-hud-green/10 p-3 rounded-full">
+                <Users className="w-6 h-6 text-hud-green" />
+              </div>
+            </div>
+
+            {/* KPI 3 */}
+            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-orange shadow-lg flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <Truck className="w-3 h-3 text-hud-orange" /> Despachados
+                </span>
+                <div className="text-2xl font-display font-extrabold text-white">{dispatchedCount}</div>
+              </div>
+              <div className="bg-hud-orange/10 p-3 rounded-full">
+                <Truck className="w-6 h-6 text-hud-orange" />
+              </div>
+            </div>
+
+            {/* KPI 4 */}
+            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-green shadow-lg flex items-center justify-between">
+              <div className="space-y-1">
+                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-hud-green" /> Entregas Exitosas
+                </span>
+                <div className="text-2xl font-display font-extrabold text-white">{successDeliveries}</div>
+              </div>
+              <div className="bg-hud-green/10 p-3 rounded-full">
+                <CheckCircle2 className="w-6 h-6 text-hud-green" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Category Filter Tabs Header */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-800 pb-3">
         {/* Category Pills */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
@@ -443,7 +473,7 @@ export default function HomeModule({
         </div>
       </div>
 
-      {/* 4. Categorized Module Cards Feed */}
+      {/* 5. Categorized Module Cards Feed */}
       {!isFolded && (
         <div className="space-y-6">
           {displayedCategories.map(catKey => {
@@ -503,78 +533,92 @@ export default function HomeModule({
         </div>
       )}
 
-      {/* 5. KPIs Cards with Privacy Mode Masking */}
-      <div className="pt-2">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-          <h3 className="text-xs font-mono font-extrabold text-slate-200 tracking-wider uppercase">
-            Métricas de Despacho & Flota
-          </h3>
+      {/* 6. Three Operational Status Badges matching image_9178baed.png */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-2">
+        {/* Badge 1: Ley 2466 */}
+        <div 
+          onClick={() => onNavigateTab && onNavigateTab('horas')}
+          className="bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-emerald-500/40 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition-all shadow-md group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500/20">
+              <Check className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                Cumple con la Ley 2466
+              </h4>
+              <p className="text-[10px] text-slate-400 font-sans">
+                Franja 19:00 y Cortes 12/27 configurados
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-mono font-bold text-sky-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+            NÓMINA →
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* KPI 1 */}
-          <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-accent shadow-lg flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                <FileText className="w-3 h-3 text-hud-accent" /> Total Solicitudes
-              </span>
-              <div className="text-2xl font-display font-extrabold text-white">
-                {isPrivateMode ? totalOrders : totalOrders}
-              </div>
+        {/* Badge 2: Operación en Crecimiento */}
+        <div 
+          onClick={() => onNavigateTab && onNavigateTab('orders')}
+          className="bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-sky-500/40 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition-all shadow-md group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 group-hover:bg-sky-500/20">
+              <BarChart3 className="w-4 h-4" />
             </div>
-            <div className="bg-hud-accent/10 p-3 rounded-full">
-              <FileText className="w-6 h-6 text-hud-accent" />
-            </div>
-          </div>
-
-          {/* KPI 2 */}
-          <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-green shadow-lg flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                <Users className="w-3 h-3 text-hud-green" /> Clientes Activos
-              </span>
-              <div className="text-2xl font-display font-extrabold text-white">{customersCount}</div>
-            </div>
-            <div className="bg-hud-green/10 p-3 rounded-full">
-              <Users className="w-6 h-6 text-hud-green" />
+            <div>
+              <h4 className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors">
+                Operación en Crecimiento
+              </h4>
+              <p className="text-[10px] text-slate-400 font-sans">
+                {totalOrders} solicitudes centralizadas
+              </p>
             </div>
           </div>
+          <span className="text-[10px] font-mono font-bold text-sky-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+            FLETES →
+          </span>
+        </div>
 
-          {/* KPI 3 */}
-          <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-orange shadow-lg flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                <Truck className="w-3 h-3 text-hud-orange" /> Despachados
-              </span>
-              <div className="text-2xl font-display font-extrabold text-white">{dispatchedCount}</div>
+        {/* Badge 3: Respaldo en la Nube */}
+        <div 
+          onClick={() => {
+            if (onOpenSupabaseModal) onOpenSupabaseModal();
+            else if (onOpenBackupModal) onOpenBackupModal();
+          }}
+          className="bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition-all shadow-md group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:bg-cyan-500/20">
+              <Database className="w-4 h-4" />
             </div>
-            <div className="bg-hud-orange/10 p-3 rounded-full">
-              <Truck className="w-6 h-6 text-hud-orange" />
+            <div>
+              <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+                Respaldo en la Nube
+              </h4>
+              <p className="text-[10px] text-slate-400 font-sans">
+                Sincronización segura continua
+              </p>
             </div>
           </div>
-
-          {/* KPI 4 */}
-          <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-green shadow-lg flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-hud-green" /> Entregas Exitosas
-              </span>
-              <div className="text-2xl font-display font-extrabold text-white">{successDeliveries}</div>
-            </div>
-            <div className="bg-hud-green/10 p-3 rounded-full">
-              <CheckCircle2 className="w-6 h-6 text-hud-green" />
-            </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-led"></span> En Línea
+            </span>
+            <span className="text-[10px] font-mono font-bold text-slate-300 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded">
+              Respaldos
+            </span>
           </div>
         </div>
       </div>
 
-      {/* 6. Network Command Monitor */}
+      {/* 7. Terminal Network Monitor matching image_9178baed.png */}
       <div className="bg-hud-card border border-slate-800 rounded-xl p-4 shadow-inner">
         <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800/80">
           <TerminalIcon className="w-4 h-4 text-hud-green pulse-led" />
           <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">
-            Monitor de red y sincronización (Firebase Real-time & Supabase Dual-Write)
+            Monitor de red y sincronización (Firebase Real-time)
           </span>
         </div>
         <div className="font-mono text-xs text-hud-green/90 leading-relaxed bg-[#02050c]/85 p-3 rounded-lg border border-slate-900/60 max-h-36 overflow-y-auto">
@@ -584,114 +628,6 @@ export default function HomeModule({
         </div>
       </div>
 
-      {/* 7. Recent Activity List */}
-      <div className="bg-hud-card border border-hud-border/80 rounded-xl p-5 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <h3 className="text-sm font-display font-bold text-white tracking-widest uppercase border-l-2 border-hud-green pl-2">
-              {searchTerm.trim() ? 'Resultados de Búsqueda (En Toda la Base de Datos)' : 'Actividad Reciente en cola (Pendientes & Cargue)'}
-            </h3>
-            <p className="text-[10px] text-slate-400 font-mono">
-              {searchTerm.trim() ? `${filteredPending.length} solicitudes encontradas` : `${filteredPending.length} solicitudes esperando despacho`}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Buscar PV, Código, Cliente, Factura..."
-                value={searchTerm}
-                onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                className="bg-slate-950/70 border border-slate-800 focus:border-hud-accent/60 text-xs text-white rounded px-8 py-1.5 outline-none w-56 transition-all font-mono"
-              />
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="flex items-center gap-0.5 bg-slate-950/70 border border-slate-800 p-0.5 rounded font-mono">
-              <button
-                onClick={() => handlePageChange(-1)}
-                disabled={currentPage === 1}
-                className="text-xs text-hud-accent disabled:text-slate-600 hover:bg-slate-900 font-bold px-2 py-1 rounded transition-colors"
-              >
-                ◀
-              </button>
-              <span className="text-[10px] text-hud-accent font-bold tracking-wider px-2">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() => handlePageChange(1)}
-                disabled={currentPage === totalPages}
-                className="text-xs text-hud-accent disabled:text-slate-600 hover:bg-slate-900 font-bold px-2 py-1 rounded transition-colors"
-              >
-                ▶
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Dynamic Activity Cards Feed */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {paginatedPending.length === 0 ? (
-            <div className="col-span-2 text-center py-8 text-xs text-slate-500 font-mono">
-              -- No hay solicitudes pendientes registradas en este periodo --
-            </div>
-          ) : (
-            paginatedPending.map(order => (
-              <div 
-                key={order.id}
-                onClick={() => onOpenOrder(order)}
-                className="bg-slate-950/60 hover:bg-slate-900/40 border border-slate-850 hover:border-hud-accent/40 rounded-xl p-4 cursor-pointer transition-all duration-200 group relative flex flex-col justify-between"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-hud-accent font-mono font-bold tracking-wide">
-                      {order.id} <span className="text-slate-500">| PV: <span className="text-yellow-400 font-bold">{order.pv || 'N/A'}</span></span>
-                    </span>
-                    <span className={`text-[9px] font-bold font-mono px-2 py-0.5 rounded uppercase ${
-                      order.estado === 'En Cargue' 
-                        ? 'bg-hud-orange/10 border border-hud-orange text-hud-orange' 
-                        : 'bg-hud-accent/10 border border-hud-accent text-hud-accent'
-                    }`}>
-                      {order.estado}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="text-xs font-bold text-white group-hover:text-hud-accent transition-colors">
-                      {order.cliente}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                      <MapPin className="w-3 h-3 text-slate-500" />
-                      <span>{order.ciudad}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-2.5 border-t border-slate-900/60 flex items-center justify-between text-[10px]">
-                  <div className="flex items-center gap-3 font-mono text-slate-400">
-                    <span className="flex items-center gap-0.5">
-                      <Package className="w-3 h-3 text-slate-500" />
-                      <strong>{order.cajas}</strong> cj
-                    </span>
-                    <span>
-                      ⚖️ <strong>{order.peso.toLocaleString('es-CO')}</strong> kg
-                    </span>
-                    <span className="text-hud-green font-bold">
-                      {isPrivateMode ? '$ ••••••••' : `$${(order.venta).toLocaleString('es-CO')}`}
-                    </span>
-                  </div>
-
-                  <span className="text-hud-accent group-hover:translate-x-1 transition-transform flex items-center gap-0.5 font-bold uppercase text-[9px] tracking-wider font-mono">
-                    Editar <ArrowRight className="w-3 h-3" />
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
     </div>
   );
 }

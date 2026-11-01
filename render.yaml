@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: sistemalog-app
+    name: sistemalog
     env: node
     plan: starter
     region: oregon
