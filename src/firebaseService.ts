@@ -202,29 +202,33 @@ function parseFirestoreRestField(field: any): any {
 /**
  * Ultra-fast Direct REST Fetch from Firestore Cloud.
  * Completely immune to WebChannel / WebSocket / IndexedDB cache stalls.
+ * Automatically tries target databaseId and falls back to (default) if 403/404.
  */
 export async function fetchFromFirestoreRest(collectionName: string, docId: string): Promise<any | null> {
   const projectId = firebaseConfig.projectId || 'sistemalog';
   const apiKey = firebaseConfig.apiKey;
   const dbId = databaseId || '(default)';
-  const encodedDb = dbId === '(default)' ? '(default)' : encodeURIComponent(dbId);
-  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${encodedDb}/documents/${collectionName}/${docId}?key=${apiKey}`;
+  const databasesToTry = dbId === '(default)' ? ['(default)'] : [dbId, '(default)'];
 
-  try {
-    const resp = await fetch(url, { cache: 'no-store' });
-    if (!resp.ok) {
-      console.warn(`[Firestore REST] HTTP ${resp.status} for ${collectionName}/${docId}`);
-      return null;
+  for (const targetDb of databasesToTry) {
+    const encodedDb = targetDb === '(default)' ? '(default)' : encodeURIComponent(targetDb);
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${encodedDb}/documents/${collectionName}/${docId}?key=${apiKey}`;
+
+    try {
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json && json.fields && json.fields.data) {
+          return parseFirestoreRestField(json.fields.data);
+        }
+      } else {
+        console.warn(`[Firestore REST] HTTP ${resp.status} on ${targetDb} for ${collectionName}/${docId}`);
+      }
+    } catch (err) {
+      console.warn(`[Firestore REST] Direct fetch failed on ${targetDb} for ${collectionName}/${docId}:`, err);
     }
-    const json = await resp.json();
-    if (json && json.fields && json.fields.data) {
-      return parseFirestoreRestField(json.fields.data);
-    }
-    return null;
-  } catch (err) {
-    console.warn(`[Firestore REST] Direct fetch failed for ${collectionName}/${docId}:`, err);
-    return null;
   }
+  return null;
 }
 
 // Force a fresh read directly from the cloud server bypassing IndexedDB cache

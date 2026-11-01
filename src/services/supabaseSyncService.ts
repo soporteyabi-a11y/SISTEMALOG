@@ -129,11 +129,11 @@ export function mapOrderToSupabase(o: Order) {
     ciudad: o.ciudad || null,
     origen: o.origen || 'ACOPI-YUMBO',
     peso: Number(o.peso) || 0,
-    cajas: Number(o.cajas) || 0,
+    cajas: Math.round(Number(o.cajas) || 0),
     venta: Number(o.venta) || 0,
     flete: Number(o.flete) || 0,
     facturado: Number(o.facturado) || 0,
-    cajas_fact: Number(o.cajasFact) || 0,
+    cajas_fact: Math.round(Number(o.cajasFact) || 0),
     peso_fact: Number(o.pesoFact) || 0,
     provision: o.provision || null,
     transportadora: o.transportadora || null,
@@ -300,16 +300,23 @@ export async function migrateAllOrdersToSupabase(
 export async function migrateCustomersToSupabase(customers: Customer[]): Promise<boolean> {
   try {
     if (!customers || customers.length === 0) return true;
-    const mapped = customers.map(c => ({
-      id: c.id,
-      nombre: c.nombre,
-      ciudad: c.ciudad || null,
-      nit: c.nit || null,
-      contacto: c.contacto || null,
-      telefono: (c as any).celular || (c as any).telefono || null
-    }));
+    const uniqueMap = new Map<string, any>();
+    for (const c of customers) {
+      const normName = String(c.nombre || '').trim().toUpperCase();
+      if (!uniqueMap.has(normName)) {
+        uniqueMap.set(normName, {
+          id: c.id,
+          nombre: c.nombre,
+          ciudad: c.ciudad || null,
+          nit: c.nit || null,
+          contacto: c.contacto || null,
+          telefono: (c as any).celular || (c as any).telefono || null
+        });
+      }
+    }
+    const mapped = Array.from(uniqueMap.values());
 
-    const { error } = await supabase.from('clientes').upsert(mapped, { onConflict: 'id' });
+    const { error } = await supabase.from('clientes').upsert(mapped, { onConflict: 'nombre' });
     if (error && error.code !== 'PGRST205') {
       console.warn('[Supabase] Error migrating customers:', error.message);
     }
