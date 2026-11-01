@@ -52,6 +52,7 @@ interface ProvisionesModuleProps {
   carriers?: Carrier[];
   onUpdateOrder: (order: Order) => void;
   onBack?: () => void;
+  initialTab?: 'auditoria' | 'historial';
 }
 
 // Utility function to convert numbers to Spanish words for authentic DIAN style billing documentation
@@ -110,7 +111,7 @@ function numeroALetras(num: number): string {
   return (letras + " PESOS M/CTE").replace(/\s+/g, " ").trim();
 }
 
-export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder, onBack }: ProvisionesModuleProps) {
+export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder, onBack, initialTab }: ProvisionesModuleProps) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -139,7 +140,13 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
   const [autorizadoPor, setAutorizadoPor] = useState('MESA CONTABLE SAS');
 
   // Main navigation tab: 'auditoria' (main list) or 'historial' (saved records list)
-  const [mainTab, setMainTab] = useState<'auditoria' | 'historial'>('auditoria');
+  const [mainTab, setMainTab] = useState<'auditoria' | 'historial'>(initialTab || 'auditoria');
+
+  useEffect(() => {
+    if (initialTab) {
+      setMainTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Saved Provision Records state with Firestore + LocalStorage sync
   const [savedProvisionRecords, setSavedProvisionRecords] = useState<SavedProvisionRecord[]>(() => {

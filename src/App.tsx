@@ -9,7 +9,7 @@ import {
   Map, Users, DollarSign, Bell, Activity, Play, Plus, Search, 
   Download, FileSpreadsheet, Lock, RefreshCw, LogOut, Trash2, CheckCircle2, ChevronDown, ListPlus, Send,
   ChevronLeft, ChevronRight, Upload, AlertTriangle, Sliders, Calendar, ShoppingBag, Printer,
-  LayoutGrid, List, Database
+  LayoutGrid, List, Database, ArrowLeft
 } from 'lucide-react';
 
 import { Order, Carrier, Customer, Novedad, Reminder } from './types';
@@ -246,7 +246,30 @@ const getNextCarrierId = (existingCarriers: Carrier[]): string => {
     candidate = `CARR-${formattedNum}-${extraCounter}`;
     extraCounter++;
   }
-  return candidate;
+};
+
+const getTabTitle = (tab: string): string => {
+  switch (tab) {
+    case 'facturacion': return 'Solicitudes & Carga OCR';
+    case 'despachado': return 'Historial de Despachados';
+    case 'pendiente': return 'Cola de Pendientes';
+    case 'vehiculos': return 'Vehículos & Flota';
+    case 'agenda': return 'Agenda & Citas en Destino';
+    case 'transportadoras': return 'Socios Transportadoras';
+    case 'clientes': return 'Directorio de Clientes';
+    case 'provision': return 'Provisiones de Fletes';
+    case 'comprobantes': return 'Comprobantes Contables & Soportes';
+    case 'diferencias': return 'Diferencias & Conciliación';
+    case 'recordatorios': return 'Recordatorios & Alertas';
+    case 'liquidador': return 'Liquidador de Despachos';
+    case 'horasExtras': return 'Horas Extras & Nómina (Ley 2466)';
+    case 'pedidoEmpleados': return 'Pedidos Empleados';
+    case 'dashboard': return 'Análisis de Rentabilidad & Dashboard';
+    case 'seguimiento': return 'Monitoreo y Seguimiento Satelital';
+    case 'mapas': return 'Control GPS & Mapas Pro';
+    case 'dialogo': return 'Monitor de Novedades';
+    default: return 'Módulo Operativo';
+  }
 };
 
 const ensureUniqueCustomerIds = (list: Customer[]): Customer[] => {
@@ -3237,8 +3260,8 @@ export default function App() {
         </div>
       ) : null}
 
-      {/* Main Structural Drawer Sidebar */}
-      {!isEmployeeMode && (
+      {/* Main Structural Drawer Sidebar - Hidden as requested by user */}
+      {!isEmployeeMode && false && (
       <aside className={`bg-hud-card border-r border-hud-border/50 ${sidebarOpen ? 'w-64' : 'w-0 -translate-x-full md:w-16 md:translate-x-0'} shrink-0 z-40 transition-all duration-300 flex flex-col justify-between print:hidden`}>
         <div className="overflow-y-auto flex-1 py-6 px-4 space-y-6">
           
@@ -3501,23 +3524,35 @@ export default function App() {
         <header className="bg-hud-card border-b border-hud-border/50 h-16 shrink-0 flex items-center justify-between px-6 z-30 print:hidden">
           <div className="flex items-center gap-4">
             <button 
-              onClick={() => setSidebarOpen(prev => !prev)}
-              className="text-slate-400 hover:text-hud-accent p-1 cursor-pointer transition-colors"
+              type="button"
+              onClick={() => setActiveTab('inicio')}
+              className="bg-[#00c9a7]/20 hover:bg-[#00c9a7]/35 border border-[#00f0b5]/50 text-[#00f0b5] px-3.5 py-1.5 rounded-xl flex items-center gap-2 text-xs font-bold font-mono transition-all cursor-pointer shadow-sm group shrink-0"
+              title="Ir al Menú Central (Hub de Módulos)"
             >
-              <Menu className="w-5 h-5" />
+              <Home className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              <span className="tracking-wider font-extrabold">MENÚ CENTRAL</span>
             </button>
 
             <div className="hidden md:flex flex-col">
-              <h1 className="text-sm font-display font-extrabold text-white tracking-widest uppercase">SISTEMALOG S.A.S.</h1>
-              <span className="text-[10px] text-slate-400 font-mono tracking-wider font-semibold">Central de Control de Operaciones Logísticas</span>
+              <h1 className="text-sm font-display font-extrabold text-white tracking-widest uppercase text-relief-title">SISTEMALOG S.A.S.</h1>
+              <span className="text-[10px] text-teal-200/70 font-mono tracking-wider font-semibold">Central de Control de Operaciones Logísticas</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-4 text-xs font-mono font-bold">
+          <div className="flex items-center gap-3 text-xs font-mono font-bold">
             <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-950/80 border border-hud-accent/30 text-[10px] font-mono">
               <span className="text-slate-400 font-bold uppercase">Propietario:</span>
               <span className="text-hud-accent font-bold">soporteyabi@gmail.com</span>
             </div>
+            <button 
+              type="button"
+              onClick={handleLogout}
+              className="border border-rose-500/30 text-rose-400 hover:bg-rose-500/15 hover:border-rose-500/50 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors text-[10px] font-mono font-bold uppercase tracking-wider shrink-0"
+              title="Cerrar Sesión de Administrador"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">Cerrar Sesión</span>
+            </button>
             {isPdfParsing ? (
               <button 
                 disabled
@@ -3647,6 +3682,27 @@ export default function App() {
         {/* Tab Module router */}
         <main className={`flex-1 overflow-y-auto scroll-smooth bg-hud-bg relative ${isEmployeeMode ? 'p-2 sm:p-4' : 'p-6'}`}>
           
+          {/* Universal Back-To-Menu Header when viewing any inner module */}
+          {activeTab !== 'inicio' && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 mb-5 border-b border-teal-500/25 animate-fade-in print:hidden">
+              <button
+                type="button"
+                onClick={() => setActiveTab('inicio')}
+                className="bg-[#052d34] hover:bg-[#083e47] border border-teal-500/40 text-teal-300 hover:text-white px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold font-mono transition-all cursor-pointer shadow-md group w-fit"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+                <span>Volver al Menú Central</span>
+              </button>
+
+              <div className="flex items-center gap-2 text-xs font-mono">
+                <span className="w-2 h-2 rounded-full bg-[#00f0b5] pulse-led shadow-[0_0_8px_rgba(0,240,181,0.8)]"></span>
+                <span className="text-teal-200/80 font-bold uppercase">
+                  Módulo: <span className="text-white text-relief-card font-extrabold">{getTabTitle(activeTab)}</span>
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Active Tab Router */}
           {activeTab === 'inicio' ? (
             <HomeModule 
@@ -3654,23 +3710,26 @@ export default function App() {
               onOpenOrder={handleOpenOrderForm}
               customersCount={customers.length}
               onNavigateTab={(tab) => {
-                if (tab === 'home') setActiveTab('inicio');
+                if (tab === 'home' || tab === 'inicio') setActiveTab('inicio');
                 else if (tab === 'orders') setActiveTab('facturacion');
                 else if (tab === 'despachados') setActiveTab('despachado');
-                else if (tab === 'pendientes') setActiveTab('pendientes');
+                else if (tab === 'pendientes') setActiveTab('pendiente');
                 else if (tab === 'vehiculos') setActiveTab('vehiculos');
-                else if (tab === 'citas') setActiveTab('citas');
+                else if (tab === 'citas') setActiveTab('agenda');
                 else if (tab === 'customers') setActiveTab('clientes');
                 else if (tab === 'carriers') setActiveTab('transportadoras');
-                else if (tab === 'provisiones') setActiveTab('provisiones');
+                else if (tab === 'provisiones') setActiveTab('provision');
+                else if (tab === 'comprobantes') setActiveTab('comprobantes');
                 else if (tab === 'diferencias') setActiveTab('diferencias');
                 else if (tab === 'liquidador') setActiveTab('liquidador');
-                else if (tab === 'horas') setActiveTab('horas');
-                else if (tab === 'pedidos') setActiveTab('pedidos');
-                else if (tab === 'analytics') setActiveTab('analytics');
+                else if (tab === 'horas') setActiveTab('horasExtras');
+                else if (tab === 'pedidos') setActiveTab('pedidoEmpleados');
+                else if (tab === 'recordatorios') setActiveTab('recordatorios');
+                else if (tab === 'analytics') setActiveTab('dashboard');
                 else if (tab === 'mapas') setActiveTab('mapas');
                 else if (tab === 'dashboard') setActiveTab('dashboard');
-                else if (tab === 'novedades') setActiveTab('novedades');
+                else if (tab === 'seguimiento') setActiveTab('seguimiento');
+                else if (tab === 'novedades') setActiveTab('dialogo');
                 else setActiveTab(tab);
               }}
               onOpenBackupModal={() => setIsBackupModalOpen(true)}
@@ -4590,6 +4649,17 @@ export default function App() {
               carriers={carriers}
               onUpdateOrder={handleUpdateOrder}
               onBack={() => setActiveTab('inicio')}
+              initialTab="auditoria"
+            />
+          ) : null}
+
+          {activeTab === 'comprobantes' ? (
+            <ProvisionesModule 
+              orders={orders}
+              carriers={carriers}
+              onUpdateOrder={handleUpdateOrder}
+              onBack={() => setActiveTab('inicio')}
+              initialTab="historial"
             />
           ) : null}
 

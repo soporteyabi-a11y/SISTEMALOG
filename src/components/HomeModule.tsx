@@ -12,7 +12,7 @@ import {
   Eye, EyeOff, Sparkles, ChevronDown, ChevronUp, Layers, DollarSign,
   Activity, Map, ShieldCheck, Database, FileSpreadsheet, Briefcase, 
   Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check, ArrowLeft,
-  Grid, List
+  Grid, List, Bell
 } from 'lucide-react';
 
 interface HomeModuleProps {
@@ -104,7 +104,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     icon: Briefcase
   },
 
-  // 3. Contabilidad & Nómina (6)
+  // 3. Contabilidad & Nómina (7)
   {
     id: 'mod_provisiones',
     name: 'Provisiones de Fletes',
@@ -112,6 +112,14 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     description: 'Emisión, cálculo y gestión de soportes de fletes a pagar',
     tabTarget: 'provisiones',
     icon: DollarSign
+  },
+  {
+    id: 'mod_comprobantes',
+    name: 'Comprobantes Contables',
+    category: 'contabilidad',
+    description: 'Generación, consulta e impresión de vouchers y soportes contables',
+    tabTarget: 'comprobantes',
+    icon: FileText
   },
   {
     id: 'mod_diferencias',
@@ -146,12 +154,12 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     icon: Package
   },
   {
-    id: 'mod_comprobantes',
-    name: 'Comprobantes Contables',
+    id: 'mod_recordatorios',
+    name: 'Recordatorios & Alertas',
     category: 'contabilidad',
-    description: 'Generación e impresión de vouchers y soportes contables formales',
-    tabTarget: 'provisiones',
-    icon: FileText
+    description: 'Gestión de tareas, llamadas y alertas operativas programadas',
+    tabTarget: 'recordatorios',
+    icon: Bell
   },
 
   // 4. Inteligencia & Auditoría (4)
@@ -172,11 +180,11 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     icon: Map
   },
   {
-    id: 'mod_auditoria',
-    name: 'Auditoría de Fletes',
+    id: 'mod_seguimiento',
+    name: 'Monitoreo Satelital',
     category: 'inteligencia',
-    description: 'Consola de auditoría de datos, consistencia y alertas operativas',
-    tabTarget: 'dashboard',
+    description: 'Seguimiento satelital de fletes y operadores activos en ruta',
+    tabTarget: 'seguimiento',
     icon: Activity
   },
   {
@@ -300,7 +308,7 @@ export default function HomeModule({
   const categoryHeaders: Record<string, { title: string; count: number }> = {
     operativos: { title: 'OPERATIVOS & DESPACHOS', count: 6 },
     entidades: { title: 'ENTIDADES & DIRECTORIO', count: 2 },
-    contabilidad: { title: 'CONTABILIDAD, FACTURACIÓN & NÓMINA', count: 6 },
+    contabilidad: { title: 'CONTABILIDAD, FACTURACIÓN & NÓMINA', count: 7 },
     inteligencia: { title: 'INTELIGENCIA & AUDITORÍA LOGÍSTICA', count: 4 },
     configuracion: { title: 'CONFIGURACIÓN & BASE DE DATOS', count: 1 }
   };
