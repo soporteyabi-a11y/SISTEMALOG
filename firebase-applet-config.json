@@ -1,12 +1,12 @@
 {
   "projectId": "sistemalog",
-  "appId": "1:637491782698:web:6f09cc3d370023a28c0f53",
+  "appId": "1:637491782698:web:8ecacecf93eb05c18c0f53",
   "apiKey": "AIzaSyCcNhRj7zwUqYVHp_YUhFSXPx6gDcyFbUw",
   "authDomain": "sistemalog.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
+  "firestoreDatabaseId": "ai-studio-remixconciliacin-5a9d3a5a-0e19-4821-a3ea-6c2e4e072f8d",
   "storageBucket": "sistemalog.firebasestorage.app",
   "messagingSenderId": "637491782698",
-  "measurementId": "G-QFP10YWEJZ",
-  "oAuthClientId": "260442445452-mji68vlfoqpfproorcsfvgtetvsk19m3.apps.googleusercontent.com",
+  "measurementId": "",
+  "oAuthClientId": "637491782698-v8j5nf1hgdnsr3o793u8h5p28ub37dth.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
