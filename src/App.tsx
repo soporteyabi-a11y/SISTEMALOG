@@ -3653,6 +3653,28 @@ export default function App() {
               orders={orders} 
               onOpenOrder={handleOpenOrderForm}
               customersCount={customers.length}
+              onNavigateTab={(tab) => {
+                if (tab === 'home') setActiveTab('inicio');
+                else if (tab === 'orders') setActiveTab('facturacion');
+                else if (tab === 'despachados') setActiveTab('despachado');
+                else if (tab === 'pendientes') setActiveTab('pendientes');
+                else if (tab === 'vehiculos') setActiveTab('vehiculos');
+                else if (tab === 'citas') setActiveTab('citas');
+                else if (tab === 'customers') setActiveTab('clientes');
+                else if (tab === 'carriers') setActiveTab('transportadoras');
+                else if (tab === 'provisiones') setActiveTab('provisiones');
+                else if (tab === 'diferencias') setActiveTab('diferencias');
+                else if (tab === 'liquidador') setActiveTab('liquidador');
+                else if (tab === 'horas') setActiveTab('horas');
+                else if (tab === 'pedidos') setActiveTab('pedidos');
+                else if (tab === 'analytics') setActiveTab('analytics');
+                else if (tab === 'mapas') setActiveTab('mapas');
+                else if (tab === 'dashboard') setActiveTab('dashboard');
+                else if (tab === 'novedades') setActiveTab('novedades');
+                else setActiveTab(tab);
+              }}
+              onOpenBackupModal={() => setIsBackupModalOpen(true)}
+              onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
             />
           ) : null}
 

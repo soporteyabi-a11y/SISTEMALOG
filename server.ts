@@ -17,7 +17,7 @@ try {
 const pdf = localRequire("pdf-parse");
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "50mb" }));
 
