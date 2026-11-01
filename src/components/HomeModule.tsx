@@ -5,12 +5,14 @@
 
 import React, { useState, useMemo } from 'react';
 import { Order } from '../types';
+import { matchOrderSearch } from '../utils/searchHelper';
 import { 
-  FileText, Users, Truck, CheckCircle2, 
+  FileText, Users, Truck, CheckCircle2, Search,
   Terminal as TerminalIcon, Calendar, Clock, MapPin, Package, ArrowRight,
   Eye, EyeOff, Sparkles, ChevronDown, ChevronUp, Layers, DollarSign,
   Activity, Map, ShieldCheck, Database, FileSpreadsheet, Briefcase, 
-  Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check
+  Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check, ArrowLeft,
+  Grid, List
 } from 'lucide-react';
 
 interface HomeModuleProps {
@@ -29,7 +31,7 @@ interface ModuleDefinition {
   description: string;
   tabTarget: string;
   icon: any;
-  actionType?: 'tab' | 'backup' | 'supabase';
+  actionType?: 'tab' | 'backup' | 'supabase' | 'tablero';
 }
 
 const MODULES_DIRECTORY: ModuleDefinition[] = [
@@ -39,7 +41,8 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     name: 'Inicio & Tablero',
     category: 'operativos',
     description: 'Panel central de control y KPIs operativos',
-    tabTarget: 'home',
+    tabTarget: 'tablero',
+    actionType: 'tablero',
     icon: Clock
   },
   {
@@ -205,6 +208,14 @@ export default function HomeModule({
   onOpenBackupModal,
   onOpenSupabaseModal
 }: HomeModuleProps) {
+  // Navigation inside Home: 'hub' (Menú Central estilo Synapsis) or 'tablero' (Inicio y Tablero operativo)
+  const [viewMode, setViewMode] = useState<'hub' | 'tablero'>('hub');
+
+  // Search & Pagination in Tablero
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 4;
+
   // Visual categorization and private mode state
   const [activeCategory, setActiveCategory] = useState<string>('operativos');
   const [isPrivateMode, setIsPrivateMode] = useState<boolean>(true);
@@ -231,8 +242,42 @@ export default function HomeModule({
     `> Motor Ley 2466 / Cortes 12 y 27... Operativo`
   ], [totalOrders]);
 
+  // Pending activity filter for Tablero view
+  const pendingOrders = useMemo(() => {
+    return orders.filter(o => {
+      if (o.estado === 'Anulado') return false;
+      return o.estado === 'Pendiente' || o.estado === 'En Cargue';
+    });
+  }, [orders]);
+
+  const filteredPending = useMemo(() => {
+    if (!searchTerm.trim()) return pendingOrders;
+    const activeOrders = orders.filter(o => o.estado !== 'Anulado');
+    return activeOrders.filter(o => matchOrderSearch(o, searchTerm));
+  }, [pendingOrders, orders, searchTerm]);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPending.length / itemsPerPage));
+  const paginatedPending = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return filteredPending.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredPending, currentPage]);
+
+  const handlePageChange = (direction: number) => {
+    setCurrentPage(prev => {
+      const next = prev + direction;
+      if (next < 1 || next > totalPages) return prev;
+      return next;
+    });
+  };
+
   const handleModuleClick = (mod: ModuleDefinition) => {
-    if (mod.actionType === 'supabase') {
+    if (mod.actionType === 'tablero') {
+      setViewMode('tablero');
+    } else if (mod.actionType === 'supabase') {
       if (onOpenSupabaseModal) onOpenSupabaseModal();
       else if (onOpenBackupModal) onOpenBackupModal();
     } else if (mod.actionType === 'backup') {
@@ -267,49 +312,265 @@ export default function HomeModule({
     return [activeCategory];
   }, [activeCategory]);
 
+  // =========================================================================
+  // VISTA 1: TABLERO OPERATIVO (Activado cuando se hace clic en Inicio & Tablero)
+  // =========================================================================
+  if (viewMode === 'tablero') {
+    return (
+      <div className="space-y-6 animate-fade-in font-sans pb-12">
+        {/* Navigation bar to return to Hub */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-teal-500/20">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setViewMode('hub')}
+              className="bg-[#052d34] hover:bg-[#083e47] border border-teal-500/30 text-teal-300 px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold font-mono transition-all cursor-pointer shadow-md"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Volver al Menú Central</span>
+            </button>
+            <div className="space-y-0.5">
+              <h2 className="text-lg font-display font-extrabold text-white tracking-widest uppercase flex items-center gap-2 text-relief-title">
+                <Clock className="w-5 h-5 text-teal-300" /> Tablero de Control Operativo
+              </h2>
+              <p className="text-[11px] text-teal-200/70 font-mono">
+                SISTEMALOG SAS | Monitoreo en Tiempo Real
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 4 KPIs Top with 3D Relief and Azul Verdoso Styling */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* KPI 1 */}
+          <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-teal-400 flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                <FileText className="w-3.5 h-3.5 text-teal-300" /> Total Solicitudes
+              </span>
+              <div className="text-3xl font-display font-extrabold text-white text-relief-title">
+                {totalOrders}
+              </div>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-[#083a42] border border-teal-500/30 flex items-center justify-center text-teal-300 shadow-inner">
+              <FileText className="w-6 h-6" />
+            </div>
+          </div>
+
+          {/* KPI 2 */}
+          <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-emerald-400 flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-emerald-300" /> Clientes Activos
+              </span>
+              <div className="text-3xl font-display font-extrabold text-white text-relief-title">
+                {customersCount}
+              </div>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-[#083a42] border border-emerald-500/30 flex items-center justify-center text-emerald-300 shadow-inner">
+              <Users className="w-6 h-6" />
+            </div>
+          </div>
+
+          {/* KPI 3 */}
+          <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-amber-400 flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                <Truck className="w-3.5 h-3.5 text-amber-300" /> Despachados
+              </span>
+              <div className="text-3xl font-display font-extrabold text-white text-relief-title">
+                {dispatchedCount}
+              </div>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-[#083a42] border border-amber-500/30 flex items-center justify-center text-amber-300 shadow-inner">
+              <Truck className="w-6 h-6" />
+            </div>
+          </div>
+
+          {/* KPI 4 */}
+          <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-cyan-400 flex items-center justify-between">
+            <div className="space-y-1">
+              <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                <CheckCircle2 className="w-3.5 h-3.5 text-cyan-300" /> Entregas Exitosas
+              </span>
+              <div className="text-3xl font-display font-extrabold text-white text-relief-title">
+                {successDeliveries}
+              </div>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-[#083a42] border border-cyan-500/30 flex items-center justify-center text-cyan-300 shadow-inner">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+          </div>
+        </div>
+
+        {/* Recent Activity List matching exact screenshot image_614fdb8e.png */}
+        <div className="card-3d-teal rounded-2xl p-5 space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <h3 className="text-sm font-display font-bold text-white tracking-widest uppercase border-l-2 border-teal-400 pl-2 text-relief-card">
+                {searchTerm.trim() ? 'Resultados de Búsqueda (En Toda la Base de Datos)' : 'Actividad Reciente en cola (Pendientes & Cargue)'}
+              </h3>
+              <p className="text-[11px] text-teal-300/80 font-mono">
+                {searchTerm.trim() ? `${filteredPending.length} solicitudes encontradas` : `${filteredPending.length} solicitudes esperando despacho`}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-teal-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="BUSCAR PV, CÓDIGO, CLIENTE..."
+                  value={searchTerm}
+                  onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  className="bg-[#02181c] border border-teal-500/30 focus:border-teal-400 text-xs text-white rounded-lg px-8 py-1.5 outline-none w-64 transition-all font-mono"
+                />
+              </div>
+
+              {/* Pagination Controls */}
+              <div className="flex items-center gap-0.5 bg-[#02181c] border border-teal-500/30 p-0.5 rounded-lg font-mono">
+                <button
+                  onClick={() => handlePageChange(-1)}
+                  disabled={currentPage === 1}
+                  className="text-xs text-teal-300 disabled:text-slate-600 hover:bg-[#052d34] font-bold px-2 py-1 rounded transition-colors"
+                >
+                  ◀
+                </button>
+                <span className="text-[11px] text-teal-300 font-bold tracking-wider px-2">
+                  {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === totalPages}
+                  className="text-xs text-teal-300 disabled:text-slate-600 hover:bg-[#052d34] font-bold px-2 py-1 rounded transition-colors"
+                >
+                  ▶
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Dynamic Activity Cards Feed matching image_614fdb8e.png */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {paginatedPending.length === 0 ? (
+              <div className="col-span-2 text-center py-8 text-xs text-teal-300/60 font-mono">
+                -- No hay solicitudes pendientes registradas en este periodo --
+              </div>
+            ) : (
+              paginatedPending.map(order => (
+                <div 
+                  key={order.id}
+                  onClick={() => onOpenOrder(order)}
+                  className="bg-gradient-to-b from-[#052d34] to-[#02181c] hover:border-teal-400/60 border border-teal-500/30 rounded-xl p-4 cursor-pointer transition-all duration-200 group relative flex flex-col justify-between shadow-md hover:-translate-y-0.5"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-teal-300 font-mono font-bold tracking-wide">
+                        {order.id} <span className="text-slate-400">| PV: <span className="text-yellow-400 font-extrabold">{order.pv || 'N/A'}</span></span>
+                      </span>
+                      <span className="text-[9px] font-bold font-mono px-2 py-0.5 rounded border border-teal-400/50 bg-teal-500/10 text-teal-300 uppercase">
+                        {order.estado}
+                      </span>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <div className="text-xs font-bold text-white group-hover:text-teal-200 transition-colors truncate text-relief-card">
+                        {order.cliente}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-teal-200/70">
+                        <MapPin className="w-3 h-3 text-teal-400" />
+                        <span>{order.ciudad}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3.5 pt-2.5 border-t border-teal-500/20 flex items-center justify-between text-[10px]">
+                    <div className="flex items-center gap-3 font-mono text-teal-200/80">
+                      <span className="flex items-center gap-0.5">
+                        <Package className="w-3 h-3 text-teal-400" />
+                        <strong className="text-white">{order.cajas}</strong> cj
+                      </span>
+                      <span>
+                        ⚖️ <strong className="text-white">{order.peso.toLocaleString('es-CO')}</strong> kg
+                      </span>
+                      <span className="text-emerald-300 font-bold">
+                        ${(order.venta).toLocaleString('es-CO')}
+                      </span>
+                    </div>
+
+                    <span className="text-teal-300 group-hover:translate-x-1 transition-transform flex items-center gap-0.5 font-bold uppercase text-[9px] tracking-wider font-mono">
+                      Editar <ArrowRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Terminal Network Monitor */}
+        <div className="card-3d-teal rounded-2xl p-4 shadow-inner">
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-teal-500/20">
+            <TerminalIcon className="w-4 h-4 text-emerald-400 pulse-led" />
+            <span className="text-xs font-mono font-bold text-teal-200 uppercase tracking-widest">
+              Monitor de red y sincronización (Firebase Real-time)
+            </span>
+          </div>
+          <div className="font-mono text-xs text-emerald-400/90 leading-relaxed bg-[#011114]/90 p-3 rounded-xl border border-teal-900/50 max-h-36 overflow-y-auto">
+            {logs.map((log, idx) => (
+              <div key={idx}>{log}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================================
+  // VISTA 2: MENÚ CENTRAL (HUB) con diseño 3D Azul Verdoso tipo Synapsis ERP
+  // =========================================================================
   return (
     <div className="space-y-6 animate-fade-in font-sans pb-12">
       
-      {/* 1. Hero Banner matching exact production screenshot */}
-      <div className="bg-gradient-to-r from-slate-950 via-slate-900/90 to-slate-950 border border-sky-900/40 rounded-xl p-5 sm:p-6 shadow-2xl relative overflow-hidden flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-        <div className="space-y-2 max-w-2xl">
-          <div className="flex items-center gap-2 text-[11px] font-mono font-bold text-sky-400 uppercase tracking-widest">
-            <Sparkles className="w-3.5 h-3.5 text-sky-400" />
+      {/* 1. Hero Banner matching Synapsis ERP in image_52a4c99e.png */}
+      <div className="bg-gradient-to-r from-[#042429] via-[#02181c] to-[#042429] border border-teal-500/35 rounded-2xl p-6 sm:p-7 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.12)] relative overflow-hidden flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+        <div className="space-y-2.5 max-w-2xl">
+          <div className="flex items-center gap-2 text-[11px] font-mono font-extrabold text-teal-400 uppercase tracking-widest text-relief-card">
+            <Sparkles className="w-3.5 h-3.5 text-teal-300" />
             <span>Bienvenido a</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-white tracking-widest uppercase">
+          <h1 className="text-3xl sm:text-4xl font-display font-extrabold text-white tracking-widest uppercase text-relief-title">
             SISTEMALOG
           </h1>
-          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-sans">
+          <p className="text-xs sm:text-sm text-teal-100/80 leading-relaxed font-sans">
             Control total de tu negocio, en un solo lugar. Módulos de gestión organizados por categorías.
           </p>
         </div>
 
-        {/* Live Widget Badge */}
-        <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between w-full lg:w-72 h-32 shrink-0 shadow-inner font-mono">
+        {/* Live Widget Badge matching Synapsis Live in image_52a4c99e.png */}
+        <div className="bg-[#02161a]/95 border border-teal-500/30 rounded-2xl p-4 flex flex-col justify-between w-full lg:w-72 h-36 shrink-0 shadow-inner font-mono">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
             </div>
-            <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">
+            <span className="text-[10px] text-teal-200/80 uppercase font-bold tracking-wider">
               SISTEMALOG LIVE
             </span>
           </div>
 
-          {/* Animated visual bars */}
-          <div className="flex items-end gap-2.5 h-10 px-2">
-            <div className="w-1/5 bg-slate-800 rounded-t h-4"></div>
-            <div className="w-1/5 bg-cyan-500/80 rounded-t h-7"></div>
-            <div className="w-1/5 bg-blue-600 rounded-t h-10"></div>
-            <div className="w-1/5 bg-purple-500/80 rounded-t h-8"></div>
-            <div className="w-1/5 bg-emerald-400 rounded-t h-10 animate-pulse"></div>
+          {/* Animated visual bars with Azul Verdoso glow */}
+          <div className="flex items-end gap-2.5 h-12 px-2">
+            <div className="w-1/5 bg-[#052d34] rounded-t-md h-5"></div>
+            <div className="w-1/5 bg-teal-400/80 rounded-t-md h-8"></div>
+            <div className="w-1/5 bg-cyan-500 rounded-t-md h-12 shadow-[0_0_10px_rgba(0,240,181,0.5)]"></div>
+            <div className="w-1/5 bg-indigo-500/80 rounded-t-md h-9"></div>
+            <div className="w-1/5 bg-emerald-400 rounded-t-md h-12 animate-pulse shadow-[0_0_12px_rgba(0,223,192,0.6)]"></div>
           </div>
 
-          <div className="flex items-center justify-between text-[10px] pt-1 border-t border-slate-800/80">
-            <span className="text-slate-400 uppercase font-bold">Operación 2026</span>
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
+          <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-teal-900/40">
+            <span className="text-teal-200/70 uppercase font-bold">Operación 2026</span>
+            <span className="text-emerald-300 font-bold flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-led"></span> Sistema Activo
             </span>
           </div>
@@ -317,21 +578,21 @@ export default function HomeModule({
       </div>
 
       {/* 2. Privacy Mode Toggle Banner */}
-      <div className="bg-slate-950/70 border border-slate-800/90 rounded-lg p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+      <div className="bg-[#031d22]/80 border border-teal-500/30 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-md">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 rounded bg-sky-950/50 border border-sky-800/40 text-sky-400">
+          <div className="p-2 rounded-lg bg-[#052d34] border border-teal-500/30 text-teal-300">
             {isPrivateMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </div>
           <div className="space-y-0.5">
             <div className="flex items-center gap-2 font-bold text-white">
-              <span>Tarjetas Financieras Protegidas</span>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-extrabold uppercase ${
-                isPrivateMode ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+              <span className="text-relief-card">Tarjetas Financieras Protegidas</span>
+              <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-extrabold uppercase ${
+                isPrivateMode ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
               }`}>
                 {isPrivateMode ? 'MODO PRIVADO' : 'MODO VISIBLE'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-teal-200/70">
               {isPrivateMode ? '— Cifras confidenciales ocultas a terceros' : 'Métricas y valores monetarios visibles'}
             </p>
           </div>
@@ -339,7 +600,7 @@ export default function HomeModule({
 
         <button
           onClick={() => setIsPrivateMode(prev => !prev)}
-          className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold font-mono transition-all cursor-pointer shrink-0"
+          className="bg-[#00c9a7]/15 hover:bg-[#00c9a7]/25 text-[#00f0b5] border border-[#00c9a7]/40 px-4 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold font-mono transition-all cursor-pointer shrink-0 shadow-sm"
         >
           {isPrivateMode ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           <span>{isPrivateMode ? 'Revelar tarjetas de métricas' : 'Ocultar tarjetas de métricas'}</span>
@@ -351,71 +612,71 @@ export default function HomeModule({
         <div className="animate-fade-in space-y-2 pt-1 pb-1">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            <h3 className="text-xs font-mono font-extrabold text-slate-200 tracking-wider uppercase">
+            <h3 className="text-xs font-mono font-extrabold text-teal-200 tracking-wider uppercase text-relief-card">
               Métricas de Despacho & Flota
             </h3>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* KPI 1 */}
-            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-accent shadow-lg flex items-center justify-between">
+            <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-teal-400 flex items-center justify-between">
               <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                  <FileText className="w-3 h-3 text-hud-accent" /> Total Solicitudes
+                <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <FileText className="w-3.5 h-3.5 text-teal-300" /> Total Solicitudes
                 </span>
-                <div className="text-2xl font-display font-extrabold text-white">
+                <div className="text-2xl font-display font-extrabold text-white text-relief-title">
                   {totalOrders}
                 </div>
               </div>
-              <div className="bg-hud-accent/10 p-3 rounded-full">
-                <FileText className="w-6 h-6 text-hud-accent" />
+              <div className="w-11 h-11 rounded-xl bg-[#083a42] border border-teal-500/30 flex items-center justify-center text-teal-300">
+                <FileText className="w-5 h-5" />
               </div>
             </div>
 
             {/* KPI 2 */}
-            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-green shadow-lg flex items-center justify-between">
+            <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-emerald-400 flex items-center justify-between">
               <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                  <Users className="w-3 h-3 text-hud-green" /> Clientes Activos
+                <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-emerald-300" /> Clientes Activos
                 </span>
-                <div className="text-2xl font-display font-extrabold text-white">{customersCount}</div>
+                <div className="text-2xl font-display font-extrabold text-white text-relief-title">{customersCount}</div>
               </div>
-              <div className="bg-hud-green/10 p-3 rounded-full">
-                <Users className="w-6 h-6 text-hud-green" />
+              <div className="w-11 h-11 rounded-xl bg-[#083a42] border border-emerald-500/30 flex items-center justify-center text-emerald-300">
+                <Users className="w-5 h-5" />
               </div>
             </div>
 
             {/* KPI 3 */}
-            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-orange shadow-lg flex items-center justify-between">
+            <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-amber-400 flex items-center justify-between">
               <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                  <Truck className="w-3 h-3 text-hud-orange" /> Despachados
+                <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <Truck className="w-3.5 h-3.5 text-amber-300" /> Despachados
                 </span>
-                <div className="text-2xl font-display font-extrabold text-white">{dispatchedCount}</div>
+                <div className="text-2xl font-display font-extrabold text-white text-relief-title">{dispatchedCount}</div>
               </div>
-              <div className="bg-hud-orange/10 p-3 rounded-full">
-                <Truck className="w-6 h-6 text-hud-orange" />
+              <div className="w-11 h-11 rounded-xl bg-[#083a42] border border-amber-500/30 flex items-center justify-center text-amber-300">
+                <Truck className="w-5 h-5" />
               </div>
             </div>
 
             {/* KPI 4 */}
-            <div className="bg-hud-card border border-hud-border rounded-xl p-4 border-t-4 border-t-hud-green shadow-lg flex items-center justify-between">
+            <div className="card-3d-teal rounded-2xl p-4.5 border-t-4 border-t-cyan-400 flex items-center justify-between">
               <div className="space-y-1">
-                <span className="text-[10px] text-slate-400 font-mono tracking-wider uppercase flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-hud-green" /> Entregas Exitosas
+                <span className="text-[10px] text-teal-200/70 font-mono tracking-wider uppercase flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-cyan-300" /> Entregas Exitosas
                 </span>
-                <div className="text-2xl font-display font-extrabold text-white">{successDeliveries}</div>
+                <div className="text-2xl font-display font-extrabold text-white text-relief-title">{successDeliveries}</div>
               </div>
-              <div className="bg-hud-green/10 p-3 rounded-full">
-                <CheckCircle2 className="w-6 h-6 text-hud-green" />
+              <div className="w-11 h-11 rounded-xl bg-[#083a42] border border-cyan-500/30 flex items-center justify-center text-cyan-300">
+                <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 4. Category Filter Tabs Header */}
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+      {/* 4. Category Filter Tabs Header matching image_52a4c99e.png */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 border-b border-teal-500/20 pb-3">
         {/* Category Pills */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
           {categoriesList.map(cat => {
@@ -424,15 +685,15 @@ export default function HomeModule({
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                   isActive
-                    ? 'bg-sky-600 text-white shadow-lg shadow-sky-950 border border-sky-400'
-                    : 'bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                    ? 'bg-[#00c9a7] text-slate-950 shadow-[0_0_15px_rgba(0,201,167,0.45)] border border-[#00f0b5]'
+                    : 'bg-[#042429]/80 hover:bg-[#06333a] text-teal-100 border border-teal-500/30'
                 }`}
               >
                 <span>{cat.label}</span>
-                <span className={`px-1.5 py-0.2 rounded text-[10px] ${
-                  isActive ? 'bg-sky-900/60 text-white' : 'bg-slate-800 text-slate-400'
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  isActive ? 'bg-slate-950/20 text-slate-950 font-extrabold' : 'bg-slate-900/60 text-teal-300'
                 }`}>
                   ({cat.count})
                 </span>
@@ -445,26 +706,26 @@ export default function HomeModule({
         <div className="flex items-center gap-3 shrink-0 text-xs font-mono">
           <button
             onClick={() => setIsFolded(prev => !prev)}
-            className="text-slate-400 hover:text-white flex items-center gap-1 text-[11px] font-bold cursor-pointer"
+            className="text-teal-300 hover:text-white flex items-center gap-1 text-[11px] font-bold cursor-pointer"
           >
             {isFolded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
             <span>{isFolded ? 'Desplegar Todos' : 'Plegar Todos'}</span>
           </button>
 
-          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-[10px] font-bold">
-            <span className="text-slate-500 px-1 uppercase">Tamaño:</span>
+          <div className="flex items-center gap-1 bg-[#02181c] p-1 rounded-xl border border-teal-500/30 text-[10px] font-bold">
+            <span className="text-teal-400/60 px-1 uppercase">Tamaño:</span>
             <button
               onClick={() => setCardSize('mini')}
-              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                cardSize === 'mini' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              className={`px-2.5 py-0.5 rounded-lg transition-all cursor-pointer ${
+                cardSize === 'mini' ? 'bg-[#00c9a7] text-slate-950 font-extrabold' : 'text-teal-200 hover:text-white'
               }`}
             >
               Mini
             </button>
             <button
               onClick={() => setCardSize('mediana')}
-              className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
-                cardSize === 'mediana' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+              className={`px-2.5 py-0.5 rounded-lg transition-all cursor-pointer ${
+                cardSize === 'mediana' ? 'bg-[#00c9a7] text-slate-950 font-extrabold' : 'text-teal-200 hover:text-white'
               }`}
             >
               Mediana
@@ -473,7 +734,7 @@ export default function HomeModule({
         </div>
       </div>
 
-      {/* 5. Categorized Module Cards Feed */}
+      {/* 5. Categorized Module Cards Feed matching exact 4-columns layout in image_52a4c99e.png */}
       {!isFolded && (
         <div className="space-y-6">
           {displayedCategories.map(catKey => {
@@ -483,21 +744,24 @@ export default function HomeModule({
 
             return (
               <div key={catKey} className="space-y-3">
-                {/* Section Title */}
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
-                    <h3 className="text-xs font-mono font-extrabold text-slate-200 tracking-wider uppercase">
+                {/* Section Title with Badge exactly like image_52a4c99e.png */}
+                <div className="flex items-center justify-between border-b border-teal-500/20 pb-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2 h-2 rounded-full bg-[#00f0b5] shadow-[0_0_8px_rgba(0,240,181,0.8)]"></span>
+                    <h3 className="text-xs font-mono font-extrabold text-white tracking-wider uppercase text-relief-card">
                       {header.title}
                     </h3>
+                    <span className="text-[9px] font-mono font-extrabold bg-[#052d34] text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded-full">
+                      Categoría seleccionada
+                    </span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                  <span className="text-[10px] font-mono text-teal-300 bg-[#02181c] px-2.5 py-0.5 rounded-lg border border-teal-500/30">
                     {catModules.length} módulos ▾
                   </span>
                 </div>
 
-                {/* Grid of Cards */}
-                <div className={`grid gap-3.5 ${
+                {/* 4-Columns Grid with 3D Relief Cards exactly as in image_52a4c99e.png */}
+                <div className={`grid gap-4 ${
                   cardSize === 'mini'
                     ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
                     : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
@@ -508,18 +772,19 @@ export default function HomeModule({
                       <div
                         key={mod.id}
                         onClick={() => handleModuleClick(mod)}
-                        className={`bg-slate-950/70 hover:bg-slate-900 border border-slate-850 hover:border-sky-500/50 rounded-xl p-3.5 cursor-pointer transition-all duration-200 group flex items-start gap-3 relative shadow-md ${
-                          cardSize === 'mini' ? 'min-h-[78px]' : 'min-h-[96px]'
+                        className={`card-3d-teal rounded-2xl p-4 cursor-pointer transition-all duration-200 group flex items-start gap-3.5 relative ${
+                          cardSize === 'mini' ? 'min-h-[82px]' : 'min-h-[104px]'
                         }`}
                       >
-                        <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-sky-400 group-hover:bg-sky-500/10 group-hover:text-sky-300 group-hover:border-sky-500/30 transition-colors shrink-0">
-                          <IconComp className="w-4 h-4" />
+                        {/* Square Teal Icon Box matching image_52a4c99e.png */}
+                        <div className="w-11 h-11 rounded-xl bg-[#083a42] border border-teal-500/35 text-teal-300 group-hover:bg-[#0b4d57] group-hover:text-teal-200 group-hover:border-teal-400/60 transition-all flex items-center justify-center shrink-0 shadow-inner">
+                          <IconComp className="w-5 h-5" />
                         </div>
                         <div className="space-y-1 min-w-0 flex-1">
-                          <h4 className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors truncate">
+                          <h4 className="text-[13px] font-bold text-white group-hover:text-teal-200 transition-colors truncate text-relief-card">
                             {mod.name}
                           </h4>
-                          <p className="text-[10.5px] text-slate-400 line-clamp-2 leading-snug font-sans">
+                          <p className="text-[11px] text-teal-100/70 line-clamp-2 leading-snug font-sans">
                             {mod.description}
                           </p>
                         </div>
@@ -538,22 +803,22 @@ export default function HomeModule({
         {/* Badge 1: Ley 2466 */}
         <div 
           onClick={() => onNavigateTab && onNavigateTab('horas')}
-          className="bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-emerald-500/40 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition-all shadow-md group"
+          className="card-3d-teal rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all group"
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 group-hover:bg-emerald-500/20">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 flex items-center justify-center group-hover:bg-emerald-500/20">
               <Check className="w-4 h-4" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+              <h4 className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors text-relief-card">
                 Cumple con la Ley 2466
               </h4>
-              <p className="text-[10px] text-slate-400 font-sans">
+              <p className="text-[10px] text-teal-200/70 font-sans">
                 Franja 19:00 y Cortes 12/27 configurados
               </p>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold text-sky-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+          <span className="text-[10px] font-mono font-bold text-teal-300 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
             NÓMINA →
           </span>
         </div>
@@ -561,22 +826,22 @@ export default function HomeModule({
         {/* Badge 2: Operación en Crecimiento */}
         <div 
           onClick={() => onNavigateTab && onNavigateTab('orders')}
-          className="bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-sky-500/40 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition-all shadow-md group"
+          className="card-3d-teal rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all group"
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 group-hover:bg-sky-500/20">
+            <div className="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/25 flex items-center justify-center group-hover:bg-sky-500/20">
               <BarChart3 className="w-4 h-4" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors">
+              <h4 className="text-xs font-bold text-white group-hover:text-sky-300 transition-colors text-relief-card">
                 Operación en Crecimiento
               </h4>
-              <p className="text-[10px] text-slate-400 font-sans">
+              <p className="text-[10px] text-teal-200/70 font-sans">
                 {totalOrders} solicitudes centralizadas
               </p>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold text-sky-400 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+          <span className="text-[10px] font-mono font-bold text-teal-300 group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
             FLETES →
           </span>
         </div>
@@ -587,26 +852,26 @@ export default function HomeModule({
             if (onOpenSupabaseModal) onOpenSupabaseModal();
             else if (onOpenBackupModal) onOpenBackupModal();
           }}
-          className="bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-xl p-3.5 flex items-center justify-between cursor-pointer transition-all shadow-md group"
+          className="card-3d-teal rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all group"
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 group-hover:bg-cyan-500/20">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/25 flex items-center justify-center group-hover:bg-cyan-500/20">
               <Database className="w-4 h-4" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+              <h4 className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors text-relief-card">
                 Respaldo en la Nube
               </h4>
-              <p className="text-[10px] text-slate-400 font-sans">
+              <p className="text-[10px] text-teal-200/70 font-sans">
                 Sincronización segura continua
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded flex items-center gap-1">
+            <span className="text-[9px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-led"></span> En Línea
             </span>
-            <span className="text-[10px] font-mono font-bold text-slate-300 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded">
+            <span className="text-[10px] font-mono font-bold text-teal-200 bg-[#02181c] border border-teal-500/30 px-2.5 py-0.5 rounded-lg">
               Respaldos
             </span>
           </div>
@@ -614,14 +879,14 @@ export default function HomeModule({
       </div>
 
       {/* 7. Terminal Network Monitor matching image_9178baed.png */}
-      <div className="bg-hud-card border border-slate-800 rounded-xl p-4 shadow-inner">
-        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-slate-800/80">
-          <TerminalIcon className="w-4 h-4 text-hud-green pulse-led" />
-          <span className="text-xs font-mono font-bold text-slate-300 uppercase tracking-widest">
+      <div className="card-3d-teal rounded-2xl p-4 shadow-inner">
+        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-teal-500/20">
+          <TerminalIcon className="w-4 h-4 text-emerald-400 pulse-led" />
+          <span className="text-xs font-mono font-bold text-teal-200 uppercase tracking-widest">
             Monitor de red y sincronización (Firebase Real-time)
           </span>
         </div>
-        <div className="font-mono text-xs text-hud-green/90 leading-relaxed bg-[#02050c]/85 p-3 rounded-lg border border-slate-900/60 max-h-36 overflow-y-auto">
+        <div className="font-mono text-xs text-emerald-400/90 leading-relaxed bg-[#011114]/90 p-3 rounded-xl border border-teal-900/50 max-h-36 overflow-y-auto">
           {logs.map((log, idx) => (
             <div key={idx}>{log}</div>
           ))}
