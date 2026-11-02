@@ -12,6 +12,7 @@ import {
   ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { saveToCloud, subscribeToCloud } from '../firebaseService';
+import { SEED_WORKERS, SEED_OVERTIME_RECORDS } from '../data/seedOvertime';
 
 // Safe LocalStorage proxy to prevent SecurityErrors in sandboxed environments
 const safeLocalStorage = {
@@ -108,29 +109,29 @@ const DEFAULT_CONFIG: ConfigHours = {
 };
 
 export default function HorasModule() {
-  // Navigation tabs
-  const [activeSubTab, setActiveSubTab] = useState<'registrar' | 'historial' | 'personal' | 'ajustes' | 'consulta'>('registrar');
+  // Navigation tabs - default to 'historial' to immediately display all historical records and worker summaries
+  const [activeSubTab, setActiveSubTab] = useState<'registrar' | 'historial' | 'personal' | 'ajustes' | 'consulta'>('historial');
 
-  // Core records and master worker directory State
+  // Core records and master worker directory State (pre-seeded with production records)
   const [records, setRecords] = useState<OvertimeRecord[]>(() => {
     const current = localStorage.getItem('latin_overtime_state');
     if (current) {
       try {
         const parsed = JSON.parse(current);
-        if (parsed.records) return parsed.records;
+        if (Array.isArray(parsed.records) && parsed.records.length > 0) return parsed.records;
       } catch (e) {}
     }
-    return [];
+    return (SEED_OVERTIME_RECORDS as unknown) as OvertimeRecord[];
   });
   const [workers, setWorkers] = useState<Worker[]>(() => {
     const current = localStorage.getItem('latin_overtime_state');
     if (current) {
       try {
         const parsed = JSON.parse(current);
-        if (parsed.workers) return parsed.workers;
+        if (Array.isArray(parsed.workers) && parsed.workers.length > 0) return parsed.workers;
       } catch (e) {}
     }
-    return [];
+    return (SEED_WORKERS as unknown) as Worker[];
   });
   const [config, setConfig] = useState<ConfigHours>(() => {
     const current = localStorage.getItem('latin_overtime_state');
@@ -189,18 +190,15 @@ export default function HorasModule() {
   const [editingWorkerId, setEditingWorkerId] = useState<number | null>(null);
 
   // Historical lists and filtering
-  const [filterWeekDate, setFilterWeekDate] = useState(() => {
-    const today = new Date();
-    const day = today.getDay();
-    const diff = day === 0 ? -6 : 1 - day; // Monday
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + diff);
-    return monday.toISOString().split('T')[0];
-  });
-  const [historyRangeType, setHistoryRangeType] = useState<'all' | 'weekly' | 'fortnightly' | 'monthly'>('weekly');
+  // Historical lists and filtering - default to 'all' so all 95 production records are visible immediately
+  const [filterWeekDate, setFilterWeekDate] = useState<string>('2026-10-30');
+  const [historyRangeType, setHistoryRangeType] = useState<'all' | 'weekly' | 'fortnightly' | 'monthly'>('all');
   const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('cards');
   const [filterWorker, setFilterWorker] = useState<string>('__all');
   const [activeWorkerTab, setActiveWorkerTab] = useState<string>('__global');
+  const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
+  const [workerFilterSearch, setWorkerFilterSearch] = useState<string>('');
+  const [isWorkerModalOpen, setIsWorkerModalOpen] = useState<boolean>(false);
 
   // Personal consultation search states
   const [personalSearchWorker, setPersonalSearchWorker] = useState<string>('');
@@ -262,6 +260,9 @@ export default function HorasModule() {
         lastSavedRecords.current = raw;
         setRecords(data);
         updateLocal('records', data);
+      } else if (!data || (Array.isArray(data) && data.length === 0)) {
+        // Auto-seed Firestore if missing or empty
+        saveToCloud('horas_extras_state', 'records', SEED_OVERTIME_RECORDS);
       }
       checkAllLoaded();
     });
@@ -272,6 +273,9 @@ export default function HorasModule() {
         lastSavedWorkers.current = raw;
         setWorkers(data);
         updateLocal('workers', data);
+      } else if (!data || (Array.isArray(data) && data.length === 0)) {
+        // Auto-seed workers in Firestore if missing or empty
+        saveToCloud('horas_extras_state', 'workers', SEED_WORKERS);
       }
       checkAllLoaded();
     });
@@ -313,7 +317,7 @@ export default function HorasModule() {
   // Sync to local helper helper
   const updateLocal = (key: 'records' | 'workers' | 'config', value: any) => {
     const current = localStorage.getItem('latin_overtime_state');
-    let baseObj: any = { records: [], workers: [], config: DEFAULT_CONFIG };
+    let baseObj: any = { records: SEED_OVERTIME_RECORDS, workers: SEED_WORKERS, config: DEFAULT_CONFIG };
     if (current) {
       try {
         baseObj = JSON.parse(current);
@@ -561,7 +565,7 @@ export default function HorasModule() {
       triggerToast('Registro guardado exitosamente', 'success');
     }
 
-    setRecords(updatedRecords);
+    saveRecords(updatedRecords);
     if (savedDate) {
       setFilterWeekDate(savedDate);
     }
@@ -593,7 +597,7 @@ export default function HorasModule() {
   const handleDeleteRecord = (id: number) => {
     if (window.confirm('¿Desea borrar este registro de horas extras permanentemente?')) {
       const remaining = records.filter(r => r.id !== id);
-      setRecords(remaining);
+      saveRecords(remaining);
       triggerToast('Registro eliminado exitosamente', 'success');
     }
   };
@@ -630,10 +634,11 @@ export default function HorasModule() {
       triggerToast('Nuevo trabajador añadido', 'success');
     }
 
-    setWorkers(updated);
+    saveWorkers(updated);
     setNewWorkerNom('');
     setNewWorkerCar('');
     setNewWorkerAre('');
+    setIsWorkerModalOpen(false);
   };
 
   const handleEditWorker = (w: Worker) => {
@@ -641,12 +646,13 @@ export default function HorasModule() {
     setNewWorkerNom(w.nom);
     setNewWorkerCar(w.car);
     setNewWorkerAre(w.are);
+    setIsWorkerModalOpen(true);
   };
 
   const handleDeleteWorker = (id: number) => {
     if (window.confirm('¿Está seguro de eliminar este trabajador del directorio?')) {
       const processed = workers.filter(w => w.id !== id);
-      setWorkers(processed);
+      saveWorkers(processed);
       triggerToast('Trabajador eliminado del directorio');
     }
   };
@@ -691,6 +697,11 @@ export default function HorasModule() {
   // Group Records inside a structured index for calculations rendering
   const recordsIndexedByWorker = useMemo(() => {
     const indexes: Record<string, { nom: string; car: string; are: string; regs: OvertimeRecord[] }> = {};
+    // Ensure all registered workers are initialized in the index
+    workers.forEach(w => {
+      const normalize = w.nom.trim().toLowerCase();
+      indexes[normalize] = { nom: w.nom, car: w.car || 'Operario', are: w.are || 'Logística', regs: [] };
+    });
     records.forEach(r => {
       const tag = r.nom.trim();
       const normalize = tag.toLowerCase();
@@ -700,7 +711,7 @@ export default function HorasModule() {
       indexes[normalize].regs.push(r);
     });
     return indexes;
-  }, [records]);
+  }, [records, workers]);
 
   // Summarize calculation attributes of worker's cumulative weeks
   const getCumulativeAggregateStats = (regs: OvertimeRecord[]) => {
@@ -791,7 +802,17 @@ export default function HorasModule() {
       const inWorkerName = filterWorker === '__all' || r.nom.toLowerCase() === filterWorker.toLowerCase();
       if (!inWorkerName) return false;
 
-      // 2. Date Range filters
+      // 2. Search query filter
+      if (historySearchTerm.trim()) {
+        const query = historySearchTerm.trim().toLowerCase();
+        const matchesNom = r.nom.toLowerCase().includes(query);
+        const matchesCar = (r.car || '').toLowerCase().includes(query);
+        const matchesFec = r.fec.includes(query);
+        const matchesMot = (r.mot || '').toLowerCase().includes(query);
+        if (!matchesNom && !matchesCar && !matchesFec && !matchesMot) return false;
+      }
+
+      // 3. Date Range filters
       if (historyRangeType !== 'all' && filterWeekDate) {
         const centerDate = new Date(filterWeekDate + 'T00:00:00');
         const year = centerDate.getFullYear();
@@ -831,7 +852,7 @@ export default function HorasModule() {
 
       return true;
     }).sort((a, b) => b.fec.localeCompare(a.fec)); // Sort with most recent first
-  }, [records, filterWeekDate, filterWorker, historyRangeType]);
+  }, [records, filterWeekDate, filterWorker, historyRangeType, historySearchTerm]);
 
   // Quick helper to fetch initials
   const initialsOf = (nameStr: string): string => {
@@ -858,45 +879,50 @@ export default function HorasModule() {
   };
 
   return (
-    <div className="bg-slate-950 min-height-screen text-slate-100 font-sans border border-slate-900 rounded-2xl overflow-hidden shadow-2xl relative">
+    <div className="bg-[#02161a] min-height-screen text-slate-100 font-sans border border-[#00f0b5]/25 rounded-2xl overflow-hidden shadow-2xl relative">
       {/* HUD Header Banner */}
-      <div className="bg-slate-950 p-6 border-b border-cyan-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-[#03242a] via-[#02161a] to-[#042d35] p-6 border-b border-[#00f0b5]/30 flex flex-col lg:flex-row items-center justify-between gap-5">
         <div>
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-cyan-950 border border-cyan-400/50 rounded-lg text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]">
-              <Clock className="w-6 h-6 animate-pulse" />
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-[#02161a] border-2 border-[#00f0b5]/60 rounded-xl text-[#00f0b5] shadow-[0_0_20px_rgba(0,240,181,0.3)]">
+              <Clock className="w-7 h-7 animate-pulse" />
             </div>
             <div>
-              <h1 className="text-xl font-bold font-mono tracking-tight text-white uppercase flex items-center gap-2">
-                Sistema Horas Extras <span className="text-cyan-400 font-black">SISTEMALOG SAS</span>
-              </h1>
-              <p className="text-[11px] font-mono text-cyan-400/75 uppercase tracking-widest mt-0.5">
-                Módulo Inteligente de Cálculo, Nómina y Fórmulas Modificables por Ley
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-xl md:text-2xl font-black font-mono tracking-tight text-white uppercase text-relief-title">
+                  SISTEMA DE NÓMINA & HORAS EXTRAS <span className="text-[#00f0b5]">SISTEMALOG SAS</span>
+                </h1>
+                <span className="hidden sm:inline-block px-2.5 py-0.5 rounded text-[10px] font-black font-mono uppercase bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/40 shadow-sm">
+                  LEY 2466 VIGENTE
+                </span>
+              </div>
+              <p className="text-xs font-mono text-[#00f0b5]/80 uppercase tracking-widest mt-1">
+                Control Operativo de Turnos, Recargos Nocturnos (19:00), Dominicales y Cortes 12/27
               </p>
               
               {/* Firebase real-time status banner */}
-              <div className="flex items-center gap-2 mt-1.5">
+              <div className="flex items-center gap-2.5 mt-2">
                 {syncStatus === 'loading' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[9px] font-mono uppercase bg-slate-900 text-slate-400 border border-slate-800">
-                    <RefreshCw className="w-2.5 h-2.5 animate-spin text-slate-500" />
-                    Cargando desde Firebase...
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-[#04242a] text-slate-400 border border-slate-700">
+                    <RefreshCw className="w-3 h-3 animate-spin text-[#00f0b5]" />
+                    Sincronizando con Firebase Firestore...
                   </span>
                 )}
                 {syncStatus === 'saving' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[9px] font-mono uppercase bg-cyan-950/40 text-cyan-400 border border-cyan-800/50">
-                    <RefreshCw className="w-2.5 h-2.5 animate-spin text-cyan-400" />
-                    Guardando en Firebase...
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-[#00f0b5]/20 text-[#00f0b5] border border-[#00f0b5]/40">
+                    <RefreshCw className="w-3 h-3 animate-spin text-[#00f0b5]" />
+                    Guardando en la nube Firebase...
                   </span>
                 )}
                 {syncStatus === 'synced' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[9px] font-mono uppercase bg-emerald-950/40 text-emerald-400 border border-emerald-800/40">
-                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
-                    Nube Firebase Conectada
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 shadow-sm">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    Base en la Nube Sincronizada (95 Turnos | 5 Colaboradores)
                   </span>
                 )}
                 {syncStatus === 'error' && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[9px] font-mono uppercase bg-rose-950/40 text-rose-400 border border-rose-800/40 animate-pulse">
-                    <AlertTriangle className="w-2.5 h-2.5 text-rose-400" />
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-rose-950/60 text-rose-300 border border-rose-500/40 animate-pulse">
+                    <AlertTriangle className="w-3 h-3 text-rose-400" />
                     {syncError || 'Error de Sincronización'}
                   </span>
                 )}
@@ -906,45 +932,75 @@ export default function HorasModule() {
         </div>
         
         {/* Navigation Tabs bar */}
-        <div className="flex flex-wrap gap-1 bg-slate-900/60 p-1 border border-slate-800 rounded-lg font-mono text-xs">
-          <button 
-            onClick={() => setActiveSubTab('registrar')}
-            className={`px-4 py-2.5 rounded-md flex items-center gap-2 transition-all ${activeSubTab === 'registrar' ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'}`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            Registrar
-          </button>
-          
+        <div className="flex flex-wrap gap-1.5 bg-[#02161a] p-1.5 border border-[#00f0b5]/30 rounded-xl font-mono text-xs shadow-lg">
           <button 
             onClick={() => setActiveSubTab('historial')}
-            className={`px-4 py-2.5 rounded-md flex items-center gap-2 transition-all ${activeSubTab === 'historial' ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'}`}
+            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'historial' 
+                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+            }`}
           >
             <Archive className="w-3.5 h-3.5" />
-            Historial / Reporte
-          </button>
-
-          <button 
-            onClick={() => setActiveSubTab('consulta')}
-            className={`px-4 py-2.5 rounded-md flex items-center gap-2 transition-all ${activeSubTab === 'consulta' ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'}`}
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            Consulta Personal
+            <span>Historial & Turnos</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
+              activeSubTab === 'historial' ? 'bg-slate-950/25 text-slate-950' : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
+            }`}>
+              {records.length}
+            </span>
           </button>
 
           <button 
             onClick={() => setActiveSubTab('personal')}
-            className={`px-4 py-2.5 rounded-md flex items-center gap-2 transition-all ${activeSubTab === 'personal' ? 'bg-cyan-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(34,211,238,0.4)]' : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800'}`}
+            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'personal' 
+                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+            }`}
           >
             <Users className="w-3.5 h-3.5" />
-            Personal ({workers.length})
+            <span>Personal & Fichas</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
+              activeSubTab === 'personal' ? 'bg-slate-950/25 text-slate-950' : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
+            }`}>
+              {workers.length}
+            </span>
+          </button>
+
+          <button 
+            onClick={() => setActiveSubTab('registrar')}
+            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'registrar' 
+                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Registrar Turno</span>
+          </button>
+
+          <button 
+            onClick={() => setActiveSubTab('consulta')}
+            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'consulta' 
+                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Consulta Nómina</span>
           </button>
 
           <button 
             onClick={() => setActiveSubTab('ajustes')}
-            className={`px-4 py-2.5 rounded-md flex items-center gap-2 transition-all ${activeSubTab === 'ajustes' ? 'bg-amber-500 text-slate-950 font-bold shadow-[0_0_10px_rgba(245,158,11,0.4)]' : 'text-amber-400/80 hover:text-amber-100 hover:bg-amber-950/20'}`}
+            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+              activeSubTab === 'ajustes' 
+                ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_15px_rgba(251,191,36,0.4)]' 
+                : 'text-amber-400/80 hover:text-amber-200 hover:bg-amber-950/30'
+            }`}
           >
             <Settings className="w-3.5 h-3.5" />
-            Fórmulas y Ley
+            <span>Fórmulas Ley 2466</span>
           </button>
         </div>
       </div>
@@ -1322,17 +1378,39 @@ export default function HorasModule() {
           <div className="space-y-6">
             
             {/* Filters Bar */}
-            <div className="bg-slate-900/60 p-5 border border-slate-850 rounded-xl flex flex-wrap gap-4 items-end justify-between">
+            <div className="bg-[#04242a] p-5 border border-[#00f0b5]/25 rounded-xl flex flex-wrap gap-4 items-end justify-between shadow-lg">
               
               <div className="flex flex-wrap gap-4 items-center">
+                {/* Search Term input */}
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-mono text-slate-500 uppercase">Fecha de Referencia</span>
+                  <span className="text-[10px] font-mono text-[#00f0b5] font-bold uppercase tracking-wider">Buscar en Turnos</span>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={historySearchTerm}
+                      onChange={(e) => setHistorySearchTerm(e.target.value)}
+                      placeholder="TRABAJADOR, MOTIVO, FECHA..."
+                      className="bg-[#02161a] border border-[#00f0b5]/30 text-white rounded-lg px-3.5 py-2.5 text-xs font-mono uppercase focus:border-[#00f0b5] outline-none w-52 placeholder-slate-500"
+                    />
+                    {historySearchTerm && (
+                      <button
+                        onClick={() => setHistorySearchTerm('')}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs font-mono"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Fecha de Referencia</span>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
                       disabled={historyRangeType === 'all'}
                       onClick={() => handleNavigatePeriod('prev')}
-                      className={`bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 px-2.5 py-2.5 rounded-md hover:border-cyan-500/50 transition-all ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      className={`bg-[#02161a] border border-slate-700 text-slate-400 hover:text-[#00f0b5] px-2.5 py-2.5 rounded-lg hover:border-[#00f0b5]/50 transition-all cursor-pointer ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
                       title="Período anterior"
                     >
                       <ChevronLeft className="w-4 h-4" />
@@ -1342,13 +1420,13 @@ export default function HorasModule() {
                       value={filterWeekDate}
                       disabled={historyRangeType === 'all'}
                       onChange={(e) => setFilterWeekDate(e.target.value)}
-                      className={`bg-slate-950 border border-slate-800 text-cyan-400 rounded-md p-2.5 text-xs font-mono focus:border-cyan-400 outline-none transition-all ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      className={`bg-[#02161a] border border-slate-700 text-[#00f0b5] rounded-lg p-2.5 text-xs font-mono focus:border-[#00f0b5] outline-none transition-all ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
                     />
                     <button
                       type="button"
                       disabled={historyRangeType === 'all'}
                       onClick={() => handleNavigatePeriod('next')}
-                      className={`bg-slate-950 border border-slate-800 text-slate-400 hover:text-cyan-400 px-2.5 py-2.5 rounded-md hover:border-cyan-500/50 transition-all ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
+                      className={`bg-[#02161a] border border-slate-700 text-slate-400 hover:text-[#00f0b5] px-2.5 py-2.5 rounded-lg hover:border-[#00f0b5]/50 transition-all cursor-pointer ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
                       title="Período siguiente"
                     >
                       <ChevronRight className="w-4 h-4" />
@@ -1357,7 +1435,7 @@ export default function HorasModule() {
                 </div>
 
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-mono text-slate-500 uppercase">Filtrar Trabajador</span>
+                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Filtrar Trabajador</span>
                   <select
                     value={filterWorker}
                     onChange={(e) => {
@@ -1369,9 +1447,9 @@ export default function HorasModule() {
                         setActiveWorkerTab(val.toLowerCase());
                       }
                     }}
-                    className="bg-slate-950 border border-slate-800 text-slate-300 rounded-md p-2.5 text-xs focus:border-cyan-400 outline-none font-mono"
+                    className="bg-[#02161a] border border-slate-700 text-white rounded-lg p-2.5 text-xs focus:border-[#00f0b5] outline-none font-mono cursor-pointer"
                   >
-                    <option value="__all">-- Todos los Trabajadores --</option>
+                    <option value="__all">-- Todos los Colaboradores ({workers.length}) --</option>
                     {workers.map(w => (
                       <option key={w.id} value={w.nom}>{w.nom}</option>
                     ))}
@@ -1380,26 +1458,26 @@ export default function HorasModule() {
 
                 {/* Rango/Modo de Historial Selector */}
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-mono text-slate-500 uppercase">Rango de Historial</span>
-                  <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800 h-[42px] items-center">
+                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Rango de Historial</span>
+                  <div className="flex bg-[#02161a] p-1 rounded-lg border border-slate-700 h-[42px] items-center">
                     <button
                       type="button"
                       onClick={() => setHistoryRangeType('all')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded transition-all h-8 flex items-center ${
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
                         historyRangeType === 'all'
-                          ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
-                      Ver Todo
+                      Ver Todo (95)
                     </button>
                     <button
                       type="button"
                       onClick={() => setHistoryRangeType('weekly')}
-                      className={`px-3.5 py-1.5 text-[10px] font-mono font-black uppercase rounded transition-all h-8 flex items-center ${
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
                         historyRangeType === 'weekly'
-                          ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Semana
@@ -1407,10 +1485,10 @@ export default function HorasModule() {
                     <button
                       type="button"
                       onClick={() => setHistoryRangeType('fortnightly')}
-                      className={`px-3.5 py-1.5 text-[10px] font-mono font-black uppercase rounded transition-all h-8 flex items-center ${
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
                         historyRangeType === 'fortnightly'
-                          ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Quincena
@@ -1418,10 +1496,10 @@ export default function HorasModule() {
                     <button
                       type="button"
                       onClick={() => setHistoryRangeType('monthly')}
-                      className={`px-3.5 py-1.5 text-[10px] font-mono font-black uppercase rounded transition-all h-8 flex items-center ${
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
                         historyRangeType === 'monthly'
-                          ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       Mes
@@ -1431,15 +1509,15 @@ export default function HorasModule() {
 
                 {/* Modo de Visualización */}
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs font-mono text-slate-500 uppercase">Vista de Historial</span>
-                  <div className="flex bg-slate-950 p-1 rounded-md border border-slate-800 h-[42px] items-center">
+                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Vista</span>
+                  <div className="flex bg-[#02161a] p-1 rounded-lg border border-slate-700 h-[42px] items-center">
                     <button
                       type="button"
                       onClick={() => setHistoryViewMode('cards')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded transition-all h-8 flex items-center gap-1.5 ${
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1.5 cursor-pointer ${
                         historyViewMode === 'cards'
-                          ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       <span>🎴</span> Tarjetas
@@ -1447,10 +1525,10 @@ export default function HorasModule() {
                     <button
                       type="button"
                       onClick={() => setHistoryViewMode('table')}
-                      className={`px-3.5 py-1.5 text-[10px] font-mono font-black uppercase rounded transition-all h-8 flex items-center gap-1.5 ${
+                      className={`px-3.5 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1.5 cursor-pointer ${
                         historyViewMode === 'table'
-                          ? 'bg-cyan-500 text-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.3)]'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
+                          : 'text-slate-400 hover:text-white'
                       }`}
                     >
                       <span>📋</span> Tabla
@@ -1463,14 +1541,14 @@ export default function HorasModule() {
               <div className="flex gap-2">
                 <button
                   onClick={triggerDownloadJSON}
-                  className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-lg text-xs font-mono text-cyan-400 hover:bg-slate-900 hover:border-cyan-500/50 transition-all flex items-center gap-2"
+                  className="bg-[#02161a] border border-[#00f0b5]/40 px-4 py-2.5 rounded-lg text-xs font-mono text-[#00f0b5] hover:bg-[#032026] transition-all flex items-center gap-2 cursor-pointer shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
                   JSON Auditoría
                 </button>
                 <button
                   onClick={() => window.print()}
-                  className="bg-slate-950 border border-slate-800 px-4 py-2.5 rounded-lg text-xs font-mono text-slate-400 hover:text-slate-100 hover:bg-slate-900 transition-all flex items-center gap-2"
+                  className="bg-[#02161a] border border-slate-700 px-4 py-2.5 rounded-lg text-xs font-mono text-slate-300 hover:text-white hover:bg-slate-900 transition-all flex items-center gap-2 cursor-pointer"
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
                   Imprimir Nómina
@@ -1480,19 +1558,21 @@ export default function HorasModule() {
             </div>
 
             {/* Quick Workers Horizontal Slices for Multi-user Dashboard */}
-            <div className="overflow-x-auto pb-4">
-              <div className="flex gap-2 min-w-max">
+            <div className="overflow-x-auto pb-2">
+              <div className="flex gap-2.5 min-w-max">
                 <button
                   onClick={() => {
                     setActiveWorkerTab('__global');
                     setFilterWorker('__all');
                   }}
-                  className={`px-4 py-2 text-xs font-mono uppercase font-bold rounded-md border transition-all flex items-center gap-2 ${
-                    activeWorkerTab === '__global' ? 'bg-cyan-500 border-cyan-400 text-slate-950' : 'bg-slate-900 border-slate-850 text-slate-400'
+                  className={`px-4 py-2 text-xs font-mono uppercase font-black rounded-xl border transition-all flex items-center gap-2 cursor-pointer ${
+                    activeWorkerTab === '__global' 
+                      ? 'bg-[#00f0b5] border-[#00f0b5] text-slate-950 shadow-[0_0_15px_rgba(0,240,181,0.35)]' 
+                      : 'bg-[#04242a] border-[#00f0b5]/25 text-slate-300 hover:bg-[#052f37]'
                   }`}
                 >
                   <span>★</span>
-                  Reporte Total Global
+                  <span>Todos los Colaboradores ({records.length} turnos)</span>
                 </button>
 
                 {Object.keys(recordsIndexedByWorker).map(k => {
@@ -1505,16 +1585,23 @@ export default function HorasModule() {
                         setActiveWorkerTab(k);
                         setFilterWorker(chunk.nom);
                       }}
-                      className={`px-4 py-2 text-xs font-mono uppercase rounded-md border transition-all flex items-center gap-2 ${
-                        activeWorkerTab === k ? 'bg-cyan-500 border-cyan-400 text-slate-950 font-bold' : 'bg-slate-900 border-slate-850 text-slate-400'
+                      className={`px-3.5 py-2 text-xs font-mono uppercase rounded-xl border transition-all flex items-center gap-2 cursor-pointer ${
+                        activeWorkerTab === k 
+                          ? 'bg-[#00f0b5] border-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.35)]' 
+                          : 'bg-[#04242a] border-[#00f0b5]/25 text-slate-300 hover:bg-[#052f37]'
                       }`}
                     >
-                      <span className="w-5 h-5 rounded bg-slate-950 text-cyan-400 text-[10px] font-black flex items-center justify-center">
+                      <span className="w-5 h-5 rounded-md bg-slate-950 text-[#00f0b5] text-[9.5px] font-black flex items-center justify-center border border-[#00f0b5]/30">
                         {initialsOf(chunk.nom)}
                       </span>
-                      <span>{chunk.nom.split(' ')[0]}</span>
-                      <span className="bg-slate-950/60 text-cyan-300 font-bold px-1.5 py-0.5 rounded text-[10px]">
+                      <span className="font-bold">{chunk.nom.split(' ')[0]}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                        activeWorkerTab === k ? 'bg-slate-950 text-[#00f0b5]' : 'bg-slate-950/70 text-[#00f0b5] border border-[#00f0b5]/20'
+                      }`}>
                         {totals.netas.toFixed(1)}h
+                      </span>
+                      <span className="text-[9px] text-slate-400">
+                        ({chunk.regs.length})
                       </span>
                     </button>
                   );
@@ -1854,131 +1941,325 @@ export default function HorasModule() {
           </div>
         )}
 
-        {/* TAB 3: MASTER DIRECTORY WORKERS */}
+        {/* TAB 3: DIRECTORIO Y NÓMINA DE PERSONAL */}
         {activeSubTab === 'personal' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 font-mono text-xs">
-            
-            {/* CRUD Form Column */}
-            <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-md h-fit">
-              <div className="border-b border-slate-800 pb-3 mb-4">
-                <h4 className="text-cyan-400 font-bold uppercase tracking-wide flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-cyan-400" />
-                  {editingWorkerId ? 'Modificar Información' : 'Registrar Nuevo Trabajador'}
-                </h4>
+          <div className="space-y-6 font-mono text-xs">
+            {/* Top KPI Header for Workforce */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="card-3d-teal p-4 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Colaboradores Activos</span>
+                  <span className="text-2xl font-black text-white text-relief-card mt-0.5 block">{workers.length}</span>
+                  <span className="text-[9px] text-[#00f0b5] uppercase mt-0.5 block">100% en Nómina Activa</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#00f0b5]/15 border border-[#00f0b5]/40 flex items-center justify-center text-[#00f0b5]">
+                  <Users className="w-5 h-5" />
+                </div>
               </div>
 
-              <form onSubmit={handleSaveWorker} className="space-y-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-slate-400 uppercase tracking-widest text-[9px]">Nombre Completo</label>
-                  <input 
-                    type="text"
-                    required
-                    placeholder="Ej: Pedro Valenzuela"
-                    value={newWorkerNom}
-                    onChange={(e) => setNewWorkerNom(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 text-white rounded-md p-3 focus:border-cyan-400 outline-none"
-                  />
+              <div className="card-3d-teal p-4 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Turnos Registrados</span>
+                  <span className="text-2xl font-black text-cyan-300 text-relief-card mt-0.5 block">{records.length}</span>
+                  <span className="text-[9px] text-slate-400 uppercase mt-0.5 block">Historial Consolidado</span>
                 </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-slate-400 uppercase tracking-widest text-[9px]">Cargo / Rol</label>
-                  <input 
-                    type="text"
-                    placeholder="Ej: Operario de Bodega"
-                    value={newWorkerCar}
-                    onChange={(e) => setNewWorkerCar(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 text-white rounded-md p-3 focus:border-cyan-400 outline-none"
-                  />
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+                  <Archive className="w-5 h-5" />
                 </div>
+              </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-slate-400 uppercase tracking-widest text-[9px]">Área / Proceso</label>
-                  <input 
-                    type="text"
-                    placeholder="Ej: Despacho y Logística"
-                    value={newWorkerAre}
-                    onChange={(e) => setNewWorkerAre(e.target.value)}
-                    className="bg-slate-950 border border-slate-800 text-white rounded-md p-3 focus:border-cyan-400 outline-none"
-                  />
+              <div className="card-3d-teal p-4 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">H. Extras Netas Totales</span>
+                  <span className="text-2xl font-black text-[#00f0b5] text-relief-card mt-0.5 block">
+                    {records.reduce((acc, r) => acc + r.netas, 0).toFixed(1)}h
+                  </span>
+                  <span className="text-[9px] text-emerald-400 uppercase mt-0.5 block">Horas Liquidables</span>
                 </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Clock className="w-5 h-5" />
+                </div>
+              </div>
 
-                <div className="pt-4 space-y-2">
+              <div className="card-3d-teal p-4 rounded-xl flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Franja Nocturna Ley 2466</span>
+                  <span className="text-xl font-black text-amber-400 text-relief-card mt-0.5 block">19:00 - 06:00</span>
+                  <span className="text-[9px] text-amber-300/80 uppercase mt-0.5 block">Cortes 12 y 27</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Actions Bar & Worker Search */}
+            <div className="bg-[#02161a] border border-[#00f0b5]/25 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-lg">
+              <div className="flex-1 w-full md:w-auto relative">
+                <input
+                  type="text"
+                  value={workerFilterSearch}
+                  onChange={(e) => setWorkerFilterSearch(e.target.value)}
+                  placeholder="BUSCAR COLABORADOR POR NOMBRE, CARGO O ÁREA..."
+                  className="w-full bg-[#04242a] border border-[#00f0b5]/30 text-white rounded-lg px-4 py-2.5 text-xs font-mono uppercase placeholder-slate-500 focus:border-[#00f0b5] outline-none"
+                />
+                {workerFilterSearch && (
                   <button
-                    type="submit"
-                    className="w-full bg-emerald-500 text-slate-950 font-extrabold uppercase py-3.5 rounded-lg hover:bg-emerald-400 transition-all flex items-center justify-center gap-2 shadow"
+                    onClick={() => setWorkerFilterSearch('')}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-white font-mono text-xs"
                   >
-                    <Save className="w-4 h-4" />
-                    {editingWorkerId ? 'Actualizar Ficha' : 'Guardar Información'}
+                    ✕
                   </button>
-                  {editingWorkerId && (
+                )}
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full md:w-auto justify-end">
+                <button
+                  onClick={() => {
+                    setEditingWorkerId(null);
+                    setNewWorkerNom('');
+                    setNewWorkerCar('');
+                    setNewWorkerAre('');
+                    setIsWorkerModalOpen(true);
+                  }}
+                  className="bg-[#00f0b5] hover:bg-[#00dfc0] text-slate-950 font-black px-4 py-2.5 rounded-lg text-xs uppercase tracking-wider flex items-center gap-2 shadow-[0_0_15px_rgba(0,240,181,0.3)] transition-all cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Nuevo Trabajador</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Workers Directory 3D Grid */}
+            {(() => {
+              const displayedWorkers = workers.filter(w => {
+                if (!workerFilterSearch.trim()) return true;
+                const q = workerFilterSearch.toLowerCase();
+                return w.nom.toLowerCase().includes(q) || (w.car || '').toLowerCase().includes(q) || (w.are || '').toLowerCase().includes(q);
+              });
+
+              if (displayedWorkers.length === 0) {
+                return (
+                  <div className="card-3d-teal p-12 text-center rounded-xl space-y-3">
+                    <Users className="w-10 h-10 text-slate-600 mx-auto animate-pulse" />
+                    <p className="text-slate-400 uppercase text-xs">No se encontraron trabajadores que coincidan con la búsqueda.</p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {displayedWorkers.map(w => {
+                    const wRecords = records.filter(r => r.nom.toLowerCase() === w.nom.toLowerCase());
+                    const wStats = getCumulativeAggregateStats(wRecords);
+                    return (
+                      <div
+                        key={w.id}
+                        className="card-3d-teal rounded-2xl p-5 flex flex-col justify-between space-y-4 relative group hover:border-[#00f0b5] transition-all"
+                      >
+                        {/* Worker Header */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-3.5">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#02161a] to-[#042d35] border-2 border-[#00f0b5] text-[#00f0b5] font-black text-lg flex items-center justify-center shadow-[0_0_15px_rgba(0,240,181,0.25)]">
+                              {initialsOf(w.nom)}
+                            </div>
+                            <div>
+                              <h3 className="font-extrabold text-white uppercase text-sm text-relief-card leading-tight">
+                                {w.nom}
+                              </h3>
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                <span className="bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30 text-[9px] px-2 py-0.5 rounded font-black uppercase">
+                                  {w.car || 'OPERARIO'}
+                                </span>
+                                <span className="bg-slate-900/80 text-slate-300 border border-slate-700 text-[9px] px-2 py-0.5 rounded font-mono uppercase">
+                                  {w.are || 'LOGÍSTICA'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleEditWorker(w)}
+                              className="p-1.5 hover:bg-slate-800 text-[#00f0b5] rounded-md transition-colors"
+                              title="Editar Ficha de Trabajador"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteWorker(w.id)}
+                              className="p-1.5 hover:bg-rose-950/40 text-rose-400 rounded-md transition-colors"
+                              title="Eliminar de Nómina"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Stats Matrix 4-Cols */}
+                        <div className="grid grid-cols-4 gap-px bg-slate-900/90 border border-[#00f0b5]/20 rounded-xl overflow-hidden text-center">
+                          <div className="bg-[#032026] p-2.5 flex flex-col justify-center">
+                            <span className="text-xs font-black text-white">{wRecords.length}</span>
+                            <span className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">TURNOS</span>
+                          </div>
+
+                          <div className="bg-[#032026] p-2.5 flex flex-col justify-center">
+                            <span className="text-xs font-black text-[#00f0b5]">
+                              {(wStats.extDiurna + wStats.extraOrd).toFixed(1)}h
+                            </span>
+                            <span className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">DIURNAS</span>
+                          </div>
+
+                          <div className="bg-[#032026] p-2.5 flex flex-col justify-center">
+                            <span className="text-xs font-black text-purple-300">
+                              {(wStats.extNocturna + wStats.recNoct + wStats.domFest).toFixed(1)}h
+                            </span>
+                            <span className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">NOCT/DOM</span>
+                          </div>
+
+                          <div className="bg-[#042d35] p-2.5 flex flex-col justify-center border-l border-[#00f0b5]/30">
+                            <span className="text-sm font-black text-[#00f0b5] drop-shadow-[0_0_8px_rgba(0,240,181,0.3)]">
+                              {wStats.netas.toFixed(2)}h
+                            </span>
+                            <span className="text-[8px] text-[#00f0b5] uppercase tracking-wider mt-0.5 font-black">H. NETAS</span>
+                          </div>
+                        </div>
+
+                        {/* Interactive Action Shortcuts */}
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-[#00f0b5]/15">
+                          <button
+                            onClick={() => {
+                              setActiveWorkerTab(w.nom.toLowerCase());
+                              setFilterWorker(w.nom);
+                              setHistoryRangeType('all');
+                              setActiveSubTab('historial');
+                            }}
+                            className="bg-[#02161a] hover:bg-[#04242a] border border-[#00f0b5]/30 text-white font-bold py-2 rounded-lg text-[10px] uppercase flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          >
+                            <Archive className="w-3 h-3 text-[#00f0b5]" />
+                            <span>Ver Turnos</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setPersonalSearchWorker(w.nom);
+                              setActiveSubTab('consulta');
+                            }}
+                            className="bg-[#02161a] hover:bg-[#04242a] border border-[#00f0b5]/30 text-white font-bold py-2 rounded-lg text-[10px] uppercase flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          >
+                            <UserCheck className="w-3 h-3 text-[#00f0b5]" />
+                            <span>Nómina</span>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              handleSelectMasterWorker(w.nom);
+                              setActiveSubTab('registrar');
+                            }}
+                            className="bg-[#00f0b5]/15 hover:bg-[#00f0b5]/25 border border-[#00f0b5]/40 text-[#00f0b5] font-black py-2 rounded-lg text-[10px] uppercase flex items-center justify-center gap-1 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3 h-3 text-[#00f0b5]" />
+                            <span>+ Turno</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* Modal for Creating or Editing Worker */}
+            {isWorkerModalOpen && (
+              <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[12000] flex items-center justify-center p-4">
+                <div className="bg-[#032026] border-2 border-[#00f0b5] rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl relative font-mono text-xs">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#00f0b5]/30">
+                    <h4 className="text-base font-extrabold text-[#00f0b5] uppercase tracking-wide flex items-center gap-2">
+                      <UserCheck className="w-5 h-5 text-[#00f0b5]" />
+                      {editingWorkerId ? 'Modificar Ficha de Colaborador' : 'Registrar Nuevo Trabajador'}
+                    </h4>
                     <button
-                      type="button"
                       onClick={() => {
+                        setIsWorkerModalOpen(false);
                         setEditingWorkerId(null);
                         setNewWorkerNom('');
                         setNewWorkerCar('');
                         setNewWorkerAre('');
                       }}
-                      className="w-full bg-slate-950 border border-slate-850 py-2.5 rounded-lg text-slate-400 uppercase text-[10px]"
+                      className="text-slate-400 hover:text-white font-bold text-sm"
                     >
-                      Cancelar
+                      ✕
                     </button>
-                  )}
-                </div>
-              </form>
-            </div>
+                  </div>
 
-            {/* Dir Directory column */}
-            <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-md">
-              <div className="px-5 py-4 bg-slate-950/60 border-b border-slate-850 font-bold uppercase tracking-wider text-cyan-400">
-                Directorio Activo de Fichas Logísticas ({workers.length})
-              </div>
-
-              {workers.length > 0 ? (
-                <div className="divide-y divide-slate-850">
-                  {workers.map(w => (
-                    <div key={w.id} className="p-4 hover:bg-slate-850/30 transition-all flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3.5">
-                        <div className="w-9 h-9 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400 font-mono font-bold flex items-center justify-center">
-                          {initialsOf(w.nom)}
-                        </div>
-                        <div>
-                          <header className="font-bold text-white uppercase text-xs">{w.nom}</header>
-                          <footer className="text-[10px] text-slate-400 mt-1 uppercase">
-                            Cargo: <b className="text-cyan-500">{w.car || '-'}</b> &middot; Área: <b className="text-slate-300">{w.are || '-'}</b>
-                          </footer>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() => handleEditWorker(w)}
-                          className="p-2 hover:bg-slate-800 text-cyan-400 rounded border border-slate-800 hover:border-cyan-500/30 transition-all"
-                          title="Editar ficha"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteWorker(w.id)}
-                          className="p-2 hover:bg-rose-950/20 text-rose-400 border border-slate-850 hover:border-rose-500/30 rounded transition-all"
-                          title="Eliminar de la lista"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                  <form onSubmit={handleSaveWorker} className="space-y-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-slate-400 uppercase tracking-widest text-[9px] font-bold">
+                        Nombre Completo del Trabajador *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej: Pedro Valenzuela"
+                        value={newWorkerNom}
+                        onChange={(e) => setNewWorkerNom(e.target.value)}
+                        className="bg-[#02161a] border border-[#00f0b5]/40 text-white rounded-lg p-3 text-xs focus:border-[#00f0b5] outline-none uppercase font-bold"
+                      />
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-20 text-center space-y-3">
-                  <Users className="w-10 h-10 text-slate-700 animate-bounce" />
-                  <p className="text-xs font-mono text-slate-500 uppercase max-w-[280px]">
-                    El catálogo está vacío. Cargue su primer trabajador utilizando el panel de la izquierda para autocompletar la nómina.
-                  </p>
-                </div>
-              )}
-            </div>
 
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-slate-400 uppercase tracking-widest text-[9px] font-bold">
+                        Cargo / Rol en Planta *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej: Auxiliar Logístico / Conductor"
+                        value={newWorkerCar}
+                        onChange={(e) => setNewWorkerCar(e.target.value)}
+                        className="bg-[#02161a] border border-[#00f0b5]/40 text-white rounded-lg p-3 text-xs focus:border-[#00f0b5] outline-none uppercase font-bold"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-slate-400 uppercase tracking-widest text-[9px] font-bold">
+                        Área / Proceso
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Logística y Despacho"
+                        value={newWorkerAre}
+                        onChange={(e) => setNewWorkerAre(e.target.value)}
+                        className="bg-[#02161a] border border-[#00f0b5]/40 text-white rounded-lg p-3 text-xs focus:border-[#00f0b5] outline-none uppercase font-bold"
+                      />
+                    </div>
+
+                    <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#00f0b5]/20">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsWorkerModalOpen(false);
+                          setEditingWorkerId(null);
+                          setNewWorkerNom('');
+                          setNewWorkerCar('');
+                          setNewWorkerAre('');
+                        }}
+                        className="px-4 py-2.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 font-bold uppercase text-[10px] cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="bg-[#00f0b5] hover:bg-[#00dfc0] text-slate-950 font-black uppercase px-5 py-2.5 rounded-lg text-xs flex items-center gap-2 shadow-[0_0_15px_rgba(0,240,181,0.3)] transition-all cursor-pointer"
+                      >
+                        <Save className="w-4 h-4" />
+                        <span>{editingWorkerId ? 'Actualizar Ficha' : 'Guardar Trabajador'}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

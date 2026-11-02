@@ -246,6 +246,7 @@ const getNextCarrierId = (existingCarriers: Carrier[]): string => {
     candidate = `CARR-${formattedNum}-${extraCounter}`;
     extraCounter++;
   }
+  return candidate;
 };
 
 const getTabTitle = (tab: string): string => {
