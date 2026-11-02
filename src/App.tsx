@@ -12,7 +12,8 @@ import {
   LayoutGrid, List, Database, ArrowLeft
 } from 'lucide-react';
 
-import { Order, Carrier, Customer, Novedad, Reminder } from './types';
+import { Order, Carrier, Customer, Novedad, Reminder, AppUser } from './types';
+import { USERS_ROSTER, findUserByEmail, canUserAccessTab } from './data/usersRoster';
 import { matchOrderSearch, normalizeText, sortOrdersBySearchRelevance, deduplicateOrders } from './utils/searchHelper';
 import { SEED_CARRIERS, SEED_CUSTOMERS, SEED_ORDERS, SEED_NOVEDADES, SEED_REMINDERS } from './data/seed';
 import * as XLSX from 'xlsx';
@@ -31,6 +32,7 @@ import LiquidadorModule from './components/LiquidadorModule';
 import CitasModule from './components/CitasModule';
 import HorasModule from './components/HorasModule';
 import PedidosModule from './components/PedidosModule';
+import UsuariosModule from './components/UsuariosModule';
 import SyncQueueMonitorModal from './components/SyncQueueMonitorModal';
 import SupabaseMigrationModal from './components/SupabaseMigrationModal';
 import { 
@@ -269,6 +271,7 @@ const getTabTitle = (tab: string): string => {
     case 'seguimiento': return 'Monitoreo y Seguimiento Satelital';
     case 'mapas': return 'Control GPS & Mapas Pro';
     case 'dialogo': return 'Monitor de Novedades';
+    case 'usuarios': return 'Gestión de Usuarios & Sellos de Autoría';
     default: return 'Módulo Operativo';
   }
 };
@@ -316,6 +319,17 @@ export default function App() {
     window.location.search.includes('seccion=pedidos') ||
     window.location.search.includes('seccion=empleados')
   );
+
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
+    const raw = safeLocalStorage.getItem('erp_active_user');
+    if (raw) {
+      try {
+        return JSON.parse(raw);
+      } catch (e) {}
+    }
+    const isAuth = safeLocalStorage.getItem('erp_authenticated') === 'true';
+    return isAuth ? USERS_ROSTER[0] : null;
+  });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return safeLocalStorage.getItem('erp_authenticated') === 'true';
@@ -861,30 +875,53 @@ export default function App() {
     saveToCloud('app_state', 'reminders', updated);
   };
 
-  // Auth Submit Action
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanEmail = loginEmail.trim().toLowerCase();
-    const authorized = [
-      'soporteyabi@gmail.com',
-      'auxiliarlogistico@sistemalog.com.co',
-      'logistica@sistemalog.com.co',
-      'auxiliarlogistico@latinproducts.com.co',
-      'logistica@latinproducts.com.co'
-    ];
+  // Auth Submit Action supporting direct selection or form submit
+  const handleLoginSubmit = (e?: React.FormEvent, directUser?: AppUser) => {
+    if (e) e.preventDefault();
+    const cleanEmail = (directUser ? directUser.email : loginEmail).trim().toLowerCase();
     
-    if (authorized.includes(cleanEmail) || cleanEmail.endsWith('@sistemalog.com.co') || cleanEmail.endsWith('@latinproducts.com.co') || (cleanEmail.includes('@') && cleanEmail.includes('.'))) {
+    const matched = findUserByEmail(cleanEmail);
+    if (matched) {
+      setCurrentUser(matched);
       setIsAuthenticated(true);
       safeLocalStorage.setItem('erp_authenticated', 'true');
+      safeLocalStorage.setItem('erp_active_user', JSON.stringify(matched));
+      setAuthError('');
+    } else if (cleanEmail.endsWith('@latinproducts.com.co') || cleanEmail.endsWith('@sistemalog.com.co')) {
+      const fallbackUser: AppUser = {
+        id: `user_${Date.now()}`,
+        email: cleanEmail,
+        nombre: cleanEmail.split('@')[0].toUpperCase(),
+        rol: 'LOGISTICA',
+        cargo: 'Operador Logístico',
+        avatar: cleanEmail.substring(0, 2).toUpperCase(),
+        color: '#00c9a7',
+        departamento: 'Operaciones',
+        modulosPermitidos: ['inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado', 'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers', 'carriers', 'pedidos', 'pedidoEmpleados', 'novedades'],
+        permisos: {
+          puedeCrearOrdenes: true,
+          puedeEditarFletes: false,
+          puedeVerFinanzas: false,
+          puedeGestionarNomina: false,
+          puedeGestionarUsuarios: false,
+          puedeExportarDatos: true,
+        }
+      };
+      setCurrentUser(fallbackUser);
+      setIsAuthenticated(true);
+      safeLocalStorage.setItem('erp_authenticated', 'true');
+      safeLocalStorage.setItem('erp_active_user', JSON.stringify(fallbackUser));
       setAuthError('');
     } else {
-      setAuthError('🔑 Identificación de usuario no autorizada para el portal ejecutivo.');
+      setAuthError('🔑 Identificación no autorizada. Use una de las cuentas oficiales de SISTEMALOG.');
     }
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
+    setCurrentUser(null);
     safeLocalStorage.removeItem('erp_authenticated');
+    safeLocalStorage.removeItem('erp_active_user');
   };
 
   // Helper to calculate flete based on carrier configuration or legacy rules
@@ -972,6 +1009,9 @@ export default function App() {
     const filled = fillBillingDefaults(newOrder);
     const cleanPv = filled.pv ? filled.pv.trim().toLowerCase() : '';
     const cleanFact = filled.factura ? filled.factura.trim().toLowerCase() : '';
+    const authorStamp = currentUser 
+      ? `${currentUser.nombre} (${currentUser.email})` 
+      : 'Washington Quiñones (soporteyabi@gmail.com)';
 
     // Search existing order by ID, PV or Factura (ignoring Anulados)
     const idx = orders.findIndex(o => 
@@ -985,7 +1025,9 @@ export default function App() {
       const merged = {
         ...updated[idx],
         ...filled,
-        id: updated[idx].id // Preserve ID
+        id: updated[idx].id, // Preserve ID
+        modificadoPor: authorStamp,
+        modificadoEn: new Date().toISOString()
       };
       updated[idx] = merged;
       saveOrders(updated);
@@ -1002,7 +1044,7 @@ export default function App() {
 
       setPSuccessToast({
         title: "ORDEN ACTUALIZADA SIN DUPLICAR",
-        message: `La orden ${updated[idx].id} (PV: ${filled.pv || updated[idx].pv}) ya existía y fue actualizada con los nuevos datos.`
+        message: `La orden ${updated[idx].id} (PV: ${filled.pv || updated[idx].pv}) fue actualizada con sello de ${authorStamp}.`
       });
       setTimeout(() => setPSuccessToast(null), 5000);
       if (editingOrder && (editingOrder.id === merged.id || editingOrder.pv === merged.pv)) {
@@ -1011,33 +1053,41 @@ export default function App() {
       }
       return merged;
     }
-    const updated = [filled, ...orders];
+    const orderWithStamp: Order = {
+      ...filled,
+      creadoPor: filled.creadoPor || authorStamp,
+      creadoEn: filled.creadoEn || new Date().toISOString(),
+    };
+    const updated = [orderWithStamp, ...orders];
     saveOrders(updated);
 
     // Enqueue Sync Event for new order
     enqueueSyncEvent({
-      idempotencyKey: `ORDER_SYNC_${filled.id}_${filled.estado}`,
+      idempotencyKey: `ORDER_SYNC_${orderWithStamp.id}_${orderWithStamp.estado}`,
       eventType: 'ORDER_STATUS_CHANGED',
       sourceModule: 'Despacho',
       targetModule: 'Todos',
-      recordId: filled.id,
-      payload: filled
+      recordId: orderWithStamp.id,
+      payload: orderWithStamp
     });
 
     setPSuccessToast({
       title: "ORDEN CREADA CON ÉXITO",
-      message: `La nueva orden ${filled.id} (PV: ${filled.pv || 'S/N'}) para ${filled.cliente} ha sido guardada en el sistema.`
+      message: `La nueva orden ${orderWithStamp.id} (PV: ${orderWithStamp.pv || 'S/N'}) para ${orderWithStamp.cliente} ha sido registrada por ${authorStamp}.`
     });
     setTimeout(() => setPSuccessToast(null), 5000);
-    if (editingOrder && (editingOrder.id === filled.id || editingOrder.pv === filled.pv)) {
+    if (editingOrder && (editingOrder.id === orderWithStamp.id || editingOrder.pv === orderWithStamp.pv)) {
       setEditingOrder(null);
       setIsOrderFormOpen(false);
     }
-    return filled;
+    return orderWithStamp;
   };
 
   const handleAddOrders = (newOrders: Order[]) => {
     const filled = newOrders.map(fillBillingDefaults);
+    const authorStamp = currentUser 
+      ? `${currentUser.nombre} (${currentUser.email})` 
+      : 'Washington Quiñones (soporteyabi@gmail.com)';
     
     // Lookups for existing orders by ID, clean PV, and clean Factura
     const existingById: Record<string, Order> = {};
@@ -1087,18 +1137,25 @@ export default function App() {
             fechaFactura: newO.fechaFactura || currentOrders[targetIdx].fechaFactura,
             fechaSalida: newO.fechaSalida || currentOrders[targetIdx].fechaSalida,
             estado: newO.fechaFactura ? "Despachado" : currentOrders[targetIdx].estado,
+            modificadoPor: authorStamp,
+            modificadoEn: new Date().toISOString(),
           };
           currentOrders[targetIdx] = merged;
           updatedCount++;
         }
       } else {
-        // Create new record
-        currentOrders.unshift(newO);
+        // Create new record with stamp
+        const stampedNew: Order = {
+          ...newO,
+          creadoPor: newO.creadoPor || authorStamp,
+          creadoEn: newO.creadoEn || new Date().toISOString()
+        };
+        currentOrders.unshift(stampedNew);
         addedCount++;
         // Update lookup maps for intra-batch duplicate prevention
-        if (newO.id) existingById[newO.id] = newO;
-        if (cleanPv) existingByPv[cleanPv] = newO;
-        if (cleanFactura) existingByFactura[cleanFactura] = newO;
+        if (stampedNew.id) existingById[stampedNew.id] = stampedNew;
+        if (cleanPv) existingByPv[cleanPv] = stampedNew;
+        if (cleanFactura) existingByFactura[cleanFactura] = stampedNew;
       }
     });
 
@@ -1121,21 +1178,30 @@ export default function App() {
 
     setPSuccessToast({
       title: "PROCESADO Y DEPURADO SIN DUPLICADOS",
-      message: `Se agregaron ${addedCount} órdenes nuevas, se actualizaron ${updatedCount} existentes y se unificaron ${removedCount} duplicados.`
+      message: `Se agregaron ${addedCount} órdenes nuevas, se actualizaron ${updatedCount} existentes con firma de ${authorStamp}.`
     });
     setTimeout(() => setPSuccessToast(null), 5000);
   };
 
   const handleUpdateOrder = (updatedOrder: Order) => {
     const filled = fillBillingDefaults(updatedOrder);
-    const matchFn = (o: Order) => o.id === filled.id;
+    const authorStamp = currentUser 
+      ? `${currentUser.nombre} (${currentUser.email})` 
+      : 'Washington Quiñones (soporteyabi@gmail.com)';
+    const stampedOrder: Order = {
+      ...filled,
+      modificadoPor: authorStamp,
+      modificadoEn: new Date().toISOString()
+    };
+
+    const matchFn = (o: Order) => o.id === stampedOrder.id;
 
     const exists = orders.some(matchFn);
     let updated: Order[];
     if (exists) {
-      updated = orders.map(o => matchFn(o) ? { ...o, ...filled, id: o.id } : o);
+      updated = orders.map(o => matchFn(o) ? { ...o, ...stampedOrder, id: o.id } : o);
     } else {
-      updated = [filled, ...orders];
+      updated = [stampedOrder, ...orders];
     }
     saveOrders(updated);
 
@@ -3202,60 +3268,141 @@ export default function App() {
   return (
     <div className="min-h-screen bg-hud-bg text-slate-100 flex overflow-hidden">
       
-      {/* ⚠️ Auth Gateway Portal Overlay */}
+      {/* ⚠️ Auth Gateway Portal Overlay with User Roster Selection */}
       {!isAuthenticated && !isEmployeeMode ? (
-        <div className="fixed inset-0 bg-hud-bg/95 flex items-center justify-center p-4 z-[99999]">
-          <div className="bg-hud-card border-2 border-hud-accent rounded-2xl w-full max-w-md p-8 shadow-2xl relative overflow-hidden">
+        <div className="fixed inset-0 bg-hud-bg/95 backdrop-blur-md flex items-center justify-center p-4 z-[99999] overflow-y-auto">
+          <div className="bg-hud-card border-2 border-hud-accent/60 rounded-3xl w-full max-w-xl p-7 sm:p-8 shadow-2xl relative overflow-hidden my-auto">
             
             {/* Hologram aesthetic lines */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-hud-accent/5 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute top-0 right-0 w-48 h-48 bg-hud-accent/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#00f0b5]/10 rounded-full blur-3xl pointer-events-none"></div>
 
-            <div className="text-center space-y-4 mb-8">
-              <div className="inline-block bg-hud-accent/10 p-3 rounded-full border border-hud-accent/35">
-                <Lock className="w-8 h-8 text-hud-accent pulse-led" />
+            <div className="text-center space-y-3 mb-6 relative z-10">
+              <div className="inline-flex items-center justify-center bg-gradient-to-br from-[#00f0b5]/20 to-[#04242a] p-3 rounded-2xl border border-[#00f0b5]/40 shadow-lg">
+                <ShieldCheck className="w-8 h-8 text-[#00f0b5] pulse-led" />
               </div>
               <div className="space-y-1">
-                <h2 className="text-lg font-display font-extrabold text-white tracking-widest uppercase">CONTROL DE ACCESO SEGURO</h2>
-                <p className="text-[10px] text-hud-accent font-mono tracking-widest uppercase">SISTEMALOG S.A.S. | DIVISIÓN LOGÍSTICA</p>
+                <h2 className="text-xl font-display font-black text-white tracking-widest uppercase text-relief-title">
+                  CONTROL DE ACCESO SEGURO
+                </h2>
+                <p className="text-[11px] text-[#00f0b5] font-mono tracking-widest uppercase font-bold">
+                  SISTEMALOG S.A.S. | DIVISIÓN LOGÍSTICA
+                </p>
+                <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-[9.5px] font-mono text-slate-400 mt-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span>Estructura de Base de Datos: Supabase + Render</span>
+                </div>
               </div>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="space-y-5 text-xs font-mono">
-              <div className="space-y-2">
-                <label className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider">Identificador de Usuario</label>
+            {/* Quick 1-Click User Profile Selector */}
+            <div className="space-y-2.5 mb-6 relative z-10">
+              <label className="text-[10px] text-slate-400 font-bold font-mono uppercase tracking-wider block">
+                Selecciona tu Cuenta de Usuario:
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {USERS_ROSTER.map(u => {
+                  const isSelected = loginEmail.trim().toLowerCase() === u.email.toLowerCase();
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => {
+                        setLoginEmail(u.email);
+                        setAuthError('');
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 relative ${
+                        isSelected 
+                          ? 'bg-gradient-to-r from-[#04242a] to-[#02181c] border-[#00f0b5] shadow-[0_0_15px_rgba(0,240,181,0.25)]' 
+                          : 'bg-slate-950/70 hover:bg-slate-900 border-slate-800/90'
+                      }`}
+                    >
+                      <div 
+                        className="w-9 h-9 rounded-lg flex items-center justify-center font-mono font-black text-xs shrink-0 border"
+                        style={{
+                          backgroundColor: `${u.color}20`,
+                          borderColor: `${u.color}60`,
+                          color: u.color
+                        }}
+                      >
+                        {u.avatar}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-xs font-bold text-white truncate">{u.nombre}</span>
+                          {u.rol === 'SUPER_ADMIN' && (
+                            <span className="text-[8px] font-mono font-black text-[#00f0b5] bg-[#00f0b5]/15 px-1 rounded uppercase">
+                              ADMIN
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-teal-300/80 truncate font-sans">{u.cargo}</div>
+                        <div className="text-[9px] text-slate-500 font-mono truncate">{u.email}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Form submission */}
+            <form onSubmit={handleLoginSubmit} className="space-y-4 text-xs font-mono relative z-10">
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider">
+                  Correo Electrónico
+                </label>
                 <input 
                   type="email" 
                   required
                   value={loginEmail}
                   onChange={e => setLoginEmail(e.target.value)}
-                  className="bg-slate-950 border border-hud-accent/25 focus:border-hud-accent/80 text-white rounded-lg p-3 w-full outline-none uppercase font-bold text-[11px] tracking-wide"
+                  placeholder="usuario@latinproducts.com.co"
+                  className="bg-slate-950 border border-slate-800 focus:border-[#00f0b5] text-white rounded-xl p-3 w-full outline-none font-bold text-[11px] tracking-wide transition-colors"
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider font-mono">Clave de Acceso Encriptada</label>
+              <div className="space-y-1.5">
+                <label className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider">
+                  Clave de Acceso Corporativa
+                </label>
                 <input 
                   type="password" 
-                  required
                   value={loginPass}
                   onChange={e => setLoginPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="bg-slate-950 border border-hud-accent/25 focus:border-hud-accent/80 text-white rounded-lg p-3 w-full outline-none"
+                  placeholder="•••••••• (Presione entrar para continuar)"
+                  className="bg-slate-950 border border-slate-800 focus:border-[#00f0b5] text-white rounded-xl p-3 w-full outline-none transition-colors"
                 />
               </div>
 
               {authError && (
-                <p className="text-rose-500 font-bold text-[10px] bg-rose-500/10 p-2.5 rounded border border-rose-500/25">
+                <p className="text-rose-400 font-bold text-[10px] bg-rose-500/10 p-3 rounded-xl border border-rose-500/30">
                   {authError}
                 </p>
               )}
 
-              <button 
-                type="submit"
-                className="bg-hud-accent text-slate-950 w-full py-3.5 rounded-xl font-display font-black tracking-widest text-xs uppercase cursor-pointer hover:bg-hud-accent/80 transition-all flex items-center justify-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4" /> Autenticar Sesión Segura
-              </button>
+              <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
+                <button 
+                  type="submit"
+                  className="flex-1 bg-[#00c9a7] hover:bg-[#00f0b5] text-slate-950 py-3.5 rounded-xl font-display font-black tracking-widest text-xs uppercase cursor-pointer transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,201,167,0.35)]"
+                >
+                  <ShieldCheck className="w-4 h-4" /> Ingresar a Sesión
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const matched = findUserByEmail(loginEmail);
+                    if (matched) handleLoginSubmit(undefined, matched);
+                    else handleLoginSubmit();
+                  }}
+                  className="px-4 py-3.5 rounded-xl border border-[#00f0b5]/40 hover:bg-[#00f0b5]/15 text-[#00f0b5] font-bold text-xs uppercase font-mono cursor-pointer transition-all"
+                  title="Acceso directo con el usuario seleccionado"
+                >
+                  Entrada Rápida ➔
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -3541,15 +3688,67 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono font-bold">
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-950/80 border border-hud-accent/30 text-[10px] font-mono">
-              <span className="text-slate-400 font-bold uppercase">Propietario:</span>
-              <span className="text-hud-accent font-bold">soporteyabi@gmail.com</span>
+            {/* Active User Badge & Cargo */}
+            <div 
+              onClick={() => {
+                if (currentUser?.rol === 'SUPER_ADMIN') {
+                  setActiveTab('usuarios');
+                }
+              }}
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-[#00f0b5]/50 transition-all cursor-pointer group"
+              title={currentUser?.rol === 'SUPER_ADMIN' ? 'Abrir Módulo de Gestión de Usuarios y Auditoría' : `Perfil: ${currentUser?.nombre}`}
+            >
+              <div 
+                className="w-7 h-7 rounded-lg flex items-center justify-center font-mono font-black text-[10px] border shrink-0"
+                style={{
+                  backgroundColor: `${currentUser?.color || '#00f0b5'}20`,
+                  borderColor: `${currentUser?.color || '#00f0b5'}60`,
+                  color: currentUser?.color || '#00f0b5'
+                }}
+              >
+                {currentUser?.avatar || 'WQ'}
+              </div>
+              <div className="hidden lg:flex flex-col text-left">
+                <div className="text-white text-[11px] font-bold flex items-center gap-1.5 leading-none">
+                  <span className="truncate max-w-[140px]">{currentUser?.nombre || 'Washington Quiñones'}</span>
+                  <span 
+                    className="text-[8px] px-1.5 py-0.2 rounded font-mono font-black uppercase"
+                    style={{
+                      backgroundColor: `${currentUser?.color || '#00f0b5'}20`,
+                      color: currentUser?.color || '#00f0b5'
+                    }}
+                  >
+                    {currentUser?.rol === 'SUPER_ADMIN' ? 'PROPIETARIO' : currentUser?.rol}
+                  </span>
+                </div>
+                <span className="text-[9px] text-slate-400 font-sans truncate max-w-[160px] leading-tight">
+                  {currentUser?.cargo || 'Administrador Principal'}
+                </span>
+              </div>
             </div>
+
+            {/* Quick Button for Usuarios Module if Super Admin */}
+            {currentUser?.rol === 'SUPER_ADMIN' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('usuarios')}
+                className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] uppercase font-bold cursor-pointer transition-all ${
+                  activeTab === 'usuarios'
+                    ? 'bg-[#00f0b5] text-slate-950 border-[#00f0b5]'
+                    : 'bg-[#00f0b5]/10 border-[#00f0b5]/30 text-[#00f0b5] hover:bg-[#00f0b5]/20'
+                }`}
+                title="Gestión de Cuentas de Usuario y Auditoría de Ingresos"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>USUARIOS</span>
+              </button>
+            )}
+
             <button 
               type="button"
               onClick={handleLogout}
               className="border border-rose-500/30 text-rose-400 hover:bg-rose-500/15 hover:border-rose-500/50 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors text-[10px] font-mono font-bold uppercase tracking-wider shrink-0"
-              title="Cerrar Sesión de Administrador"
+              title="Cerrar Sesión Activa"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden xl:inline">Cerrar Sesión</span>
@@ -3710,6 +3909,7 @@ export default function App() {
               orders={orders} 
               onOpenOrder={handleOpenOrderForm}
               customersCount={customers.length}
+              currentUser={currentUser}
               onNavigateTab={(tab) => {
                 if (tab === 'home' || tab === 'inicio') setActiveTab('inicio');
                 else if (tab === 'orders') setActiveTab('facturacion');
@@ -3731,6 +3931,7 @@ export default function App() {
                 else if (tab === 'dashboard') setActiveTab('dashboard');
                 else if (tab === 'seguimiento') setActiveTab('seguimiento');
                 else if (tab === 'novedades') setActiveTab('dialogo');
+                else if (tab === 'usuarios') setActiveTab('usuarios');
                 else setActiveTab(tab);
               }}
               onOpenBackupModal={() => setIsBackupModalOpen(true)}
@@ -4842,11 +5043,48 @@ export default function App() {
           ) : null}
 
           {activeTab === 'horasExtras' ? (
-            <HorasModule />
+            <HorasModule currentUser={currentUser} />
           ) : null}
 
           {activeTab === 'pedidoEmpleados' ? (
             <PedidosModule />
+          ) : null}
+
+          {activeTab === 'usuarios' ? (
+            <UsuariosModule 
+              currentUser={currentUser}
+              orders={orders}
+              onSwitchUser={(user) => {
+                setCurrentUser(user);
+                safeLocalStorage.setItem('erp_active_user', JSON.stringify(user));
+              }}
+              onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+            />
+          ) : null}
+
+          {/* RBAC Restricted Access Shield Screen */}
+          {currentUser && !canUserAccessTab(currentUser, activeTab) && activeTab !== 'inicio' ? (
+            <div className="card-3d-teal rounded-2xl p-8 max-w-xl mx-auto my-12 text-center space-y-4 shadow-2xl">
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center">
+                <ShieldAlert className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-black text-white">Módulo Restringido</h3>
+                <p className="text-xs text-slate-300">
+                  Tu perfil actual (<strong className="text-[#00f0b5]">{currentUser.nombre}</strong> — {currentUser.cargo}) no tiene autorización para acceder a este módulo.
+                </p>
+                <p className="text-[11px] text-slate-500 font-mono">
+                  Si requieres acceso a esta sección, contacta a Washington Quiñones (soporteyabi@gmail.com).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('inicio')}
+                className="px-5 py-2.5 rounded-xl bg-[#00c9a7] text-slate-950 font-black text-xs uppercase cursor-pointer hover:bg-[#00f0b5] transition-all shadow-md"
+              >
+                Volver al Menú Central
+              </button>
+            </div>
           ) : null}
 
         </main>

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { saveToCloud, subscribeToCloud } from '../firebaseService';
 import { SEED_WORKERS, SEED_OVERTIME_RECORDS } from '../data/seedOvertime';
+import { AppUser } from '../types';
 
 // Safe LocalStorage proxy to prevent SecurityErrors in sandboxed environments
 const safeLocalStorage = {
@@ -69,6 +70,10 @@ interface OvertimeRecord {
   domFest: number;
   netas: number;
   timestamp: number;
+  creadoPor?: string;
+  creadoEn?: string;
+  modificadoPor?: string;
+  modificadoEn?: string;
 }
 
 interface Worker {
@@ -108,7 +113,7 @@ const DEFAULT_CONFIG: ConfigHours = {
   domFestMultiplier: 1.75,
 };
 
-export default function HorasModule() {
+export default function HorasModule({ currentUser }: { currentUser?: AppUser | null } = {}) {
   // Navigation tabs - default to 'historial' to immediately display all historical records and worker summaries
   const [activeSubTab, setActiveSubTab] = useState<'registrar' | 'historial' | 'personal' | 'ajustes' | 'consulta'>('historial');
 
@@ -542,6 +547,10 @@ export default function HorasModule() {
     let updatedRecords = [...records];
     const savedDate = computedPreview.fec;
 
+    const authorStamp = currentUser 
+      ? `${currentUser.nombre} (${currentUser.email})` 
+      : 'Washington Quiñones (soporteyabi@gmail.com)';
+
     if (editingRecordId !== null) {
       // Modify existing
       const idx = updatedRecords.findIndex(r => r.id === editingRecordId);
@@ -550,6 +559,8 @@ export default function HorasModule() {
           ...(computedPreview as OvertimeRecord),
           id: editingRecordId,
           timestamp: Date.now(),
+          modificadoPor: authorStamp,
+          modificadoEn: new Date().toISOString(),
         };
       }
       triggerToast('Registro actualizado exitosamente', 'success');
@@ -560,9 +571,11 @@ export default function HorasModule() {
         ...(computedPreview as OvertimeRecord),
         id: newId,
         timestamp: Date.now(),
+        creadoPor: authorStamp,
+        creadoEn: new Date().toISOString(),
       };
       updatedRecords.push(finalRec);
-      triggerToast('Registro guardado exitosamente', 'success');
+      triggerToast('Registro guardado exitosamente con sello de autor', 'success');
     }
 
     saveRecords(updatedRecords);

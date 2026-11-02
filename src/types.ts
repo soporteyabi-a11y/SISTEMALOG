@@ -33,6 +33,10 @@ export interface Order {
   anuladoMotivo?: string;
   isSplit?: boolean;
   direccion?: string;
+  creadoPor?: string;
+  creadoEn?: string;
+  modificadoPor?: string;
+  modificadoEn?: string;
 }
 
 export interface Carrier {
@@ -48,6 +52,8 @@ export interface Carrier {
   tipoCalculo?: 'fijo' | 'formula';
   porcentajeValor?: number;
   costoCaja?: number;
+  creadoPor?: string;
+  creadoEn?: string;
 }
 
 export interface Customer {
@@ -64,6 +70,8 @@ export interface Customer {
   cita: 'SI' | 'NO';
   zona: string;
   obs: string;
+  creadoPor?: string;
+  creadoEn?: string;
 }
 
 export interface Novedad {
@@ -77,6 +85,8 @@ export interface Novedad {
   responsable: string;
   estado: 'Abierta' | 'En Proceso' | 'Cerrada';
   fecha: string;
+  creadoPor?: string;
+  creadoEn?: string;
 }
 
 export interface Reminder {
@@ -86,4 +96,28 @@ export interface Reminder {
   fecha: string;
   prioridad: 'Alta' | 'Media' | 'Baja';
   completado: boolean;
+  creadoPor?: string;
+  creadoEn?: string;
+}
+
+export type UserRole = 'SUPER_ADMIN' | 'AUXILIAR_LOGISTICO' | 'SST_TALENTO' | 'LOGISTICA';
+
+export interface AppUser {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: UserRole;
+  cargo: string;
+  avatar: string;
+  color: string;
+  departamento: string;
+  modulosPermitidos: string[];
+  permisos: {
+    puedeCrearOrdenes: boolean;
+    puedeEditarFletes: boolean;
+    puedeVerFinanzas: boolean;
+    puedeGestionarNomina: boolean;
+    puedeGestionarUsuarios: boolean;
+    puedeExportarDatos: boolean;
+  };
 }

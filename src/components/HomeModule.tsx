@@ -4,7 +4,8 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { Order } from '../types';
+import { Order, AppUser } from '../types';
+import { canUserAccessTab } from '../data/usersRoster';
 import { matchOrderSearch } from '../utils/searchHelper';
 import { 
   FileText, Users, Truck, CheckCircle2, Search,
@@ -12,7 +13,7 @@ import {
   Eye, EyeOff, Sparkles, ChevronDown, ChevronUp, Layers, DollarSign,
   Activity, Map, ShieldCheck, Database, FileSpreadsheet, Briefcase, 
   Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check, ArrowLeft,
-  Grid, List, Bell
+  Grid, List, Bell, Lock, User
 } from 'lucide-react';
 
 interface HomeModuleProps {
@@ -22,6 +23,7 @@ interface HomeModuleProps {
   onNavigateTab?: (tab: string) => void;
   onOpenBackupModal?: () => void;
   onOpenSupabaseModal?: () => void;
+  currentUser?: AppUser | null;
 }
 
 interface ModuleDefinition {
@@ -196,7 +198,15 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     icon: AlertTriangle
   },
 
-  // 5. Configuración (1)
+  // 5. Configuración & Seguridad (2)
+  {
+    id: 'mod_usuarios',
+    name: 'Usuarios & Auditoría',
+    category: 'configuracion',
+    description: 'Gestión de credenciales, roles, accesos y trazabilidad de ingresos',
+    tabTarget: 'usuarios',
+    icon: ShieldCheck
+  },
   {
     id: 'mod_ajustes',
     name: 'Respaldos & Nube',
@@ -214,7 +224,8 @@ export default function HomeModule({
   customersCount,
   onNavigateTab,
   onOpenBackupModal,
-  onOpenSupabaseModal
+  onOpenSupabaseModal,
+  currentUser
 }: HomeModuleProps) {
   // Navigation inside Home: 'hub' (Menú Central estilo Synapsis) or 'tablero' (Inicio y Tablero operativo)
   const [viewMode, setViewMode] = useState<'hub' | 'tablero'>('hub');
@@ -285,7 +296,15 @@ export default function HomeModule({
   const handleModuleClick = (mod: ModuleDefinition) => {
     if (mod.actionType === 'tablero') {
       setViewMode('tablero');
-    } else if (mod.actionType === 'supabase') {
+      return;
+    }
+
+    if (currentUser && !canUserAccessTab(currentUser, mod.tabTarget)) {
+      alert(`🔒 Módulo Restringido\nEl perfil actual (${currentUser.nombre} - ${currentUser.cargo}) no tiene permiso de acceso a "${mod.name}".\n\nContacte al Administrador Principal (Washington Quiñones).`);
+      return;
+    }
+
+    if (mod.actionType === 'supabase') {
       if (onOpenSupabaseModal) onOpenSupabaseModal();
       else if (onOpenBackupModal) onOpenBackupModal();
     } else if (mod.actionType === 'backup') {
@@ -306,11 +325,11 @@ export default function HomeModule({
   ];
 
   const categoryHeaders: Record<string, { title: string; count: number }> = {
-    operativos: { title: 'OPERATIVOS & DESPACHOS', count: 6 },
-    entidades: { title: 'ENTIDADES & DIRECTORIO', count: 2 },
-    contabilidad: { title: 'CONTABILIDAD, FACTURACIÓN & NÓMINA', count: 7 },
-    inteligencia: { title: 'INTELIGENCIA & AUDITORÍA LOGÍSTICA', count: 4 },
-    configuracion: { title: 'CONFIGURACIÓN & BASE DE DATOS', count: 1 }
+    operativos: { title: 'OPERATIVOS & DESPACHOS', count: MODULES_DIRECTORY.filter(m => m.category === 'operativos').length },
+    entidades: { title: 'ENTIDADES & DIRECTORIO', count: MODULES_DIRECTORY.filter(m => m.category === 'entidades').length },
+    contabilidad: { title: 'CONTABILIDAD, FACTURACIÓN & NÓMINA', count: MODULES_DIRECTORY.filter(m => m.category === 'contabilidad').length },
+    inteligencia: { title: 'INTELIGENCIA & AUDITORÍA LOGÍSTICA', count: MODULES_DIRECTORY.filter(m => m.category === 'inteligencia').length },
+    configuracion: { title: 'CONFIGURACIÓN, SEGURIDAD & NUBE', count: MODULES_DIRECTORY.filter(m => m.category === 'configuracion').length }
   };
 
   const displayedCategories = useMemo(() => {
@@ -776,22 +795,35 @@ export default function HomeModule({
                 }`}>
                   {catModules.map(mod => {
                     const IconComp = mod.icon;
+                    const isPermitted = !currentUser || mod.actionType === 'tablero' || canUserAccessTab(currentUser, mod.tabTarget);
                     return (
                       <div
                         key={mod.id}
                         onClick={() => handleModuleClick(mod)}
                         className={`card-3d-teal rounded-2xl p-4 cursor-pointer transition-all duration-200 group flex items-start gap-3.5 relative ${
                           cardSize === 'mini' ? 'min-h-[82px]' : 'min-h-[104px]'
-                        }`}
+                        } ${!isPermitted ? 'opacity-65 hover:opacity-90 border-amber-500/25' : ''}`}
+                        title={!isPermitted ? `Restringido para ${currentUser?.nombre || 'usuario'}` : undefined}
                       >
                         {/* Square Teal Icon Box matching image_52a4c99e.png */}
-                        <div className="w-11 h-11 rounded-xl bg-[#083a42] border border-teal-500/35 text-teal-300 group-hover:bg-[#0b4d57] group-hover:text-teal-200 group-hover:border-teal-400/60 transition-all flex items-center justify-center shrink-0 shadow-inner">
+                        <div className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 shadow-inner transition-all ${
+                          isPermitted 
+                            ? 'bg-[#083a42] border-teal-500/35 text-teal-300 group-hover:bg-[#0b4d57] group-hover:text-teal-200 group-hover:border-teal-400/60'
+                            : 'bg-[#152328] border-amber-500/30 text-amber-300/80'
+                        }`}>
                           <IconComp className="w-5 h-5" />
                         </div>
                         <div className="space-y-1 min-w-0 flex-1">
-                          <h4 className="text-[13px] font-bold text-white group-hover:text-teal-200 transition-colors truncate text-relief-card">
-                            {mod.name}
-                          </h4>
+                          <div className="flex items-center justify-between gap-1.5">
+                            <h4 className="text-[13px] font-bold text-white group-hover:text-teal-200 transition-colors truncate text-relief-card">
+                              {mod.name}
+                            </h4>
+                            {!isPermitted && (
+                              <span className="text-[8px] font-mono font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded shrink-0 flex items-center gap-0.5">
+                                <Lock className="w-2.5 h-2.5" /> Bloqueado
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[11px] text-teal-100/70 line-clamp-2 leading-snug font-sans">
                             {mod.description}
                           </p>
