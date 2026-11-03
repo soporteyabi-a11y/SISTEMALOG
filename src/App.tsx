@@ -5059,6 +5059,15 @@ export default function App() {
                 safeLocalStorage.setItem('erp_active_user', JSON.stringify(user));
               }}
               onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+              onUpdateUsersRoster={(updatedUsers) => {
+                if (currentUser) {
+                  const refreshed = updatedUsers.find(u => u.email.toLowerCase() === currentUser.email.toLowerCase());
+                  if (refreshed) {
+                    setCurrentUser(refreshed);
+                    safeLocalStorage.setItem('erp_active_user', JSON.stringify(refreshed));
+                  }
+                }
+              }}
             />
           ) : null}
 
