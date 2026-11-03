@@ -300,16 +300,23 @@
     width: 100% !important;
     max-width: 210mm !important;
     margin: 0 auto !important;
-    padding: 10mm 12mm !important;
+    padding: 8mm 10mm !important;
     background-color: #ffffff !important;
     color: #000000 !important;
-    font-family: ui-sans-serif, system-ui, sans-serif !important;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body.print-nomina-mode #printNominaA4 * {
+    visibility: visible !important;
+    color: #000000 !important;
   }
 
   body.print-nomina-mode #printNominaA4 table {
     border-collapse: collapse !important;
     width: 100% !important;
-    margin-top: 10px !important;
+    margin-top: 8px !important;
     margin-bottom: 12px !important;
     background-color: #ffffff !important;
     color: #000000 !important;
@@ -318,14 +325,16 @@
   body.print-nomina-mode #printNominaA4 th,
   body.print-nomina-mode #printNominaA4 td {
     border: 1px solid #1e293b !important;
-    padding: 6px 8px !important;
-    font-size: 10px !important;
+    padding: 4px 6px !important;
+    font-size: 8.5px !important;
     color: #000000 !important;
+    line-height: 1.2 !important;
   }
 
   body.print-nomina-mode #printNominaA4 th {
     background-color: #e2e8f0 !important;
     font-weight: 800 !important;
     text-transform: uppercase !important;
+    font-size: 8.5px !important;
   }
 }

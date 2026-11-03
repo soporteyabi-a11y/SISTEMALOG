@@ -700,6 +700,11 @@ export default function UsuariosModule({
             <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[10px] text-teal-300 font-mono select-all">
               creadoPor: "{selectedUser.nombre} ({selectedUser.email})"
             </div>
+            {(selectedUser.id === 'user_juan' || selectedUser.id === 'user_antonio' || selectedUser.nombre.toLowerCase().includes('antonio') || selectedUser.nombre.toLowerCase().includes('juan')) && (
+              <div className="p-2.5 rounded-lg bg-[#04242a] border border-[#00f0b5]/40 text-[9.5px] text-[#00f0b5] font-mono leading-tight">
+                ℹ️ <strong>Terminal Compartida de Registro:</strong> Juan Carlos y Antonio no necesitan correo propio; pueden registrar directamente sus turnos en el módulo de Horas Extras seleccionando su nombre con un clic en la estación compartida de Julian.
+              </div>
+            )}
           </div>
 
           <div className="pt-2">

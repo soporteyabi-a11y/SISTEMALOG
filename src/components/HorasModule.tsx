@@ -4,12 +4,13 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Clock, Plus, Users, Archive, LayoutDashboard, Trash2, Edit, 
   Activity, Bell, AlertTriangle, CheckCircle2, Calendar, 
   DollarSign, Sliders, Settings, ChevronDown, Download, 
   RefreshCw, Save, FileSpreadsheet, Sparkles, Filter, Briefcase, UserCheck,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Lock
 } from 'lucide-react';
 import { saveToCloud, subscribeToCloud } from '../firebaseService';
 import { SEED_WORKERS, SEED_OVERTIME_RECORDS } from '../data/seedOvertime';
@@ -201,8 +202,12 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   const [newWorkerAre, setNewWorkerAre] = useState('');
   const [editingWorkerId, setEditingWorkerId] = useState<number | null>(null);
 
-  // Historical lists and filtering
-  // Historical lists and filtering - default to 'all' so all 95 production records are visible immediately
+  // Historical lists and explicit Corte / Period binding
+  const [corteType, setCorteType] = useState<'all' | 'corte12' | 'corte27' | 'mes' | 'custom'>('all');
+  const [selectedMonth, setSelectedMonth] = useState<number>(9); // 9 = Octubre (donde están los turnos de producción)
+  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [corteStartDate, setCorteStartDate] = useState<string>('2026-09-28');
+  const [corteEndDate, setCorteEndDate] = useState<string>('2026-10-12');
   const [filterWeekDate, setFilterWeekDate] = useState<string>('2026-10-30');
   const [historyRangeType, setHistoryRangeType] = useState<'all' | 'weekly' | 'fortnightly' | 'monthly'>('all');
   const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('cards');
@@ -597,9 +602,19 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     let updatedRecords = [...records];
     const savedDate = computedPreview.fec;
 
-    const authorStamp = currentUser 
-      ? `${currentUser.nombre} (${currentUser.email})` 
-      : 'Washington Quiñones (soporteyabi@gmail.com)';
+    const isOwner = currentUser?.rol === 'SUPER_ADMIN' || currentUser?.email === 'soporteyabi@gmail.com';
+    const isSamePerson = currentUser && workerName && (
+      currentUser.nombre.toLowerCase().includes(workerName.toLowerCase().split(' ')[0]) ||
+      workerName.toLowerCase().includes(currentUser.nombre.toLowerCase().split(' ')[0])
+    );
+
+    const authorStamp = isOwner 
+      ? `${workerName} (Registrado por Propietario/Admin: Washington Quiñones)`
+      : currentUser
+      ? isSamePerson
+        ? `${workerName} (${currentUser.email})`
+        : `${workerName} (Registrado en terminal de ${currentUser.nombre})`
+      : `${workerName} (Registro directo)`;
 
     if (editingRecordId !== null) {
       // Modify existing
@@ -725,47 +740,89 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     triggerToast('Ajustes y fórmulas de ley actualizadas correctamente', 'success');
   };
 
+  // Apply explicit Corte / Period selection
+  const applyCorteSelection = (
+    type: 'all' | 'corte12' | 'corte27' | 'mes' | 'custom',
+    monthIdx: number = selectedMonth,
+    yearNum: number = selectedYear
+  ) => {
+    setCorteType(type);
+    setSelectedMonth(monthIdx);
+    setSelectedYear(yearNum);
+
+    if (type === 'all') {
+      setCorteStartDate('');
+      setCorteEndDate('');
+      setHistoryRangeType('all');
+      return;
+    }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+
+    if (type === 'corte12') {
+      // Del 28 del mes anterior al 12 del mes actual
+      const prevMonth = monthIdx === 0 ? 11 : monthIdx - 1;
+      const prevYear = monthIdx === 0 ? yearNum - 1 : yearNum;
+      setCorteStartDate(`${prevYear}-${pad(prevMonth + 1)}-28`);
+      setCorteEndDate(`${yearNum}-${pad(monthIdx + 1)}-12`);
+      setHistoryRangeType('fortnightly');
+      setFilterWeekDate(`${yearNum}-${pad(monthIdx + 1)}-12`);
+    } else if (type === 'corte27') {
+      // Del 13 al 27 del mes actual
+      setCorteStartDate(`${yearNum}-${pad(monthIdx + 1)}-13`);
+      setCorteEndDate(`${yearNum}-${pad(monthIdx + 1)}-27`);
+      setHistoryRangeType('fortnightly');
+      setFilterWeekDate(`${yearNum}-${pad(monthIdx + 1)}-27`);
+    } else if (type === 'mes') {
+      // Mes completo
+      const lastDay = new Date(yearNum, monthIdx + 1, 0).getDate();
+      setCorteStartDate(`${yearNum}-${pad(monthIdx + 1)}-01`);
+      setCorteEndDate(`${yearNum}-${pad(monthIdx + 1)}-${pad(lastDay)}`);
+      setHistoryRangeType('monthly');
+      setFilterWeekDate(`${yearNum}-${pad(monthIdx + 1)}-01`);
+    }
+  };
+
   // Navigate through history range periods (weekly, fortnightly, monthly)
   const handleNavigatePeriod = (direction: 'prev' | 'next') => {
-    if (!filterWeekDate) return;
-    const current = new Date(filterWeekDate + 'T00:00:00');
     const factor = direction === 'prev' ? -1 : 1;
+    let nextMonth = selectedMonth;
+    let nextYear = selectedYear;
 
-    if (historyRangeType === 'weekly') {
-      current.setDate(current.getDate() + (factor * 7));
-    } else if (historyRangeType === 'fortnightly') {
-      const day = current.getDate();
+    if (corteType === 'corte12') {
       if (direction === 'prev') {
-        if (day <= 12) {
-          // Ir al Corte 27 del mes anterior
-          current.setMonth(current.getMonth() - 1);
-          current.setDate(20);
-        } else if (day <= 27) {
-          // Ir al Corte 12 del mes actual
-          current.setDate(5);
-        } else {
-          // Ir al Corte 27 del mes actual
-          current.setDate(20);
-        }
+        nextMonth = selectedMonth === 0 ? 11 : selectedMonth - 1;
+        nextYear = selectedMonth === 0 ? selectedYear - 1 : selectedYear;
+        applyCorteSelection('corte27', nextMonth, nextYear);
       } else {
-        if (day <= 12) {
-          // Ir al Corte 27 del mes actual
-          current.setDate(20);
-        } else if (day <= 27) {
-          // Ir al Corte 12 del siguiente mes
-          current.setMonth(current.getMonth() + 1);
-          current.setDate(5);
-        } else {
-          // Ir al Corte 27 del siguiente mes
-          current.setMonth(current.getMonth() + 1);
-          current.setDate(20);
-        }
+        applyCorteSelection('corte27', selectedMonth, selectedYear);
       }
-    } else if (historyRangeType === 'monthly') {
-      current.setMonth(current.getMonth() + factor);
-      current.setDate(1); // Keep at first day of month
+      return;
+    } else if (corteType === 'corte27') {
+      if (direction === 'prev') {
+        applyCorteSelection('corte12', selectedMonth, selectedYear);
+      } else {
+        nextMonth = selectedMonth === 11 ? 0 : selectedMonth + 1;
+        nextYear = selectedMonth === 11 ? selectedYear + 1 : selectedYear;
+        applyCorteSelection('corte12', nextMonth, nextYear);
+      }
+      return;
+    } else if (corteType === 'mes') {
+      nextMonth = selectedMonth + factor;
+      if (nextMonth < 0) {
+        nextMonth = 11;
+        nextYear -= 1;
+      } else if (nextMonth > 11) {
+        nextMonth = 0;
+        nextYear += 1;
+      }
+      applyCorteSelection('mes', nextMonth, nextYear);
+      return;
+    } else if (filterWeekDate) {
+      const current = new Date(filterWeekDate + 'T00:00:00');
+      current.setDate(current.getDate() + (factor * 7));
+      setFilterWeekDate(current.toISOString().split('T')[0]);
     }
-    setFilterWeekDate(current.toISOString().split('T')[0]);
   };
 
   // Group Records inside a structured index for calculations rendering
@@ -814,73 +871,29 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     return getCumulativeAggregateStats(recordsIndexedByWorker[activeWorkerTab].regs);
   }, [activeWorkerTab, recordsIndexedByWorker]);
 
-  // Get a readable label for the active history range
+  // Get a readable label for the active history range (Amarre de período)
   const getHistoryRangeLabel = () => {
-    if (historyRangeType === 'all') {
-      return 'Todos los registros históricos';
-    }
-    if (!filterWeekDate) return '';
-
-    const centerDate = new Date(filterWeekDate + 'T00:00:00');
-    const year = centerDate.getFullYear();
-    const month = centerDate.getMonth();
-    const day = centerDate.getDate();
-
     const months = [
       'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
     ];
 
-    const formatDate = (date: Date) => {
-      const dd = String(date.getDate()).padStart(2, '0');
-      const mm = String(date.getMonth() + 1).padStart(2, '0');
-      const yyyy = date.getFullYear();
-      return `${dd}/${mm}/${yyyy}`;
-    };
-
-    if (historyRangeType === 'weekly') {
-      const centerDay = centerDate.getDay();
-      const diffToMonday = centerDay === 0 ? -6 : 1 - centerDay;
-      const startOfWeek = new Date(centerDate);
-      startOfWeek.setDate(centerDate.getDate() + diffToMonday);
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
-      return `Semana: del ${formatDate(startOfWeek)} al ${formatDate(endOfWeek)}`;
+    if (corteType === 'all') {
+      return 'Todos los registros históricos (95 turnos)';
     }
-
-    if (historyRangeType === 'fortnightly') {
-      // Cortes 12 y 27 de cada mes:
-      // Corte 12: del 28 del mes anterior al 12 del mes actual
-      // Corte 27: del 13 al 27 del mes actual
-      if (day <= 12) {
-        const prevMonth = month === 0 ? 11 : month - 1;
-        const prevYear = month === 0 ? year - 1 : year;
-        const start = new Date(prevYear, prevMonth, 28);
-        const end = new Date(year, month, 12);
-        return `Corte del 12 (${months[month]}): del ${formatDate(start)} al ${formatDate(end)}`;
-      } else if (day <= 27) {
-        const start = new Date(year, month, 13);
-        const end = new Date(year, month, 27);
-        return `Corte del 27 (${months[month]}): del ${formatDate(start)} al ${formatDate(end)}`;
-      } else {
-        const nextMonth = month === 11 ? 0 : month + 1;
-        const nextYear = month === 11 ? year + 1 : year;
-        const start = new Date(year, month, 28);
-        const end = new Date(nextYear, nextMonth, 12);
-        return `Corte del 12 (${months[nextMonth]}): del ${formatDate(start)} al ${formatDate(end)}`;
-      }
+    if (corteType === 'corte12') {
+      return `Corte del 12 (${months[selectedMonth]} ${selectedYear}): del ${corteStartDate} al ${corteEndDate}`;
     }
-
-    if (historyRangeType === 'monthly') {
-      const start = new Date(year, month, 1);
-      const end = new Date(year, month + 1, 0);
-      return `Mes de ${months[month]}: del ${formatDate(start)} al ${formatDate(end)}`;
+    if (corteType === 'corte27') {
+      return `Corte del 27 (${months[selectedMonth]} ${selectedYear}): del ${corteStartDate} al ${corteEndDate}`;
     }
-
-    return '';
+    if (corteType === 'mes') {
+      return `Mes de ${months[selectedMonth]} ${selectedYear}: del ${corteStartDate} al ${corteEndDate}`;
+    }
+    return `Período Personalizado: del ${corteStartDate || 'Inicio'} al ${corteEndDate || 'Fin'}`;
   };
 
-  // Filter records matching selected range type and reference date input of active historical list view
+  // Filter records matching selected range type and strict Corte date bounds
   const filteredRecords = useMemo(() => {
     return records.filter(r => {
       // 1. Worker filter
@@ -897,55 +910,15 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
         if (!matchesNom && !matchesCar && !matchesFec && !matchesMot) return false;
       }
 
-      // 3. Date Range filters
-      if (historyRangeType !== 'all' && filterWeekDate) {
-        const centerDate = new Date(filterWeekDate + 'T00:00:00');
-        const year = centerDate.getFullYear();
-        const month = centerDate.getMonth();
-        const day = centerDate.getDate();
-
-        let startRange: Date;
-        let endRange: Date;
-
-        if (historyRangeType === 'weekly') {
-          const centerDay = centerDate.getDay();
-          const diffToMonday = centerDay === 0 ? -6 : 1 - centerDay;
-          startRange = new Date(centerDate);
-          startRange.setDate(centerDate.getDate() + diffToMonday);
-          startRange.setHours(0, 0, 0, 0);
-
-          endRange = new Date(startRange);
-          endRange.setDate(startRange.getDate() + 6);
-          endRange.setHours(23, 59, 59, 999);
-        } else if (historyRangeType === 'fortnightly') {
-          // Cortes del 12 y del 27 de cada mes
-          if (day <= 12) {
-            const prevMonth = month === 0 ? 11 : month - 1;
-            const prevYear = month === 0 ? year - 1 : year;
-            startRange = new Date(prevYear, prevMonth, 28, 0, 0, 0, 0);
-            endRange = new Date(year, month, 12, 23, 59, 59, 999);
-          } else if (day <= 27) {
-            startRange = new Date(year, month, 13, 0, 0, 0, 0);
-            endRange = new Date(year, month, 27, 23, 59, 59, 999);
-          } else {
-            const nextMonth = month === 11 ? 0 : month + 1;
-            const nextYear = month === 11 ? year + 1 : year;
-            startRange = new Date(year, month, 28, 0, 0, 0, 0);
-            endRange = new Date(nextYear, nextMonth, 12, 23, 59, 59, 999);
-          }
-        } else { // 'monthly'
-          startRange = new Date(year, month, 1, 0, 0, 0, 0);
-          endRange = new Date(year, month + 1, 0, 23, 59, 59, 999);
-        }
-
-        const recordMoment = new Date(r.fec + 'T00:00:00');
-        const inRange = recordMoment >= startRange && recordMoment <= endRange;
-        if (!inRange) return false;
+      // 3. Strict Date Range filters (Amarre exacto de fechas de corte)
+      if (corteType !== 'all') {
+        if (corteStartDate && r.fec < corteStartDate) return false;
+        if (corteEndDate && r.fec > corteEndDate) return false;
       }
 
       return true;
     }).sort((a, b) => b.fec.localeCompare(a.fec)); // Sort with most recent first
-  }, [records, filterWeekDate, filterWorker, historyRangeType, historySearchTerm]);
+  }, [records, corteType, corteStartDate, corteEndDate, filterWorker, historySearchTerm]);
 
   // Quick helper to fetch initials
   const initialsOf = (nameStr: string): string => {
@@ -964,7 +937,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ records, config, workers }, null, 2));
     const container = document.createElement('a');
     container.setAttribute("href", dataStr);
-    container.setAttribute("download", `Sistemalog_ResumenHorasExtras_${filterWeekDate || 'Export'}.json`);
+    container.setAttribute("download", `Sistemalog_ResumenHorasExtras_${corteStartDate || 'Export'}_${corteEndDate || 'Fin'}.json`);
     document.body.appendChild(container);
     container.click();
     container.remove();
@@ -974,10 +947,12 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   // Print official A4 Payroll sheet for Ley 2466 with 12/27 cutoffs
   const handlePrintNominaA4 = () => {
     document.body.classList.add('print-nomina-mode');
-    window.print();
     setTimeout(() => {
-      document.body.classList.remove('print-nomina-mode');
-    }, 1200);
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove('print-nomina-mode');
+      }, 1000);
+    }, 150);
   };
 
   // Group filtered records by worker for the printable A4 payroll report
@@ -1268,12 +1243,45 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                   1. Información General del Personal
                 </div>
                 
+                {/* Quick 1-click worker selectors for shared workstation terminals */}
+                <div className="bg-[#032026] border border-[#00f0b5]/30 p-3 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-black uppercase text-[#00f0b5] tracking-wider flex items-center gap-1.5">
+                      <span>⚡</span> ¿Quién está registrando? (Selección Rápida con 1 Clic):
+                    </span>
+                    <span className="text-[9px] font-mono text-slate-400">
+                      Terminal compartida (No requiere correo)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {workers.map(w => {
+                      const isSelected = workerName.trim().toLowerCase() === w.nom.trim().toLowerCase();
+                      return (
+                        <button
+                          key={w.id}
+                          type="button"
+                          onClick={() => handleSelectMasterWorker(w.nom)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                            isSelected
+                              ? 'bg-[#00f0b5] text-slate-950 border-[#00f0b5] shadow-[0_0_12px_rgba(0,240,181,0.4)] scale-105'
+                              : 'bg-slate-950/80 text-slate-300 border-slate-700 hover:border-[#00f0b5]/60 hover:text-white'
+                          }`}
+                        >
+                          <span>👤</span>
+                          <span>{w.nom}</span>
+                          {isSelected && <span className="text-slate-950 font-black">✓</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs text-slate-400 font-mono flex items-center justify-between">
-                      <span>{hasAdminRights ? 'Nombre Completo del Trabajador' : 'Colaborador (Tu Nombre de Registro)'}</span>
-                      {!hasAdminRights && (
-                        <span className="text-[9.5px] text-[#00f0b5] font-bold">✓ Autoseleccionado</span>
+                      <span>Colaborador / Trabajador del Turno</span>
+                      {workerName && (
+                        <span className="text-[9.5px] text-[#00f0b5] font-bold">✓ Seleccionado: {workerName}</span>
                       )}
                     </label>
                     <select
@@ -1287,9 +1295,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       ))}
                     </select>
                     <div className="text-[10px] text-slate-500 mt-1 uppercase font-mono">
-                      {hasAdminRights 
-                        ? '¿No está? Añádalo en la pestaña "Personal & Fichas"' 
-                        : 'Tu nombre queda asignado como autor responsable del turno'}
+                      Cualquier colaborador (Julian, Antonio, Juan, Deyci) puede registrar aquí su turno libremente
                     </div>
                   </div>
 
@@ -1609,222 +1615,338 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
         {activeSubTab === 'historial' && (
           <div className="space-y-6">
             
-            {/* Filters Bar */}
-            <div className="bg-[#04242a] p-5 border border-[#00f0b5]/25 rounded-xl flex flex-wrap gap-4 items-end justify-between shadow-lg">
+            {/* ========================================================================= */}
+            {/* 🔒 PANEL PRINCIPAL DE AMARRE DE PERÍODO & CORTES 12/27 (LEY 2466)          */}
+            {/* ========================================================================= */}
+            <div className="bg-[#04242a] p-5 border border-[#00f0b5]/30 rounded-xl space-y-4 shadow-xl">
               
-              <div className="flex flex-wrap gap-4 items-center">
-                {/* Search Term input */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-[#00f0b5] font-bold uppercase tracking-wider">Buscar en Turnos</span>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={historySearchTerm}
-                      onChange={(e) => setHistorySearchTerm(e.target.value)}
-                      placeholder="TRABAJADOR, MOTIVO, FECHA..."
-                      className="bg-[#02161a] border border-[#00f0b5]/30 text-white rounded-lg px-3.5 py-2.5 text-xs font-mono uppercase focus:border-[#00f0b5] outline-none w-52 placeholder-slate-500"
-                    />
-                    {historySearchTerm && (
-                      <button
-                        onClick={() => setHistorySearchTerm('')}
-                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white text-xs font-mono"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
+              {/* Row 1: Quick Corte Selectors & Month / Year */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#00f0b5]/20 pb-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-mono font-black uppercase text-[#00f0b5] tracking-widest flex items-center gap-1.5 mr-1">
+                    <Lock className="w-3.5 h-3.5 text-[#00f0b5]" />
+                    <span>Cortes Ley 2466:</span>
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => applyCorteSelection('all')}
+                    className={`px-3 py-1.5 text-xs font-mono font-bold uppercase rounded-lg transition-all cursor-pointer border ${
+                      corteType === 'all'
+                        ? 'bg-[#00f0b5] border-[#00f0b5] text-slate-950 shadow-[0_0_12px_rgba(0,240,181,0.4)]'
+                        : 'bg-[#02161a] border-slate-700 text-slate-300 hover:text-white hover:border-[#00f0b5]/50'
+                    }`}
+                  >
+                    🌐 Todo el Histórico ({records.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => applyCorteSelection('corte12', selectedMonth, selectedYear)}
+                    className={`px-3.5 py-1.5 text-xs font-mono font-black uppercase rounded-lg transition-all cursor-pointer flex items-center gap-1.5 border ${
+                      corteType === 'corte12'
+                        ? 'bg-amber-400 border-amber-400 text-slate-950 shadow-[0_0_12px_rgba(251,191,36,0.4)] scale-105'
+                        : 'bg-[#02161a] border-amber-400/50 text-amber-300 hover:bg-amber-950/30'
+                    }`}
+                    title="Corte del 12: Del 28 del mes previo al 12 del mes en curso"
+                  >
+                    <span>✂️</span>
+                    <span>Corte 12 (28 al 12)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => applyCorteSelection('corte27', selectedMonth, selectedYear)}
+                    className={`px-3.5 py-1.5 text-xs font-mono font-black uppercase rounded-lg transition-all cursor-pointer flex items-center gap-1.5 border ${
+                      corteType === 'corte27'
+                        ? 'bg-amber-400 border-amber-400 text-slate-950 shadow-[0_0_12px_rgba(251,191,36,0.4)] scale-105'
+                        : 'bg-[#02161a] border-amber-400/50 text-amber-300 hover:bg-amber-950/30'
+                    }`}
+                    title="Corte del 27: Del 13 al 27 del mes en curso"
+                  >
+                    <span>✂️</span>
+                    <span>Corte 27 (13 al 27)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => applyCorteSelection('mes', selectedMonth, selectedYear)}
+                    className={`px-3 py-1.5 text-xs font-mono font-bold uppercase rounded-lg transition-all cursor-pointer border ${
+                      corteType === 'mes'
+                        ? 'bg-[#00f0b5] border-[#00f0b5] text-slate-950 shadow-[0_0_12px_rgba(0,240,181,0.4)]'
+                        : 'bg-[#02161a] border-slate-700 text-slate-300 hover:text-white hover:border-[#00f0b5]/50'
+                    }`}
+                  >
+                    📅 Mes Completo
+                  </button>
                 </div>
 
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Fecha de Referencia</span>
-                  <div className="flex items-center gap-1">
+                {/* Ciclo / Mes y Año dropdown */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 bg-[#02161a] p-1 rounded-lg border border-slate-700">
                     <button
                       type="button"
-                      disabled={historyRangeType === 'all'}
+                      disabled={corteType === 'all'}
                       onClick={() => handleNavigatePeriod('prev')}
-                      className={`bg-[#02161a] border border-slate-700 text-slate-400 hover:text-[#00f0b5] px-2.5 py-2.5 rounded-lg hover:border-[#00f0b5]/50 transition-all cursor-pointer ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      title="Período anterior"
+                      className={`p-1.5 text-slate-400 hover:text-[#00f0b5] rounded hover:bg-slate-900 transition-all ${corteType === 'all' ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                      title="Corte / Mes anterior"
                     >
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <input
-                      type="date"
-                      value={filterWeekDate}
-                      disabled={historyRangeType === 'all'}
-                      onChange={(e) => setFilterWeekDate(e.target.value)}
-                      className={`bg-[#02161a] border border-slate-700 text-[#00f0b5] rounded-lg p-2.5 text-xs font-mono focus:border-[#00f0b5] outline-none transition-all ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
-                    />
+
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => {
+                        const m = parseInt(e.target.value);
+                        const targetType = corteType === 'all' || corteType === 'custom' ? 'corte12' : corteType;
+                        applyCorteSelection(targetType, m, selectedYear);
+                      }}
+                      className="bg-transparent text-[#00f0b5] text-xs font-mono font-bold outline-none cursor-pointer px-1 py-1"
+                    >
+                      {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((nom, idx) => (
+                        <option key={nom} value={idx} className="bg-slate-900 text-white">{nom}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => {
+                        const y = parseInt(e.target.value);
+                        const targetType = corteType === 'all' || corteType === 'custom' ? 'corte12' : corteType;
+                        applyCorteSelection(targetType, selectedMonth, y);
+                      }}
+                      className="bg-transparent text-white text-xs font-mono font-bold outline-none cursor-pointer px-1 py-1"
+                    >
+                      <option value="2025" className="bg-slate-900 text-white">2025</option>
+                      <option value="2026" className="bg-slate-900 text-white">2026</option>
+                      <option value="2027" className="bg-slate-900 text-white">2027</option>
+                    </select>
+
                     <button
                       type="button"
-                      disabled={historyRangeType === 'all'}
+                      disabled={corteType === 'all'}
                       onClick={() => handleNavigatePeriod('next')}
-                      className={`bg-[#02161a] border border-slate-700 text-slate-400 hover:text-[#00f0b5] px-2.5 py-2.5 rounded-lg hover:border-[#00f0b5]/50 transition-all cursor-pointer ${historyRangeType === 'all' ? 'opacity-30 cursor-not-allowed' : ''}`}
-                      title="Período siguiente"
+                      className={`p-1.5 text-slate-400 hover:text-[#00f0b5] rounded hover:bg-slate-900 transition-all ${corteType === 'all' ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
+                      title="Corte / Mes siguiente"
                     >
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Filtrar Trabajador</span>
-                  <select
-                    value={filterWorker}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFilterWorker(val);
-                      if (val === '__all') {
-                        setActiveWorkerTab('__global');
-                      } else {
-                        setActiveWorkerTab(val.toLowerCase());
-                      }
-                    }}
-                    className="bg-[#02161a] border border-slate-700 text-white rounded-lg p-2.5 text-xs focus:border-[#00f0b5] outline-none font-mono cursor-pointer"
-                  >
-                    <option value="__all">-- Todos los Colaboradores ({workers.length}) --</option>
-                    {workers.map(w => (
-                      <option key={w.id} value={w.nom}>{w.nom}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Rango/Modo de Historial Selector */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Rango de Historial</span>
-                  <div className="flex bg-[#02161a] p-1 rounded-lg border border-slate-700 h-[42px] items-center">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryRangeType('all')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
-                        historyRangeType === 'all'
-                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Ver Todo (95)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryRangeType('weekly')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
-                        historyRangeType === 'weekly'
-                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Semana
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryRangeType('fortnightly')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
-                        historyRangeType === 'fortnightly'
-                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Quincena
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHistoryRangeType('fortnightly');
-                        const baseDate = filterWeekDate ? new Date(filterWeekDate + 'T00:00:00') : new Date();
-                        const y = baseDate.getFullYear();
-                        const m = String(baseDate.getMonth() + 1).padStart(2, '0');
-                        setFilterWeekDate(`${y}-${m}-12`);
-                      }}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1 cursor-pointer ${
-                        historyRangeType === 'fortnightly' && filterWeekDate && new Date(filterWeekDate + 'T00:00:00').getDate() <= 12
-                          ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_8px_rgba(251,191,36,0.3)]'
-                          : 'text-amber-300 hover:text-white'
-                      }`}
-                      title="Corte del 12: Del 28 del mes anterior al 12 del mes actual"
-                    >
-                      <span>✂️</span> Corte 12
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHistoryRangeType('fortnightly');
-                        const baseDate = filterWeekDate ? new Date(filterWeekDate + 'T00:00:00') : new Date();
-                        const y = baseDate.getFullYear();
-                        const m = String(baseDate.getMonth() + 1).padStart(2, '0');
-                        setFilterWeekDate(`${y}-${m}-27`);
-                      }}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1 cursor-pointer ${
-                        historyRangeType === 'fortnightly' && filterWeekDate && new Date(filterWeekDate + 'T00:00:00').getDate() > 12 && new Date(filterWeekDate + 'T00:00:00').getDate() <= 27
-                          ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_8px_rgba(251,191,36,0.3)]'
-                          : 'text-amber-300 hover:text-white'
-                      }`}
-                      title="Corte del 27: Del 13 al 27 del mes actual"
-                    >
-                      <span>✂️</span> Corte 27
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryRangeType('monthly')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
-                        historyRangeType === 'monthly'
-                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      Mes
-                    </button>
-                  </div>
-                </div>
-
-                {/* Modo de Visualización */}
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Vista</span>
-                  <div className="flex bg-[#02161a] p-1 rounded-lg border border-slate-700 h-[42px] items-center">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryViewMode('cards')}
-                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1.5 cursor-pointer ${
-                        historyViewMode === 'cards'
-                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <span>🎴</span> Tarjetas
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryViewMode('table')}
-                      className={`px-3.5 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1.5 cursor-pointer ${
-                        historyViewMode === 'table'
-                          ? 'bg-[#00f0b5] text-slate-950 shadow-[0_0_8px_rgba(0,240,181,0.3)]'
-                          : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      <span>📋</span> Tabla
-                    </button>
-                  </div>
-                </div>
               </div>
 
-              {/* Action utilities */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={triggerDownloadJSON}
-                  className="bg-[#02161a] border border-[#00f0b5]/40 px-3.5 py-2.5 rounded-lg text-xs font-mono text-[#00f0b5] hover:bg-[#032026] transition-all flex items-center gap-2 cursor-pointer shadow-sm"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  JSON Auditoría
-                </button>
-                <button
-                  onClick={handlePrintNominaA4}
-                  className="bg-[#00f0b5] border border-[#00f0b5] px-4 py-2.5 rounded-lg text-xs font-mono font-black text-slate-950 hover:bg-[#25ffcb] transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(0,240,181,0.35)]"
-                  title="Imprimir Planilla Oficial A4 con cabecera corporativa, firmas y cortes 12/27"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-slate-950" />
-                  Impresión A4 Nómina
-                </button>
+              {/* Row 2: Explicit Start & End Dates "Amarradas" + Search & Actions */}
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <div className="flex flex-wrap items-end gap-3">
+                  
+                  {/* Fecha Desde */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>🔒 Desde (Inicio Corte):</span>
+                    </span>
+                    <input
+                      type="date"
+                      value={corteStartDate}
+                      onChange={(e) => {
+                        setCorteStartDate(e.target.value);
+                        setCorteType('custom');
+                      }}
+                      className="bg-[#02161a] border border-[#00f0b5]/40 text-[#00f0b5] rounded-lg px-3 py-2 text-xs font-mono focus:border-[#00f0b5] outline-none font-bold"
+                    />
+                  </div>
+
+                  {/* Fecha Hasta */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                      <span>🔒 Hasta (Fin Corte):</span>
+                    </span>
+                    <input
+                      type="date"
+                      value={corteEndDate}
+                      onChange={(e) => {
+                        setCorteEndDate(e.target.value);
+                        setCorteType('custom');
+                      }}
+                      className="bg-[#02161a] border border-[#00f0b5]/40 text-[#00f0b5] rounded-lg px-3 py-2 text-xs font-mono focus:border-[#00f0b5] outline-none font-bold"
+                    />
+                  </div>
+
+                  {/* Worker selector */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Colaborador</span>
+                    <select
+                      value={filterWorker}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFilterWorker(val);
+                        if (val === '__all') {
+                          setActiveWorkerTab('__global');
+                        } else {
+                          setActiveWorkerTab(val.toLowerCase());
+                        }
+                      }}
+                      className="bg-[#02161a] border border-slate-700 text-white rounded-lg px-3 py-2 text-xs focus:border-[#00f0b5] outline-none font-mono cursor-pointer"
+                    >
+                      <option value="__all">-- Todos ({workers.length}) --</option>
+                      {workers.map(w => (
+                        <option key={w.id} value={w.nom}>{w.nom}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Search query */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-mono text-[#00f0b5] font-bold uppercase tracking-wider">Buscar</span>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={historySearchTerm}
+                        onChange={(e) => setHistorySearchTerm(e.target.value)}
+                        placeholder="TRABAJADOR, MOTIVO..."
+                        className="bg-[#02161a] border border-[#00f0b5]/30 text-white rounded-lg pl-3 pr-7 py-2 text-xs font-mono uppercase focus:border-[#00f0b5] outline-none w-44 placeholder-slate-500"
+                      />
+                      {historySearchTerm && (
+                        <button
+                          onClick={() => setHistorySearchTerm('')}
+                          className="absolute right-2 top-2 text-slate-400 hover:text-white text-xs font-mono"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* View Mode */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Vista</span>
+                    <div className="flex bg-[#02161a] p-0.5 rounded-lg border border-slate-700 h-[36px] items-center">
+                      <button
+                        type="button"
+                        onClick={() => setHistoryViewMode('cards')}
+                        className={`px-2.5 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${
+                          historyViewMode === 'cards'
+                            ? 'bg-[#00f0b5] text-slate-950 font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🎴 Tarjetas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHistoryViewMode('table')}
+                        className={`px-2.5 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${
+                          historyViewMode === 'table'
+                            ? 'bg-[#00f0b5] text-slate-950 font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        📋 Tabla
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Print & Export Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={triggerDownloadJSON}
+                    className="bg-[#02161a] border border-[#00f0b5]/40 px-3 py-2 rounded-lg text-xs font-mono text-[#00f0b5] hover:bg-[#032026] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    title="Descargar archivo JSON de auditoría"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>JSON</span>
+                  </button>
+                  <button
+                    onClick={handlePrintNominaA4}
+                    className="bg-[#00f0b5] hover:bg-[#25ffcb] text-slate-950 border border-[#00f0b5] px-4 py-2 rounded-lg text-xs font-mono font-black transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(0,240,181,0.4)]"
+                    title="Imprimir Planilla Oficial A4 con cabecera corporativa, firmas y cortes 12/27"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-slate-950" />
+                    <span>Impresión A4 Nómina ({filteredRecords.length})</span>
+                  </button>
+                </div>
+
               </div>
 
             </div>
+
+            {/* ========================================================================= */}
+            {/* 🔒 BANNER DE PERÍODO AMARRADO AL CORTE ACTIVO                             */}
+            {/* ========================================================================= */}
+            <div className="bg-[#021b20] border-2 border-[#00f0b5]/70 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-[0_0_20px_rgba(0,240,181,0.15)]">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-[#00f0b5]/20 border border-[#00f0b5] flex items-center justify-center text-[#00f0b5] text-lg font-bold shadow-sm shrink-0">
+                  🔒
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-black uppercase text-[#00f0b5] tracking-widest">
+                      PERÍODO AMARRADO AL CORTE & REPORTE A4
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-black font-mono uppercase bg-amber-400/20 text-amber-300 border border-amber-400/40">
+                      LEY 2466
+                    </span>
+                  </div>
+                  <p className="text-sm font-bold font-mono text-white mt-0.5">
+                    {getHistoryRangeLabel()}
+                  </p>
+                  <p className="text-[11px] font-mono text-slate-400">
+                    Límites exactos de liquidación: Del <strong className="text-white underline">{corteStartDate || 'Sin límite inicial'}</strong> al <strong className="text-white underline">{corteEndDate || 'Sin límite final'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 self-stretch md:self-auto justify-end">
+                <div className="text-right font-mono bg-[#03242a] border border-[#00f0b5]/30 px-4 py-2 rounded-lg">
+                  <span className="text-[9px] text-[#00f0b5] uppercase block font-bold">Turnos Amarrados</span>
+                  <span className="text-base font-black text-white">{filteredRecords.length} turnos</span>
+                </div>
+                <div className="text-right font-mono bg-[#03242a] border border-cyan-500/30 px-4 py-2 rounded-lg">
+                  <span className="text-[9px] text-cyan-300 uppercase block font-bold">Total Horas Netas</span>
+                  <span className="text-base font-black text-cyan-300">
+                    {printPayrollSummary.grandTotals.netas.toFixed(2)}h
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso inteligente si no hay turnos en el rango seleccionado */}
+            {filteredRecords.length === 0 && (
+              <div className="bg-amber-950/40 border border-amber-500/50 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono shadow-lg">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <span className="text-amber-300 font-bold block">
+                      0 turnos encontrados en este período ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'})
+                    </span>
+                    <span className="text-slate-300 text-[11px]">
+                      Los 95 registros históricos de nómina están en Agosto, Septiembre y Octubre de 2026. Haz clic para ir al corte correspondiente:
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => applyCorteSelection('corte12', 9, 2026)}
+                    className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-lg text-xs cursor-pointer shadow-md"
+                  >
+                    📌 Octubre Corte 12
+                  </button>
+                  <button
+                    onClick={() => applyCorteSelection('corte27', 9, 2026)}
+                    className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-lg text-xs cursor-pointer shadow-md"
+                  >
+                    📌 Octubre Corte 27
+                  </button>
+                  <button
+                    onClick={() => applyCorteSelection('all')}
+                    className="px-3 py-1.5 bg-[#00f0b5] hover:bg-[#25ffcb] text-slate-950 font-black rounded-lg text-xs cursor-pointer shadow-md"
+                  >
+                    🌐 Ver Todo (95)
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Quick Workers Horizontal Slices for Multi-user Dashboard */}
             <div className="overflow-x-auto pb-2">
@@ -3021,150 +3143,217 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
       {/* ========================================================================= */}
       {/* 📄 FORMATO OFICIAL A4 IMPRESIÓN DE NÓMINA & CORTES 12/27 (LEY 2466)       */}
+      {/* RENDERIZADO MEDIANTE PORTAL A DOCUMENT.BODY PARA IMPRESIÓN 100% CONFIABLE  */}
       {/* ========================================================================= */}
-      <div id="printNominaA4" className="hidden">
-        {/* Cabecera Corporativa */}
-        <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-black tracking-tight text-slate-950 font-mono">SISTEMALOG S.A.S.</span>
-              <span className="text-xs text-slate-600 font-bold">| LATIN PRODUCTS S.A.S.</span>
+      {typeof document !== 'undefined' && createPortal(
+        <div id="printNominaA4">
+          {/* Cabecera Corporativa Oficial */}
+          <div className="border-b-2 border-slate-900 pb-3 mb-3 flex justify-between items-start">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-black tracking-tight text-slate-950 font-mono">SISTEMALOG S.A.S.</span>
+                <span className="text-sm text-slate-700 font-bold">| LATIN PRODUCTS S.A.S.</span>
+              </div>
+              <p className="text-[10px] text-slate-700 font-mono mt-0.5 font-semibold">
+                NIT: 901.458.921-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
+              </p>
+              <p className="text-[9.5px] text-slate-600 font-mono">
+                Sistema Integral de Nómina, Turnos, Horas Extras y Recargos Nocturnos
+              </p>
             </div>
-            <p className="text-[10px] text-slate-600 font-mono mt-0.5">
-              NIT: 901.458.921-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
-            </p>
-            <p className="text-[10px] text-slate-500 font-mono">
-              Software de Gestión Operativa, Logística y Liquidación de Personal
-            </p>
-          </div>
-          <div className="text-right">
-            <span className="inline-block border border-slate-900 bg-slate-100 text-slate-900 font-mono font-black text-[10px] px-2.5 py-1 rounded">
-              LEY 2466 DE 2025/2026
-            </span>
-            <p className="text-[10px] font-mono text-slate-600 mt-1">
-              Fecha de Emisión: <strong>{new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</strong>
-            </p>
-          </div>
-        </div>
-
-        {/* Título del Documento y Período */}
-        <div className="bg-slate-100 border border-slate-300 rounded p-2.5 mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-black uppercase text-slate-950 font-mono tracking-wide">
-              PLANILLA OFICIAL DE HORAS EXTRAS & RECARGOS (CORTES 12 Y 27)
-            </h2>
-            <p className="text-[10px] text-slate-700 font-mono mt-0.5">
-              Período Liquidado: <strong className="text-slate-950">{getHistoryRangeLabel() || 'Corte Quincenal'}</strong>
-            </p>
-          </div>
-          <div className="text-right text-[10px] font-mono">
-            <span className="text-slate-600">Turnos en este corte:</span> <strong className="text-slate-950">{printPayrollSummary.grandTotals.count} registros</strong>
-          </div>
-        </div>
-
-        {/* Tabla Oficial de Liquidación por Colaborador */}
-        <table className="w-full border-collapse mb-4">
-          <thead>
-            <tr className="bg-slate-200 text-slate-900 text-[9px] uppercase font-bold text-center">
-              <th className="border border-slate-700 p-1.5 text-left">N°</th>
-              <th className="border border-slate-700 p-1.5 text-left">Colaborador / Trabajador</th>
-              <th className="border border-slate-700 p-1.5 text-left">Cargo / Área</th>
-              <th className="border border-slate-700 p-1.5">Turnos</th>
-              <th className="border border-slate-700 p-1.5">H. Trabajadas</th>
-              <th className="border border-slate-700 p-1.5">Ext. Diurna (1.25)</th>
-              <th className="border border-slate-700 p-1.5">Ext. Nocturna (1.75)</th>
-              <th className="border border-slate-700 p-1.5">Recargo Noct. (0.35)</th>
-              <th className="border border-slate-700 p-1.5">Dom. / Festivo (1.75)</th>
-              <th className="border border-slate-700 p-1.5">Comp. (-)</th>
-              <th className="border border-slate-700 p-1.5 bg-slate-300 font-black">Total Netas</th>
-            </tr>
-          </thead>
-          <tbody className="text-[9.5px] font-mono text-slate-900">
-            {printPayrollSummary.rows.map((row, idx) => (
-              <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                <td className="border border-slate-600 p-1.5 text-center font-bold">{idx + 1}</td>
-                <td className="border border-slate-600 p-1.5 font-bold uppercase">{row.nom}</td>
-                <td className="border border-slate-600 p-1.5">{row.car} ({row.are})</td>
-                <td className="border border-slate-600 p-1.5 text-center">{row.count}</td>
-                <td className="border border-slate-600 p-1.5 text-center">{row.hT.toFixed(1)}h</td>
-                <td className="border border-slate-600 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
-                <td className="border border-slate-600 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
-                <td className="border border-slate-600 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
-                <td className="border border-slate-600 p-1.5 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
-                <td className="border border-slate-600 p-1.5 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
-                <td className="border border-slate-600 p-1.5 text-center font-black bg-slate-100 text-slate-950">
-                  {row.netas.toFixed(2)}h
-                </td>
-              </tr>
-            ))}
-            {printPayrollSummary.rows.length === 0 && (
-              <tr>
-                <td colSpan={11} className="border border-slate-600 p-6 text-center text-slate-500 font-mono">
-                  No hay turnos registrados para el período seleccionado.
-                </td>
-              </tr>
-            )}
-          </tbody>
-          <tfoot>
-            <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9.5px]">
-              <td colSpan={3} className="border border-slate-800 p-2 text-right uppercase">
-                TOTALES GENERALES A LIQUIDAR:
-              </td>
-              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.count}</td>
-              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
-              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
-              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
-              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
-              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
-              <td className="border border-slate-800 p-2 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
-              <td className="border border-slate-800 p-2 text-center bg-slate-300 text-slate-950 font-black text-xs">
-                {printPayrollSummary.grandTotals.netas.toFixed(2)}h
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-
-        {/* Parámetros de Ley 2466 aplicados */}
-        <div className="border border-slate-300 rounded p-2 mb-6 bg-slate-50 text-[9px] font-mono text-slate-700 flex justify-between items-center">
-          <div>
-            <strong>Reglas de Ley 2466:</strong> Jornada base: {config.normalBaseHours}h (Miér {config.wedBaseHours}h) • Franja nocturna iniciada a las {config.nightSurchargeStartHour}:00 • Multiplicadores: Ext. Diurna x{config.extraDiurnaMultiplier}, Ext. Nocturna x{config.extraNocturnaMultiplier}, Recargo x{config.recNoctMultiplier}, Dom/Fest x{config.domFestMultiplier}.
-          </div>
-          <div className="font-bold text-slate-900">
-            Cortes: 12 y 27 de cada mes
-          </div>
-        </div>
-
-        {/* Bloque de Firmas y Autorizaciones */}
-        <div className="grid grid-cols-3 gap-6 pt-6 border-t-2 border-slate-900 text-slate-900 font-mono">
-          <div className="text-center">
-            <div className="border-b border-slate-600 mb-1.5 h-10"></div>
-            <p className="text-[10px] font-black uppercase">Diana Agudelo</p>
-            <p className="text-[8.5px] text-slate-600">SST & Talento Humano</p>
-            <p className="text-[8px] text-slate-500">sst@latinproducts.com.co</p>
-            <span className="inline-block mt-1 text-[8px] text-slate-600 border border-slate-400 px-1 rounded">ELABORÓ</span>
+            <div className="text-right">
+              <span className="inline-block border-2 border-slate-900 bg-slate-100 text-slate-950 font-mono font-black text-[10px] px-3 py-1 rounded">
+                LEY 2466 DE 2025/2026
+              </span>
+              <p className="text-[10px] font-mono text-slate-700 mt-1 font-semibold">
+                Fecha de Emisión: <strong>{new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+              </p>
+            </div>
           </div>
 
-          <div className="text-center">
-            <div className="border-b border-slate-600 mb-1.5 h-10"></div>
-            <p className="text-[10px] font-black uppercase">Washington Quiñones</p>
-            <p className="text-[8.5px] text-slate-600">Administrador Principal & Dueño</p>
-            <p className="text-[8px] text-slate-500">soporteyabi@gmail.com</p>
-            <span className="inline-block mt-1 text-[8px] text-slate-600 border border-slate-400 px-1 rounded">REVISÓ Y APROBÓ</span>
+          {/* Bloque Informativo de Período Amarrado */}
+          <div className="bg-slate-100 border-2 border-slate-800 rounded p-2.5 mb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-xs font-black uppercase text-slate-950 font-mono tracking-wide">
+                PLANILLA OFICIAL DE LIQUIDACIÓN DE HORAS EXTRAS & RECARGOS
+              </h2>
+              <p className="text-[10px] text-slate-800 font-mono mt-0.5">
+                Período Liquidado: <strong className="text-slate-950 uppercase">{getHistoryRangeLabel()}</strong>
+              </p>
+              <p className="text-[9px] text-slate-600 font-mono">
+                Límites de Corte: Del <strong>{corteStartDate || 'Primer registro'}</strong> al <strong>{corteEndDate || 'Último registro'}</strong>
+              </p>
+            </div>
+            <div className="text-right text-[10px] font-mono">
+              <div className="text-slate-700">Turnos en este corte: <strong className="text-slate-950 font-bold">{printPayrollSummary.grandTotals.count} registros</strong></div>
+              <div className="text-slate-700">Total Horas Netas: <strong className="text-slate-950 font-black text-xs">{printPayrollSummary.grandTotals.netas.toFixed(2)}h</strong></div>
+            </div>
           </div>
 
-          <div className="text-center">
-            <div className="border-b border-slate-600 mb-1.5 h-10"></div>
-            <p className="text-[10px] font-black uppercase">Contabilidad & Nómina</p>
-            <p className="text-[8.5px] text-slate-600">Pagaduría Latin Products</p>
-            <p className="text-[8px] text-slate-500">Fecha: ____/____/________</p>
-            <span className="inline-block mt-1 text-[8px] text-slate-600 border border-slate-400 px-1 rounded">RECIBIÓ CONFORME</span>
+          {/* TABLA 1: Resumen Oficial Consolidado por Colaborador */}
+          <div className="mb-3">
+            <div className="text-[9.5px] font-mono font-black uppercase text-slate-900 mb-1">
+              1. Consolidado de Liquidación por Colaborador ({printPayrollSummary.rows.length} colaboradores activos en el corte)
+            </div>
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-slate-200 text-slate-950 text-[9px] uppercase font-bold text-center">
+                  <th className="border border-slate-700 p-1.5 text-left w-6">N°</th>
+                  <th className="border border-slate-700 p-1.5 text-left">Colaborador / Trabajador</th>
+                  <th className="border border-slate-700 p-1.5 text-left">Cargo / Proceso</th>
+                  <th className="border border-slate-700 p-1.5">Turnos</th>
+                  <th className="border border-slate-700 p-1.5">H. Trab.</th>
+                  <th className="border border-slate-700 p-1.5">Ext. Diurna (1.25)</th>
+                  <th className="border border-slate-700 p-1.5">Ext. Nocturna (1.75)</th>
+                  <th className="border border-slate-700 p-1.5">Recargo Noct. (0.35)</th>
+                  <th className="border border-slate-700 p-1.5">Dom. / Fest. (1.75)</th>
+                  <th className="border border-slate-700 p-1.5">Comp. (-)</th>
+                  <th className="border border-slate-700 p-1.5 bg-slate-300 font-black">Total Netas</th>
+                </tr>
+              </thead>
+              <tbody className="text-[9px] font-mono text-slate-900">
+                {printPayrollSummary.rows.map((row, idx) => (
+                  <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                    <td className="border border-slate-600 p-1.5 text-center font-bold">{idx + 1}</td>
+                    <td className="border border-slate-600 p-1.5 font-bold uppercase">{row.nom}</td>
+                    <td className="border border-slate-600 p-1.5">{row.car} ({row.are})</td>
+                    <td className="border border-slate-600 p-1.5 text-center">{row.count}</td>
+                    <td className="border border-slate-600 p-1.5 text-center">{row.hT.toFixed(1)}h</td>
+                    <td className="border border-slate-600 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1.5 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1.5 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1.5 text-center font-black bg-slate-100 text-slate-950">
+                      {row.netas.toFixed(2)}h
+                    </td>
+                  </tr>
+                ))}
+                {printPayrollSummary.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="border border-slate-600 p-4 text-center text-slate-600 font-mono">
+                      No hay turnos registrados para el período seleccionado ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}).
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9.5px]">
+                  <td colSpan={3} className="border border-slate-800 p-1.5 text-right uppercase">
+                    TOTALES GENERALES A LIQUIDAR:
+                  </td>
+                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.count}</td>
+                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
+                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1.5 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1.5 text-center bg-slate-300 text-slate-950 font-black text-xs">
+                    {printPayrollSummary.grandTotals.netas.toFixed(2)}h
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
-        </div>
 
-        <div className="mt-6 text-[8px] font-mono text-slate-500 text-center border-t border-slate-300 pt-2">
-          Documento generado por SISTEMALOG • Impresión formato A4 conforme a Ley 2466 • Registro único de horas extras y recargos
-        </div>
-      </div>
+          {/* TABLA 2: Detalle Cronológico de Turnos Amarrados en este Corte */}
+          {filteredRecords.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[9.5px] font-mono font-black uppercase text-slate-900 mb-1">
+                2. Detalle Cronológico de Turnos Registrados en este Corte ({filteredRecords.length} turnos)
+              </div>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-slate-200 text-slate-950 text-[8px] uppercase font-bold text-center">
+                    <th className="border border-slate-700 p-1 w-6">#</th>
+                    <th className="border border-slate-700 p-1 text-left w-16">Fecha</th>
+                    <th className="border border-slate-700 p-1 text-left">Colaborador</th>
+                    <th className="border border-slate-700 p-1 text-center w-14">Entrada</th>
+                    <th className="border border-slate-700 p-1 text-center w-14">Salida</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">H. Trab</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Base</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Diurna</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Noct</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Recargo</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Dom/Fest</th>
+                    <th className="border border-slate-700 p-1 text-center w-12 font-black bg-slate-300">Netas</th>
+                    <th className="border border-slate-700 p-1 text-left">Sello / Autoría</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[8px] font-mono text-slate-900">
+                  {filteredRecords.slice(0, 50).map((r, idx) => (
+                    <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                      <td className="border border-slate-600 p-1 text-center">{idx + 1}</td>
+                      <td className="border border-slate-600 p-1 font-bold">{r.fec}</td>
+                      <td className="border border-slate-600 p-1 font-bold uppercase">{r.nom}</td>
+                      <td className="border border-slate-600 p-1 text-center">{r._ent}</td>
+                      <td className="border border-slate-600 p-1 text-center">{r._sal}</td>
+                      <td className="border border-slate-600 p-1 text-center">{r.hT ? r.hT.toFixed(1) : '—'}h</td>
+                      <td className="border border-slate-600 p-1 text-center">{r.base || 0}h</td>
+                      <td className="border border-slate-600 p-1 text-center">{r.extDiurna > 0 ? `${r.extDiurna.toFixed(2)}h` : '—'}</td>
+                      <td className="border border-slate-600 p-1 text-center">{r.extNocturna > 0 ? `${r.extNocturna.toFixed(2)}h` : '—'}</td>
+                      <td className="border border-slate-600 p-1 text-center">{r.recNoct > 0 ? `${r.recNoct.toFixed(2)}h` : '—'}</td>
+                      <td className="border border-slate-600 p-1 text-center">{r.domFest > 0 ? `${r.domFest.toFixed(2)}h` : '—'}</td>
+                      <td className="border border-slate-600 p-1 text-center font-bold bg-slate-100">{r.netas.toFixed(2)}h</td>
+                      <td className="border border-slate-600 p-1 text-[7.5px] truncate max-w-[140px] text-slate-700">{r.creadoPor || 'Sistema'}</td>
+                    </tr>
+                  ))}
+                  {filteredRecords.length > 50 && (
+                    <tr>
+                      <td colSpan={13} className="border border-slate-600 p-1 text-center text-slate-500 italic">
+                        Mostrando primeros 50 registros de {filteredRecords.length} turnos amarrados en este reporte.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Parámetros de Ley 2466 aplicados */}
+          <div className="border border-slate-400 rounded p-2 mb-4 bg-slate-50 text-[8.5px] font-mono text-slate-800 flex justify-between items-center">
+            <div>
+              <strong>Reglas de Ley 2466 aplicadas:</strong> Jornada base: {config.normalBaseHours}h (Miér {config.wedBaseHours}h) • Franja nocturna iniciada a las {config.nightSurchargeStartHour}:00 • Multiplicadores: Ext. Diurna x{config.extraDiurnaMultiplier}, Ext. Nocturna x{config.extraNocturnaMultiplier}, Recargo x{config.recNoctMultiplier}, Dom/Fest x{config.domFestMultiplier}.
+            </div>
+            <div className="font-bold text-slate-950">
+              Cortes: 12 y 27 de cada mes
+            </div>
+          </div>
+
+          {/* Bloque de Firmas y Autorizaciones Oficiales */}
+          <div className="grid grid-cols-3 gap-6 pt-4 border-t-2 border-slate-900 text-slate-900 font-mono">
+            <div className="text-center">
+              <div className="border-b border-slate-700 mb-1 h-9"></div>
+              <p className="text-[9.5px] font-black uppercase">Diana Agudelo</p>
+              <p className="text-[8px] text-slate-700">SST & Talento Humano</p>
+              <p className="text-[7.5px] text-slate-500">sst@latinproducts.com.co</p>
+              <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">ELABORÓ</span>
+            </div>
+
+            <div className="text-center">
+              <div className="border-b border-slate-700 mb-1 h-9"></div>
+              <p className="text-[9.5px] font-black uppercase">Washington Quiñones</p>
+              <p className="text-[8px] text-slate-700">Administrador Principal & Propietario</p>
+              <p className="text-[7.5px] text-slate-500">soporteyabi@gmail.com</p>
+              <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">REVISÓ Y APROBÓ</span>
+            </div>
+
+            <div className="text-center">
+              <div className="border-b border-slate-700 mb-1 h-9"></div>
+              <p className="text-[9.5px] font-black uppercase">Contabilidad & Nómina</p>
+              <p className="text-[8px] text-slate-700">Pagaduría Latin Products SAS</p>
+              <p className="text-[7.5px] text-slate-500">Fecha: ____/____/________</p>
+              <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">RECIBIÓ CONFORME</span>
+            </div>
+          </div>
+
+          <div className="mt-4 text-[7.5px] font-mono text-slate-600 text-center border-t border-slate-300 pt-1.5">
+            Documento Oficial generado por SISTEMALOG • Impresión formato A4 conforme a Ley 2466 • Liquidación aprobada para pago
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
