@@ -686,18 +686,29 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     } else if (historyRangeType === 'fortnightly') {
       const day = current.getDate();
       if (direction === 'prev') {
-        if (day > 15) {
-          current.setDate(1); // Move to 1st of current month
-        } else {
+        if (day <= 12) {
+          // Ir al Corte 27 del mes anterior
           current.setMonth(current.getMonth() - 1);
-          current.setDate(16); // Move to 16th of previous month
+          current.setDate(20);
+        } else if (day <= 27) {
+          // Ir al Corte 12 del mes actual
+          current.setDate(5);
+        } else {
+          // Ir al Corte 27 del mes actual
+          current.setDate(20);
         }
       } else {
-        if (day <= 15) {
-          current.setDate(16); // Move to 16th of current month
-        } else {
+        if (day <= 12) {
+          // Ir al Corte 27 del mes actual
+          current.setDate(20);
+        } else if (day <= 27) {
+          // Ir al Corte 12 del siguiente mes
           current.setMonth(current.getMonth() + 1);
-          current.setDate(1); // Move to 1st of next month
+          current.setDate(5);
+        } else {
+          // Ir al Corte 27 del siguiente mes
+          current.setMonth(current.getMonth() + 1);
+          current.setDate(20);
         }
       }
     } else if (historyRangeType === 'monthly') {
@@ -788,14 +799,25 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     }
 
     if (historyRangeType === 'fortnightly') {
-      if (day <= 15) {
-        const start = new Date(year, month, 1);
-        const end = new Date(year, month, 15);
-        return `1ª Quincena de ${months[month]}: del ${formatDate(start)} al ${formatDate(end)}`;
+      // Cortes 12 y 27 de cada mes:
+      // Corte 12: del 28 del mes anterior al 12 del mes actual
+      // Corte 27: del 13 al 27 del mes actual
+      if (day <= 12) {
+        const prevMonth = month === 0 ? 11 : month - 1;
+        const prevYear = month === 0 ? year - 1 : year;
+        const start = new Date(prevYear, prevMonth, 28);
+        const end = new Date(year, month, 12);
+        return `Corte del 12 (${months[month]}): del ${formatDate(start)} al ${formatDate(end)}`;
+      } else if (day <= 27) {
+        const start = new Date(year, month, 13);
+        const end = new Date(year, month, 27);
+        return `Corte del 27 (${months[month]}): del ${formatDate(start)} al ${formatDate(end)}`;
       } else {
-        const start = new Date(year, month, 16);
-        const end = new Date(year, month + 1, 0);
-        return `2ª Quincena de ${months[month]}: del ${formatDate(start)} al ${formatDate(end)}`;
+        const nextMonth = month === 11 ? 0 : month + 1;
+        const nextYear = month === 11 ? year + 1 : year;
+        const start = new Date(year, month, 28);
+        const end = new Date(nextYear, nextMonth, 12);
+        return `Corte del 12 (${months[nextMonth]}): del ${formatDate(start)} al ${formatDate(end)}`;
       }
     }
 
@@ -846,12 +868,20 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           endRange.setDate(startRange.getDate() + 6);
           endRange.setHours(23, 59, 59, 999);
         } else if (historyRangeType === 'fortnightly') {
-          if (day <= 15) {
-            startRange = new Date(year, month, 1, 0, 0, 0, 0);
-            endRange = new Date(year, month, 15, 23, 59, 59, 999);
+          // Cortes del 12 y del 27 de cada mes
+          if (day <= 12) {
+            const prevMonth = month === 0 ? 11 : month - 1;
+            const prevYear = month === 0 ? year - 1 : year;
+            startRange = new Date(prevYear, prevMonth, 28, 0, 0, 0, 0);
+            endRange = new Date(year, month, 12, 23, 59, 59, 999);
+          } else if (day <= 27) {
+            startRange = new Date(year, month, 13, 0, 0, 0, 0);
+            endRange = new Date(year, month, 27, 23, 59, 59, 999);
           } else {
-            startRange = new Date(year, month, 16, 0, 0, 0, 0);
-            endRange = new Date(year, month + 1, 0, 23, 59, 59, 999);
+            const nextMonth = month === 11 ? 0 : month + 1;
+            const nextYear = month === 11 ? year + 1 : year;
+            startRange = new Date(year, month, 28, 0, 0, 0, 0);
+            endRange = new Date(nextYear, nextMonth, 12, 23, 59, 59, 999);
           }
         } else { // 'monthly'
           startRange = new Date(year, month, 1, 0, 0, 0, 0);
@@ -890,6 +920,61 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     container.remove();
     triggerToast('JSON de auditoría descargado exitosamente', 'success');
   };
+
+  // Print official A4 Payroll sheet for Ley 2466 with 12/27 cutoffs
+  const handlePrintNominaA4 = () => {
+    document.body.classList.add('print-nomina-mode');
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('print-nomina-mode');
+    }, 1200);
+  };
+
+  // Group filtered records by worker for the printable A4 payroll report
+  const printPayrollSummary = useMemo(() => {
+    const summaryMap: Record<string, { nom: string; car: string; are: string; count: number; hT: number; extDiurna: number; extNocturna: number; recNoct: number; domFest: number; comp: number; netas: number }> = {};
+    
+    filteredRecords.forEach(r => {
+      const key = r.nom.trim();
+      if (!summaryMap[key]) {
+        summaryMap[key] = {
+          nom: r.nom,
+          car: r.car || 'Operario Logístico',
+          are: r.are || 'Operaciones',
+          count: 0,
+          hT: 0,
+          extDiurna: 0,
+          extNocturna: 0,
+          recNoct: 0,
+          domFest: 0,
+          comp: 0,
+          netas: 0
+        };
+      }
+      summaryMap[key].count += 1;
+      summaryMap[key].hT += r.hT;
+      summaryMap[key].extDiurna += r.extDiurna;
+      summaryMap[key].extNocturna += r.extNocturna;
+      summaryMap[key].recNoct += r.recNoct;
+      summaryMap[key].domFest += r.domFest;
+      summaryMap[key].comp += r.comp;
+      summaryMap[key].netas += r.netas;
+    });
+
+    const rows = Object.values(summaryMap).sort((a, b) => a.nom.localeCompare(b.nom));
+    const grandTotals = rows.reduce((acc, row) => ({
+      count: acc.count + row.count,
+      hT: acc.hT + row.hT,
+      extDiurna: acc.extDiurna + row.extDiurna,
+      extNocturna: acc.extNocturna + row.extNocturna,
+      recNoct: acc.recNoct + row.recNoct,
+      domFest: acc.domFest + row.domFest,
+      comp: acc.comp + row.comp,
+      netas: acc.netas + row.netas
+    }), { count: 0, hT: 0, extDiurna: 0, extNocturna: 0, recNoct: 0, domFest: 0, comp: 0, netas: 0 });
+
+    return { rows, grandTotals };
+  }, [filteredRecords]);
 
   return (
     <div className="bg-[#02161a] min-height-screen text-slate-100 font-sans border border-[#00f0b5]/25 rounded-2xl overflow-hidden shadow-2xl relative">
@@ -1508,6 +1593,42 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     </button>
                     <button
                       type="button"
+                      onClick={() => {
+                        setHistoryRangeType('fortnightly');
+                        const baseDate = filterWeekDate ? new Date(filterWeekDate + 'T00:00:00') : new Date();
+                        const y = baseDate.getFullYear();
+                        const m = String(baseDate.getMonth() + 1).padStart(2, '0');
+                        setFilterWeekDate(`${y}-${m}-12`);
+                      }}
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1 cursor-pointer ${
+                        historyRangeType === 'fortnightly' && filterWeekDate && new Date(filterWeekDate + 'T00:00:00').getDate() <= 12
+                          ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_8px_rgba(251,191,36,0.3)]'
+                          : 'text-amber-300 hover:text-white'
+                      }`}
+                      title="Corte del 12: Del 28 del mes anterior al 12 del mes actual"
+                    >
+                      <span>✂️</span> Corte 12
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHistoryRangeType('fortnightly');
+                        const baseDate = filterWeekDate ? new Date(filterWeekDate + 'T00:00:00') : new Date();
+                        const y = baseDate.getFullYear();
+                        const m = String(baseDate.getMonth() + 1).padStart(2, '0');
+                        setFilterWeekDate(`${y}-${m}-27`);
+                      }}
+                      className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center gap-1 cursor-pointer ${
+                        historyRangeType === 'fortnightly' && filterWeekDate && new Date(filterWeekDate + 'T00:00:00').getDate() > 12 && new Date(filterWeekDate + 'T00:00:00').getDate() <= 27
+                          ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_8px_rgba(251,191,36,0.3)]'
+                          : 'text-amber-300 hover:text-white'
+                      }`}
+                      title="Corte del 27: Del 13 al 27 del mes actual"
+                    >
+                      <span>✂️</span> Corte 27
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setHistoryRangeType('monthly')}
                       className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase rounded-md transition-all h-8 flex items-center cursor-pointer ${
                         historyRangeType === 'monthly'
@@ -1551,20 +1672,21 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
               </div>
 
               {/* Action utilities */}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={triggerDownloadJSON}
-                  className="bg-[#02161a] border border-[#00f0b5]/40 px-4 py-2.5 rounded-lg text-xs font-mono text-[#00f0b5] hover:bg-[#032026] transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+                  className="bg-[#02161a] border border-[#00f0b5]/40 px-3.5 py-2.5 rounded-lg text-xs font-mono text-[#00f0b5] hover:bg-[#032026] transition-all flex items-center gap-2 cursor-pointer shadow-sm"
                 >
                   <Download className="w-3.5 h-3.5" />
                   JSON Auditoría
                 </button>
                 <button
-                  onClick={() => window.print()}
-                  className="bg-[#02161a] border border-slate-700 px-4 py-2.5 rounded-lg text-xs font-mono text-slate-300 hover:text-white hover:bg-slate-900 transition-all flex items-center gap-2 cursor-pointer"
+                  onClick={handlePrintNominaA4}
+                  className="bg-[#00f0b5] border border-[#00f0b5] px-4 py-2.5 rounded-lg text-xs font-mono font-black text-slate-950 hover:bg-[#25ffcb] transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(0,240,181,0.35)]"
+                  title="Imprimir Planilla Oficial A4 con cabecera corporativa, firmas y cortes 12/27"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Imprimir Nómina
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-slate-950" />
+                  Impresión A4 Nómina
                 </button>
               </div>
 
@@ -2761,6 +2883,153 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           </div>
         )}
 
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 📄 FORMATO OFICIAL A4 IMPRESIÓN DE NÓMINA & CORTES 12/27 (LEY 2466)       */}
+      {/* ========================================================================= */}
+      <div id="printNominaA4" className="hidden">
+        {/* Cabecera Corporativa */}
+        <div className="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-black tracking-tight text-slate-950 font-mono">SISTEMALOG S.A.S.</span>
+              <span className="text-xs text-slate-600 font-bold">| LATIN PRODUCTS S.A.S.</span>
+            </div>
+            <p className="text-[10px] text-slate-600 font-mono mt-0.5">
+              NIT: 901.458.921-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
+            </p>
+            <p className="text-[10px] text-slate-500 font-mono">
+              Software de Gestión Operativa, Logística y Liquidación de Personal
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="inline-block border border-slate-900 bg-slate-100 text-slate-900 font-mono font-black text-[10px] px-2.5 py-1 rounded">
+              LEY 2466 DE 2025/2026
+            </span>
+            <p className="text-[10px] font-mono text-slate-600 mt-1">
+              Fecha de Emisión: <strong>{new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+            </p>
+          </div>
+        </div>
+
+        {/* Título del Documento y Período */}
+        <div className="bg-slate-100 border border-slate-300 rounded p-2.5 mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-xs font-black uppercase text-slate-950 font-mono tracking-wide">
+              PLANILLA OFICIAL DE HORAS EXTRAS & RECARGOS (CORTES 12 Y 27)
+            </h2>
+            <p className="text-[10px] text-slate-700 font-mono mt-0.5">
+              Período Liquidado: <strong className="text-slate-950">{getHistoryRangeLabel() || 'Corte Quincenal'}</strong>
+            </p>
+          </div>
+          <div className="text-right text-[10px] font-mono">
+            <span className="text-slate-600">Turnos en este corte:</span> <strong className="text-slate-950">{printPayrollSummary.grandTotals.count} registros</strong>
+          </div>
+        </div>
+
+        {/* Tabla Oficial de Liquidación por Colaborador */}
+        <table className="w-full border-collapse mb-4">
+          <thead>
+            <tr className="bg-slate-200 text-slate-900 text-[9px] uppercase font-bold text-center">
+              <th className="border border-slate-700 p-1.5 text-left">N°</th>
+              <th className="border border-slate-700 p-1.5 text-left">Colaborador / Trabajador</th>
+              <th className="border border-slate-700 p-1.5 text-left">Cargo / Área</th>
+              <th className="border border-slate-700 p-1.5">Turnos</th>
+              <th className="border border-slate-700 p-1.5">H. Trabajadas</th>
+              <th className="border border-slate-700 p-1.5">Ext. Diurna (1.25)</th>
+              <th className="border border-slate-700 p-1.5">Ext. Nocturna (1.75)</th>
+              <th className="border border-slate-700 p-1.5">Recargo Noct. (0.35)</th>
+              <th className="border border-slate-700 p-1.5">Dom. / Festivo (1.75)</th>
+              <th className="border border-slate-700 p-1.5">Comp. (-)</th>
+              <th className="border border-slate-700 p-1.5 bg-slate-300 font-black">Total Netas</th>
+            </tr>
+          </thead>
+          <tbody className="text-[9.5px] font-mono text-slate-900">
+            {printPayrollSummary.rows.map((row, idx) => (
+              <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                <td className="border border-slate-600 p-1.5 text-center font-bold">{idx + 1}</td>
+                <td className="border border-slate-600 p-1.5 font-bold uppercase">{row.nom}</td>
+                <td className="border border-slate-600 p-1.5">{row.car} ({row.are})</td>
+                <td className="border border-slate-600 p-1.5 text-center">{row.count}</td>
+                <td className="border border-slate-600 p-1.5 text-center">{row.hT.toFixed(1)}h</td>
+                <td className="border border-slate-600 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
+                <td className="border border-slate-600 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
+                <td className="border border-slate-600 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
+                <td className="border border-slate-600 p-1.5 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
+                <td className="border border-slate-600 p-1.5 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
+                <td className="border border-slate-600 p-1.5 text-center font-black bg-slate-100 text-slate-950">
+                  {row.netas.toFixed(2)}h
+                </td>
+              </tr>
+            ))}
+            {printPayrollSummary.rows.length === 0 && (
+              <tr>
+                <td colSpan={11} className="border border-slate-600 p-6 text-center text-slate-500 font-mono">
+                  No hay turnos registrados para el período seleccionado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9.5px]">
+              <td colSpan={3} className="border border-slate-800 p-2 text-right uppercase">
+                TOTALES GENERALES A LIQUIDAR:
+              </td>
+              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.count}</td>
+              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
+              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
+              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
+              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
+              <td className="border border-slate-800 p-2 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
+              <td className="border border-slate-800 p-2 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
+              <td className="border border-slate-800 p-2 text-center bg-slate-300 text-slate-950 font-black text-xs">
+                {printPayrollSummary.grandTotals.netas.toFixed(2)}h
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+
+        {/* Parámetros de Ley 2466 aplicados */}
+        <div className="border border-slate-300 rounded p-2 mb-6 bg-slate-50 text-[9px] font-mono text-slate-700 flex justify-between items-center">
+          <div>
+            <strong>Reglas de Ley 2466:</strong> Jornada base: {config.normalBaseHours}h (Miér {config.wedBaseHours}h) • Franja nocturna iniciada a las {config.nightSurchargeStartHour}:00 • Multiplicadores: Ext. Diurna x{config.extraDiurnaMultiplier}, Ext. Nocturna x{config.extraNocturnaMultiplier}, Recargo x{config.recNoctMultiplier}, Dom/Fest x{config.domFestMultiplier}.
+          </div>
+          <div className="font-bold text-slate-900">
+            Cortes: 12 y 27 de cada mes
+          </div>
+        </div>
+
+        {/* Bloque de Firmas y Autorizaciones */}
+        <div className="grid grid-cols-3 gap-6 pt-6 border-t-2 border-slate-900 text-slate-900 font-mono">
+          <div className="text-center">
+            <div className="border-b border-slate-600 mb-1.5 h-10"></div>
+            <p className="text-[10px] font-black uppercase">Diana Agudelo</p>
+            <p className="text-[8.5px] text-slate-600">SST & Talento Humano</p>
+            <p className="text-[8px] text-slate-500">sst@latinproducts.com.co</p>
+            <span className="inline-block mt-1 text-[8px] text-slate-600 border border-slate-400 px-1 rounded">ELABORÓ</span>
+          </div>
+
+          <div className="text-center">
+            <div className="border-b border-slate-600 mb-1.5 h-10"></div>
+            <p className="text-[10px] font-black uppercase">Washington Quiñones</p>
+            <p className="text-[8.5px] text-slate-600">Administrador Principal & Dueño</p>
+            <p className="text-[8px] text-slate-500">soporteyabi@gmail.com</p>
+            <span className="inline-block mt-1 text-[8px] text-slate-600 border border-slate-400 px-1 rounded">REVISÓ Y APROBÓ</span>
+          </div>
+
+          <div className="text-center">
+            <div className="border-b border-slate-600 mb-1.5 h-10"></div>
+            <p className="text-[10px] font-black uppercase">Contabilidad & Nómina</p>
+            <p className="text-[8.5px] text-slate-600">Pagaduría Latin Products</p>
+            <p className="text-[8px] text-slate-500">Fecha: ____/____/________</p>
+            <span className="inline-block mt-1 text-[8px] text-slate-600 border border-slate-400 px-1 rounded">RECIBIÓ CONFORME</span>
+          </div>
+        </div>
+
+        <div className="mt-6 text-[8px] font-mono text-slate-500 text-center border-t border-slate-300 pt-2">
+          Documento generado por SISTEMALOG • Impresión formato A4 conforme a Ley 2466 • Registro único de horas extras y recargos
+        </div>
       </div>
     </div>
   );

@@ -107,7 +107,8 @@
 /* Hide printable containers by default in screen view */
 #printReceipt,
 #printProvision,
-#printReport {
+#printReport,
+#printNominaA4 {
   display: none !important;
 }
 
@@ -285,5 +286,46 @@
 
   body.print-report-mode #printReport .text-right {
     text-align: right !important;
+  }
+
+  /* 📄 REPORTE A4 NÓMINA CORTES 12 Y 27 LEY 2466 */
+  body.print-nomina-mode #root {
+    display: none !important;
+  }
+
+  body.print-nomina-mode #printNominaA4 {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 10mm 12mm !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-family: ui-sans-serif, system-ui, sans-serif !important;
+  }
+
+  body.print-nomina-mode #printNominaA4 table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    margin-top: 10px !important;
+    margin-bottom: 12px !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  body.print-nomina-mode #printNominaA4 th,
+  body.print-nomina-mode #printNominaA4 td {
+    border: 1px solid #1e293b !important;
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+    color: #000000 !important;
+  }
+
+  body.print-nomina-mode #printNominaA4 th {
+    background-color: #e2e8f0 !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
   }
 }

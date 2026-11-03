@@ -1206,7 +1206,14 @@ export default function OrdersModule({
                         <div className="text-[10px] text-slate-400">PV: <span className="text-yellow-450 font-black text-yellow-400">{order.pv || 'N/A'}</span></div>
                         <div className="text-[9px] text-slate-500">OC: {order.oc || 'N/A'}</div>
                       </td>
-                      <td className="p-4 text-slate-400">{order.fechaIngreso}</td>
+                      <td className="p-4 text-slate-400">
+                        <div>{order.fechaIngreso}</div>
+                        {order.creadoPor && (
+                          <div className="text-[8.5px] text-teal-400 font-sans mt-0.5 truncate max-w-[110px]" title={`Registrado por: ${order.creadoPor}`}>
+                            👤 {order.creadoPor.split(' ')[0]}
+                          </div>
+                        )}
+                      </td>
                       <td className="p-4 font-sans font-medium text-white max-w-xs truncate">{order.cliente}</td>
                       <td className="p-4 font-sans text-slate-400">{order.ciudad}</td>
                       <td className="p-4 text-center font-bold text-white">{order.cajas}</td>

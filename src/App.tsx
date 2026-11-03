@@ -5515,6 +5515,27 @@ export default function App() {
               </div>
             </div>
 
+            {/* Sello de Auditoría & Autoría en la Orden */}
+            <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-[10.5px] font-mono">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#00f0b5] animate-pulse"></span>
+                <span className="text-slate-400">Registrado por:</span>
+                <strong className="text-[#00f0b5]">{editingOrder.creadoPor || 'Washington Quiñones (soporteyabi@gmail.com)'}</strong>
+                {editingOrder.creadoEn && (
+                  <span className="text-slate-500">· {editingOrder.creadoEn.split('T')[0]}</span>
+                )}
+              </div>
+              {editingOrder.modificadoPor && (
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <span>Modificado por:</span>
+                  <strong className="text-sky-300">{editingOrder.modificadoPor}</strong>
+                  {editingOrder.modificadoEn && (
+                    <span className="text-slate-500">· {editingOrder.modificadoEn.split('T')[0]}</span>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="flex items-center justify-between pt-3 border-t border-sky-950">
               <button 
                 type="button" 
