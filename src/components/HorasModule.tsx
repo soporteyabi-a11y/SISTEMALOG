@@ -114,8 +114,15 @@ const DEFAULT_CONFIG: ConfigHours = {
 };
 
 export default function HorasModule({ currentUser }: { currentUser?: AppUser | null } = {}) {
-  // Navigation tabs - default to 'historial' to immediately display all historical records and worker summaries
-  const [activeSubTab, setActiveSubTab] = useState<'registrar' | 'historial' | 'personal' | 'ajustes' | 'consulta'>('historial');
+  // Access level: Washington (Admin) has full rights to everything; workers have self-registration access
+  const isAdmin = currentUser?.rol === 'SUPER_ADMIN' || !currentUser;
+  const isSST = currentUser?.rol === 'SST_TALENTO';
+  const hasAdminRights = isAdmin || isSST;
+
+  // Navigation tabs - workers (Deyci, Julian, Juan, Antonio) default to 'registrar', admin defaults to 'historial'
+  const [activeSubTab, setActiveSubTab] = useState<'registrar' | 'historial' | 'personal' | 'ajustes' | 'consulta'>(() => {
+    return hasAdminRights ? 'historial' : 'registrar';
+  });
 
   // Core records and master worker directory State (pre-seeded with production records)
   const [records, setRecords] = useState<OvertimeRecord[]>(() => {
@@ -230,6 +237,49 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // Helper to match worker name with logged in user (e.g. Deyci, Julian, Juan, Antonio, Washington)
+  const findMatchingWorker = (name: string, list: Worker[]) => {
+    if (!name) return null;
+    const q = name.toLowerCase();
+    return list.find(w => {
+      const n = w.nom.toLowerCase();
+      if (q.includes('deyci') && n.includes('deyci')) return true;
+      if (q.includes('julian') && n.includes('julian')) return true;
+      if (q.includes('juan') && n.includes('juan')) return true;
+      if (q.includes('antonio') && n.includes('antonio')) return true;
+      if (q.includes('washington') && n.includes('washington')) return true;
+      return n.includes(q) || q.includes(n);
+    });
+  };
+
+  // Pre-fill worker name for workers registering their turn
+  useEffect(() => {
+    if (!hasAdminRights && currentUser && workers.length > 0 && !workerName) {
+      const match = findMatchingWorker(currentUser.nombre, workers);
+      if (match) {
+        setWorkerName(match.nom);
+        setWorkerRole(match.car || '');
+        setWorkerDept(match.are || '');
+      } else {
+        setWorkerName(currentUser.nombre);
+        setWorkerRole(currentUser.cargo || 'Operario');
+        setWorkerDept(currentUser.departamento || 'Logística');
+      }
+    }
+  }, [currentUser, workers, hasAdminRights, workerName]);
+
+  // Set default worker in personal consultation tab for workers
+  useEffect(() => {
+    if (!hasAdminRights && currentUser && !personalSearchWorker) {
+      const match = findMatchingWorker(currentUser.nombre, workers);
+      if (match) {
+        setPersonalSearchWorker(match.nom);
+      } else {
+        setPersonalSearchWorker(currentUser.nombre);
+      }
+    }
+  }, [currentUser, workers, hasAdminRights, personalSearchWorker]);
 
   // Convert "HH:MM" string to decimal hours
   const parseTimeToHours = (timeStr: string): number | null => {
@@ -1030,76 +1080,120 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
         </div>
         
         {/* Navigation Tabs bar */}
-        <div className="flex flex-wrap gap-1.5 bg-[#02161a] p-1.5 border border-[#00f0b5]/30 rounded-xl font-mono text-xs shadow-lg">
-          <button 
-            onClick={() => setActiveSubTab('historial')}
-            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'historial' 
-                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
-                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
-            }`}
-          >
-            <Archive className="w-3.5 h-3.5" />
-            <span>Historial & Turnos</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
-              activeSubTab === 'historial' ? 'bg-slate-950/25 text-slate-950' : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-[#02161a] p-1.5 border border-[#00f0b5]/30 rounded-xl font-mono text-xs shadow-lg">
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {hasAdminRights ? (
+              <>
+                {/* Admin Subtabs: Full access to everything */}
+                <button 
+                  onClick={() => setActiveSubTab('historial')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'historial' 
+                      ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>Historial & Turnos</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
+                    activeSubTab === 'historial' ? 'bg-slate-950/25 text-slate-950' : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
+                  }`}>
+                    {records.length}
+                  </span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveSubTab('personal')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'personal' 
+                      ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Personal & Fichas</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
+                    activeSubTab === 'personal' ? 'bg-slate-950/25 text-slate-950' : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
+                  }`}>
+                    {workers.length}
+                  </span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveSubTab('registrar')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'registrar' 
+                      ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Registrar Turno</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveSubTab('consulta')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'consulta' 
+                      ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Consulta Nómina</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveSubTab('ajustes')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'ajustes' 
+                      ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_15px_rgba(251,191,36,0.4)]' 
+                      : 'text-amber-400/80 hover:text-amber-200 hover:bg-amber-950/30'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Fórmulas Ley 2466</span>
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Workers Subtabs (Deyci, Julian, Juan, Antonio): strictly self-registration & personal consultation */}
+                <button 
+                  onClick={() => setActiveSubTab('registrar')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'registrar' 
+                      ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Registrar Mi Turno</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveSubTab('consulta')}
+                  className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
+                    activeSubTab === 'consulta' 
+                      ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
+                      : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                  }`}
+                >
+                  <UserCheck className="w-3.5 h-3.5" />
+                  <span>Mis Horas Registradas</span>
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 pr-2">
+            <span className={`text-[10px] font-mono px-2.5 py-1 rounded-md font-bold uppercase tracking-wider ${
+              hasAdminRights 
+                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30' 
+                : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
             }`}>
-              {records.length}
+              {hasAdminRights ? '👑 MODO ADMINISTRADOR (CONTROL TOTAL)' : '👤 MODO TRABAJADOR: REGISTRO DE TURNOS'}
             </span>
-          </button>
-
-          <button 
-            onClick={() => setActiveSubTab('personal')}
-            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'personal' 
-                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
-                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>Personal & Fichas</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded font-black ${
-              activeSubTab === 'personal' ? 'bg-slate-950/25 text-slate-950' : 'bg-[#00f0b5]/15 text-[#00f0b5] border border-[#00f0b5]/30'
-            }`}>
-              {workers.length}
-            </span>
-          </button>
-
-          <button 
-            onClick={() => setActiveSubTab('registrar')}
-            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'registrar' 
-                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
-                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Registrar Turno</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveSubTab('consulta')}
-            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'consulta' 
-                ? 'bg-[#00f0b5] text-slate-950 font-black shadow-[0_0_15px_rgba(0,240,181,0.4)]' 
-                : 'text-slate-300 hover:text-white hover:bg-slate-900/80'
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Consulta Nómina</span>
-          </button>
-
-          <button 
-            onClick={() => setActiveSubTab('ajustes')}
-            className={`px-4 py-2.5 rounded-lg flex items-center gap-2 transition-all cursor-pointer ${
-              activeSubTab === 'ajustes' 
-                ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_15px_rgba(251,191,36,0.4)]' 
-                : 'text-amber-400/80 hover:text-amber-200 hover:bg-amber-950/30'
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Fórmulas Ley 2466</span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -1125,15 +1219,48 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
               <div className="border-b border-slate-800 pb-3 flex justify-between items-center">
                 <h3 className="font-mono text-sm uppercase text-cyan-400 font-bold flex items-center gap-2">
                   <Plus className="w-4 h-4 text-cyan-400" />
-                  {editingRecordId ? 'Modificar Registro Existente' : 'Ingresar Jornada Trabajada'}
+                  {editingRecordId 
+                    ? 'Modificar Registro Existente' 
+                    : hasAdminRights 
+                    ? 'Ingresar Jornada Trabajada (Administrador)' 
+                    : `Registrar Mi Jornada (${currentUser?.nombre || 'Colaborador'})`}
                 </h3>
                 <button 
                   onClick={handleResetForm}
-                  className="text-[10px] font-mono text-slate-500 hover:text-slate-300 uppercase underline"
+                  className="text-[10px] font-mono text-slate-500 hover:text-slate-300 uppercase underline cursor-pointer"
                 >
                   Limpiar Formulario
                 </button>
               </div>
+
+              {/* Notice for workers self-registering their overtime shifts */}
+              {!hasAdminRights && currentUser && (
+                <div className="bg-[#04242a] border border-[#00f0b5]/40 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-black font-mono text-sm border shadow-md shrink-0"
+                      style={{
+                        backgroundColor: `${currentUser.color || '#00f0b5'}20`,
+                        borderColor: `${currentUser.color || '#00f0b5'}60`,
+                        color: currentUser.color || '#00f0b5'
+                      }}
+                    >
+                      {currentUser.avatar || 'TB'}
+                    </div>
+                    <div>
+                      <span className="text-[#00f0b5] font-black uppercase text-xs block">
+                        Autogestión de Horas Extras — {currentUser.nombre}
+                      </span>
+                      <span className="text-slate-300 text-[10px] leading-tight block">
+                        Registra aquí tu hora de entrada, salida y motivo. Tu jornada quedará firmada con tu autoría. El Administrador consolidará la nómina en los cortes 12 y 27.
+                      </span>
+                    </div>
+                  </div>
+                  <span className="px-3 py-1 bg-[#00f0b5] text-slate-950 text-[10px] rounded-lg font-black uppercase tracking-wider self-start sm:self-center shrink-0">
+                    Turno Personal
+                  </span>
+                </div>
+              )}
 
               {/* Step 1: Info del Trabajador */}
               <div className="space-y-4">
@@ -1143,11 +1270,16 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs text-slate-400 font-mono">Nombre Completo</label>
+                    <label className="text-xs text-slate-400 font-mono flex items-center justify-between">
+                      <span>{hasAdminRights ? 'Nombre Completo del Trabajador' : 'Colaborador (Tu Nombre de Registro)'}</span>
+                      {!hasAdminRights && (
+                        <span className="text-[9.5px] text-[#00f0b5] font-bold">✓ Autoseleccionado</span>
+                      )}
+                    </label>
                     <select
                       value={workerName}
                       onChange={(e) => handleSelectMasterWorker(e.target.value)}
-                      className="bg-slate-950 border border-slate-800 text-white rounded-md p-3 text-sm focus:border-cyan-400 outline-none transition-all"
+                      className="bg-slate-950 border border-slate-800 text-white rounded-md p-3 text-sm focus:border-cyan-400 outline-none transition-all cursor-pointer font-bold"
                     >
                       <option value="">-- Seleccione un Trabajador --</option>
                       {workers.map(w => (
@@ -1155,7 +1287,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       ))}
                     </select>
                     <div className="text-[10px] text-slate-500 mt-1 uppercase font-mono">
-                      ¿No está? Añádalo en la pestaña <span className="text-cyan-400">"Personal"</span>
+                      {hasAdminRights 
+                        ? '¿No está? Añádalo en la pestaña "Personal & Fichas"' 
+                        : 'Tu nombre queda asignado como autor responsable del turno'}
                     </div>
                   </div>
 

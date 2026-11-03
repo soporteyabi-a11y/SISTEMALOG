@@ -84,7 +84,7 @@ export const USERS_ROSTER: AppUser[] = [
     modulosPermitidos: [
       'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
-      'carriers', 'pedidos', 'pedidoEmpleados', 'novedades', 'recordatorios'
+      'carriers', 'horas', 'horasExtras', 'pedidos', 'pedidoEmpleados', 'novedades', 'recordatorios'
     ],
     permisos: {
       puedeCrearOrdenes: true,
@@ -107,12 +107,54 @@ export const USERS_ROSTER: AppUser[] = [
     modulosPermitidos: [
       'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
-      'carriers', 'provisiones', 'liquidador', 'mapas', 'seguimiento',
+      'carriers', 'provisiones', 'liquidador', 'horas', 'horasExtras', 'mapas', 'seguimiento',
       'novedades', 'pedidos', 'pedidoEmpleados', 'recordatorios'
     ],
     permisos: {
       puedeCrearOrdenes: true,
       puedeEditarFletes: true,
+      puedeVerFinanzas: false,
+      puedeGestionarNomina: false,
+      puedeGestionarUsuarios: false,
+      puedeExportarDatos: true,
+    }
+  },
+  {
+    id: 'user_juan',
+    email: 'juancarlos@latinproducts.com.co',
+    nombre: 'Juan Carlos Soler',
+    rol: 'AUXILIAR_LOGISTICO',
+    cargo: 'Auxiliar de Producción & Despacho',
+    avatar: 'JS',
+    color: '#a855f7',
+    departamento: 'Despacho & Producción',
+    modulosPermitidos: [
+      'inicio', 'tablero', 'horas', 'horasExtras', 'pedidos', 'pedidoEmpleados', 'recordatorios'
+    ],
+    permisos: {
+      puedeCrearOrdenes: true,
+      puedeEditarFletes: false,
+      puedeVerFinanzas: false,
+      puedeGestionarNomina: false,
+      puedeGestionarUsuarios: false,
+      puedeExportarDatos: true,
+    }
+  },
+  {
+    id: 'user_antonio',
+    email: 'antonio@latinproducts.com.co',
+    nombre: 'Antonio Calderon',
+    rol: 'AUXILIAR_LOGISTICO',
+    cargo: 'Jefe de Despacho & Muelle',
+    avatar: 'AC',
+    color: '#10b981',
+    departamento: 'Despacho',
+    modulosPermitidos: [
+      'inicio', 'tablero', 'horas', 'horasExtras', 'pedidos', 'pedidoEmpleados', 'recordatorios'
+    ],
+    permisos: {
+      puedeCrearOrdenes: true,
+      puedeEditarFletes: false,
       puedeVerFinanzas: false,
       puedeGestionarNomina: false,
       puedeGestionarUsuarios: false,
@@ -129,7 +171,7 @@ export const USERS_ROSTER: AppUser[] = [
     color: '#f59e0b',
     departamento: 'Seguridad y Salud en el Trabajo & Nómina',
     modulosPermitidos: [
-      'inicio', 'tablero', 'horas', 'vehiculos', 'citas', 'agenda',
+      'inicio', 'tablero', 'horas', 'horasExtras', 'vehiculos', 'citas', 'agenda',
       'novedades', 'pedidos', 'pedidoEmpleados', 'recordatorios'
     ],
     permisos: {
@@ -150,7 +192,26 @@ export const loadUsersRoster = (): AppUser[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        // Guarantee every user has horas module access so workers can register
+        const enriched = parsed.map((u: AppUser) => {
+          const currentMods = u.modulosPermitidos || [];
+          if (!currentMods.includes('horas')) {
+            return {
+              ...u,
+              modulosPermitidos: [...currentMods, 'horas', 'horasExtras']
+            };
+          }
+          return u;
+        });
+
+        // Ensure Juan Carlos and Antonio Calderon exist in roster
+        USERS_ROSTER.forEach(defaultU => {
+          if (!enriched.some(existing => existing.email.toLowerCase() === defaultU.email.toLowerCase())) {
+            enriched.push(defaultU);
+          }
+        });
+
+        return enriched;
       }
     }
   } catch (e) {
