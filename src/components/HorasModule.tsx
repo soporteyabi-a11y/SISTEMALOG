@@ -10,7 +10,7 @@ import {
   Activity, Bell, AlertTriangle, CheckCircle2, Calendar, 
   DollarSign, Sliders, Settings, ChevronDown, Download, 
   RefreshCw, Save, FileSpreadsheet, Sparkles, Filter, Briefcase, UserCheck,
-  ChevronLeft, ChevronRight, Lock
+  ChevronLeft, ChevronRight, Lock, Unlock, Check
 } from 'lucide-react';
 import { saveToCloud, subscribeToCloud } from '../firebaseService';
 import { SEED_WORKERS, SEED_OVERTIME_RECORDS } from '../data/seedOvertime';
@@ -75,6 +75,9 @@ interface OvertimeRecord {
   creadoEn?: string;
   modificadoPor?: string;
   modificadoEn?: string;
+  pagado?: boolean;
+  fechaPago?: string;
+  corteLiquidado?: string;
 }
 
 interface Worker {
@@ -216,6 +219,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
   const [workerFilterSearch, setWorkerFilterSearch] = useState<string>('');
   const [isWorkerModalOpen, setIsWorkerModalOpen] = useState<boolean>(false);
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'paid'>('all');
 
   // Personal consultation search states
   const [personalSearchWorker, setPersonalSearchWorker] = useState<string>('');
@@ -609,7 +613,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     );
 
     const authorStamp = isOwner 
-      ? `${workerName} (Registrado por Propietario/Admin: Washington Quiñones)`
+      ? `${workerName} (Registrado por Washington Quiñones - Aux coordinador logistico)`
       : currentUser
       ? isSamePerson
         ? `${workerName} (${currentUser.email})`
@@ -617,15 +621,20 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       : `${workerName} (Registro directo)`;
 
     if (editingRecordId !== null) {
-      // Modify existing
+      // Modify existing while preserving settlement / payment status
       const idx = updatedRecords.findIndex(r => r.id === editingRecordId);
       if (idx >= 0) {
+        const prev = updatedRecords[idx];
         updatedRecords[idx] = {
+          ...prev,
           ...(computedPreview as OvertimeRecord),
           id: editingRecordId,
           timestamp: Date.now(),
           modificadoPor: authorStamp,
           modificadoEn: new Date().toISOString(),
+          pagado: prev.pagado,
+          fechaPago: prev.fechaPago,
+          corteLiquidado: prev.corteLiquidado,
         };
       }
       triggerToast('Registro actualizado exitosamente', 'success');
@@ -893,14 +902,14 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     return `Período Personalizado: del ${corteStartDate || 'Inicio'} al ${corteEndDate || 'Fin'}`;
   };
 
-  // Filter records matching selected range type and strict Corte date bounds
-  const filteredRecords = useMemo(() => {
+  // 1. Records strictly matching active Corte date boundaries, worker filter, and search query
+  const recordsInCorte = useMemo(() => {
     return records.filter(r => {
-      // 1. Worker filter
+      // Worker filter
       const inWorkerName = filterWorker === '__all' || r.nom.toLowerCase() === filterWorker.toLowerCase();
       if (!inWorkerName) return false;
 
-      // 2. Search query filter
+      // Search query filter
       if (historySearchTerm.trim()) {
         const query = historySearchTerm.trim().toLowerCase();
         const matchesNom = r.nom.toLowerCase().includes(query);
@@ -910,17 +919,44 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
         if (!matchesNom && !matchesCar && !matchesFec && !matchesMot) return false;
       }
 
-      // 3. Strict Date Range filters (Amarre exacto de fechas de corte)
+      // Strict Date Range filters (Amarre exacto de fechas de corte)
       if (corteType !== 'all') {
         if (corteStartDate && r.fec < corteStartDate) return false;
         if (corteEndDate && r.fec > corteEndDate) return false;
       }
 
       return true;
-    }).sort((a, b) => b.fec.localeCompare(a.fec)); // Sort with most recent first
+    }).sort((a, b) => b.fec.localeCompare(a.fec));
   }, [records, corteType, corteStartDate, corteEndDate, filterWorker, historySearchTerm]);
 
-  // Quick helper to fetch initials
+  // 2. Metrics for the active corte: separates Horas Pendientes de Liquidar vs Horas Ya Pagadas (Amarradas)
+  const corteStats = useMemo(() => {
+    const totalCount = recordsInCorte.length;
+    const totalNetas = recordsInCorte.reduce((acc, r) => acc + (r.netas || 0), 0);
+    const pendingList = recordsInCorte.filter(r => !r.pagado);
+    const paidList = recordsInCorte.filter(r => !!r.pagado);
+    return {
+      totalCount,
+      totalNetas,
+      pendingCount: pendingList.length,
+      pendingNetas: pendingList.reduce((acc, r) => acc + (r.netas || 0), 0),
+      paidCount: paidList.length,
+      paidNetas: paidList.reduce((acc, r) => acc + (r.netas || 0), 0),
+    };
+  }, [recordsInCorte]);
+
+  // 3. Filtered records respecting the active payment status tab (Todos | ⏳ Pendientes | ✅ Pagados)
+  const filteredRecords = useMemo(() => {
+    if (paymentFilter === 'pending') {
+      return recordsInCorte.filter(r => !r.pagado);
+    }
+    if (paymentFilter === 'paid') {
+      return recordsInCorte.filter(r => !!r.pagado);
+    }
+    return recordsInCorte;
+  }, [recordsInCorte, paymentFilter]);
+
+  // 4. Quick helper to fetch initials
   const initialsOf = (nameStr: string): string => {
     if (!nameStr) return '?';
     return nameStr
@@ -930,6 +966,90 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       .join('')
       .slice(0, 2)
       .toUpperCase();
+  };
+
+  // 5. Actions: Liquidar y amarrar horas como pagadas en este corte (no volverán a sumarse a pendientes)
+  const handleMarcarCortePagado = () => {
+    const pendingRecords = recordsInCorte.filter(r => !r.pagado);
+    if (pendingRecords.length === 0) {
+      triggerToast('No hay turnos pendientes por liquidar en este período', 'info');
+      return;
+    }
+    const today = new Date().toISOString().split('T')[0];
+    const corteLabel = getHistoryRangeLabel();
+    const pendingIds = new Set(pendingRecords.map(r => r.id));
+    
+    const updated = records.map(r => {
+      if (pendingIds.has(r.id)) {
+        return {
+          ...r,
+          pagado: true,
+          fechaPago: today,
+          corteLiquidado: corteLabel
+        };
+      }
+      return r;
+    });
+
+    saveRecords(updated);
+    triggerToast(
+      `✅ Corte liquidado: ${pendingRecords.length} turnos (${pendingRecords.reduce((a, b) => a + b.netas, 0).toFixed(2)}h) amarrados como PAGADOS. No volverán a sumarse a saldos pendientes.`,
+      'success'
+    );
+  };
+
+  // 6. Action: Reabrir corte si hubo algún error para poder corregir
+  const handleReabrirCorte = () => {
+    const paidRecords = recordsInCorte.filter(r => r.pagado);
+    if (paidRecords.length === 0) {
+      triggerToast('No hay turnos pagados en este corte para desmarcar', 'info');
+      return;
+    }
+    if (!window.confirm(`¿Desea reabrir este corte y desmarcar ${paidRecords.length} turnos pagados para realizar correcciones?`)) {
+      return;
+    }
+    const paidIds = new Set(paidRecords.map(r => r.id));
+    const updated = records.map(r => {
+      if (paidIds.has(r.id)) {
+        return {
+          ...r,
+          pagado: false,
+          fechaPago: undefined,
+          corteLiquidado: undefined
+        };
+      }
+      return r;
+    });
+
+    saveRecords(updated);
+    triggerToast(`🔓 Corte reabierto: ${paidRecords.length} turnos desmarcados para corrección`, 'info');
+  };
+
+  // 7. Action: Alternar pago de un turno individual (para corrección inmediata de errores)
+  const handleToggleShiftPayment = (id: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    const corteLabel = getHistoryRangeLabel();
+    let isNowPaid = false;
+    const updated = records.map(r => {
+      if (r.id === id) {
+        isNowPaid = !r.pagado;
+        return {
+          ...r,
+          pagado: isNowPaid,
+          fechaPago: isNowPaid ? (r.fechaPago || today) : undefined,
+          corteLiquidado: isNowPaid ? (r.corteLiquidado || corteLabel) : undefined
+        };
+      }
+      return r;
+    });
+
+    saveRecords(updated);
+    triggerToast(
+      isNowPaid 
+        ? '✅ Turno amarrado como PAGADO (no volverá a sumarse a pendientes)' 
+        : '🔓 Turno desmarcado a PENDIENTE (habilitado para corregir)',
+      'success'
+    );
   };
 
   // Export dataset to JSON format
@@ -957,7 +1077,23 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
   // Group filtered records by worker for the printable A4 payroll report
   const printPayrollSummary = useMemo(() => {
-    const summaryMap: Record<string, { nom: string; car: string; are: string; count: number; hT: number; extDiurna: number; extNocturna: number; recNoct: number; domFest: number; comp: number; netas: number }> = {};
+    const summaryMap: Record<string, { 
+      nom: string; 
+      car: string; 
+      are: string; 
+      count: number; 
+      hT: number; 
+      extDiurna: number; 
+      extNocturna: number; 
+      recNoct: number; 
+      domFest: number; 
+      comp: number; 
+      netas: number;
+      pendingNetas: number;
+      paidNetas: number;
+      pendingCount: number;
+      paidCount: number;
+    }> = {};
     
     filteredRecords.forEach(r => {
       const key = r.nom.trim();
@@ -973,7 +1109,11 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           recNoct: 0,
           domFest: 0,
           comp: 0,
-          netas: 0
+          netas: 0,
+          pendingNetas: 0,
+          paidNetas: 0,
+          pendingCount: 0,
+          paidCount: 0
         };
       }
       summaryMap[key].count += 1;
@@ -984,6 +1124,13 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       summaryMap[key].domFest += r.domFest;
       summaryMap[key].comp += r.comp;
       summaryMap[key].netas += r.netas;
+      if (r.pagado) {
+        summaryMap[key].paidNetas += r.netas;
+        summaryMap[key].paidCount += 1;
+      } else {
+        summaryMap[key].pendingNetas += r.netas;
+        summaryMap[key].pendingCount += 1;
+      }
     });
 
     const rows = Object.values(summaryMap).sort((a, b) => a.nom.localeCompare(b.nom));
@@ -995,8 +1142,12 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       recNoct: acc.recNoct + row.recNoct,
       domFest: acc.domFest + row.domFest,
       comp: acc.comp + row.comp,
-      netas: acc.netas + row.netas
-    }), { count: 0, hT: 0, extDiurna: 0, extNocturna: 0, recNoct: 0, domFest: 0, comp: 0, netas: 0 });
+      netas: acc.netas + row.netas,
+      pendingNetas: acc.pendingNetas + row.pendingNetas,
+      paidNetas: acc.paidNetas + row.paidNetas,
+      pendingCount: acc.pendingCount + row.pendingCount,
+      paidCount: acc.paidCount + row.paidCount,
+    }), { count: 0, hT: 0, extDiurna: 0, extNocturna: 0, recNoct: 0, domFest: 0, comp: 0, netas: 0, pendingNetas: 0, paidNetas: 0, pendingCount: 0, paidCount: 0 });
 
     return { rows, grandTotals };
   }, [filteredRecords]);
@@ -1845,6 +1996,49 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     </div>
                   </div>
 
+                  {/* Payment Status Filter Tabs */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-wider">Estado Pago</span>
+                    <div className="flex bg-[#02161a] p-0.5 rounded-lg border border-slate-700 h-[36px] items-center">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentFilter('all')}
+                        className={`px-2.5 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer ${
+                          paymentFilter === 'all'
+                            ? 'bg-[#00f0b5] text-slate-950 font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                        title="Ver todos los registros del corte"
+                      >
+                        Todos ({corteStats.totalCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentFilter('pending')}
+                        className={`px-2.5 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer flex items-center gap-1 ${
+                          paymentFilter === 'pending'
+                            ? 'bg-amber-400 text-slate-950 font-black shadow-sm'
+                            : 'text-amber-400 hover:text-amber-300'
+                        }`}
+                        title="Ver solo horas pendientes por liquidar"
+                      >
+                        <span>⏳ Pendientes ({corteStats.pendingCount})</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentFilter('paid')}
+                        className={`px-2.5 py-1 text-[10px] font-mono font-bold uppercase rounded transition-all cursor-pointer flex items-center gap-1 ${
+                          paymentFilter === 'paid'
+                            ? 'bg-emerald-400 text-slate-950 font-black shadow-sm'
+                            : 'text-emerald-400 hover:text-emerald-300'
+                        }`}
+                        title="Ver solo horas ya pagadas y amarradas"
+                      >
+                        <span>✅ Pagados ({corteStats.paidCount})</span>
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
 
                 {/* Print & Export Actions */}
@@ -1872,9 +2066,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             </div>
 
             {/* ========================================================================= */}
-            {/* 🔒 BANNER DE PERÍODO AMARRADO AL CORTE ACTIVO                             */}
+            {/* 🔒 BANNER DE PERÍODO AMARRADO AL CORTE ACTIVO & LIQUIDACIÓN               */}
             {/* ========================================================================= */}
-            <div className="bg-[#021b20] border-2 border-[#00f0b5]/70 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-[0_0_20px_rgba(0,240,181,0.15)]">
+            <div className="bg-[#021b20] border-2 border-[#00f0b5]/70 p-4 rounded-xl flex flex-col xl:flex-row items-center justify-between gap-4 shadow-[0_0_20px_rgba(0,240,181,0.15)]">
               <div className="flex items-center gap-3.5">
                 <div className="w-10 h-10 rounded-xl bg-[#00f0b5]/20 border border-[#00f0b5] flex items-center justify-center text-[#00f0b5] text-lg font-bold shadow-sm shrink-0">
                   🔒
@@ -1897,17 +2091,69 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 self-stretch md:self-auto justify-end">
-                <div className="text-right font-mono bg-[#03242a] border border-[#00f0b5]/30 px-4 py-2 rounded-lg">
-                  <span className="text-[9px] text-[#00f0b5] uppercase block font-bold">Turnos Amarrados</span>
-                  <span className="text-base font-black text-white">{filteredRecords.length} turnos</span>
-                </div>
-                <div className="text-right font-mono bg-[#03242a] border border-cyan-500/30 px-4 py-2 rounded-lg">
-                  <span className="text-[9px] text-cyan-300 uppercase block font-bold">Total Horas Netas</span>
-                  <span className="text-base font-black text-cyan-300">
-                    {printPayrollSummary.grandTotals.netas.toFixed(2)}h
+              {/* Metrics & Settlement Action Buttons */}
+              <div className="flex flex-wrap items-center gap-3 self-stretch xl:self-auto justify-end">
+                {/* 1. Pendientes a Liquidar */}
+                <div className="text-right font-mono bg-[#03242a] border border-amber-400/40 px-3.5 py-2 rounded-lg">
+                  <span className="text-[9px] text-amber-300 uppercase block font-bold">⏳ Pendiente por Pagar</span>
+                  <span className="text-base font-black text-amber-300">
+                    {corteStats.pendingNetas.toFixed(2)}h
+                  </span>
+                  <span className="text-[9px] text-slate-400 block font-normal">
+                    {corteStats.pendingCount} turnos
                   </span>
                 </div>
+
+                {/* 2. Horas Amarradas / Pagadas */}
+                <div className="text-right font-mono bg-[#03242a] border border-emerald-500/40 px-3.5 py-2 rounded-lg">
+                  <span className="text-[9px] text-emerald-400 uppercase block font-bold">✅ Pagadas (Amarradas)</span>
+                  <span className="text-base font-black text-emerald-400">
+                    {corteStats.paidNetas.toFixed(2)}h
+                  </span>
+                  <span className="text-[9px] text-slate-400 block font-normal">
+                    {corteStats.paidCount} turnos
+                  </span>
+                </div>
+
+                {/* 3. Total Período */}
+                <div className="text-right font-mono bg-[#03242a] border border-cyan-500/30 px-3.5 py-2 rounded-lg">
+                  <span className="text-[9px] text-cyan-300 uppercase block font-bold">Total Período</span>
+                  <span className="text-base font-black text-cyan-300">
+                    {corteStats.totalNetas.toFixed(2)}h
+                  </span>
+                  <span className="text-[9px] text-slate-400 block font-normal">
+                    {corteStats.totalCount} turnos
+                  </span>
+                </div>
+
+                {/* Action Buttons: Marcar como Pagado / Reabrir para Corregir */}
+                {hasAdminRights && (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    {corteStats.pendingCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarcarCortePagado}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-mono font-black text-xs px-3.5 py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all shadow-[0_0_12px_rgba(16,185,129,0.35)] cursor-pointer"
+                        title="Amarrar horas de este corte como pagadas para que no sumen a saldos pendientes"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Liquidar Corte ({corteStats.pendingCount})</span>
+                      </button>
+                    )}
+
+                    {corteStats.paidCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleReabrirCorte}
+                        className="bg-slate-900 hover:bg-amber-950/60 text-amber-300 border border-amber-500/50 font-mono font-bold text-xs px-3 py-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        title="Reabrir el corte y desmarcar turnos para corregir errores"
+                      >
+                        <Unlock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Reabrir Corte (Corregir)</span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2111,6 +2357,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                           <th className="p-4 text-center">Dom / Fest</th>
                           <th className="p-4 text-center">Compensadas</th>
                           <th className="p-4 text-center text-cyan-400 font-bold">H. Netas</th>
+                          <th className="p-4 text-center">Estado Pago</th>
                           <th className="p-4 text-center">Acciones</th>
                         </tr>
                       </thead>
@@ -2143,12 +2390,34 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                             <td className="p-4 text-center font-extrabold text-white text-xs bg-cyan-950/20 border-l border-r border-slate-800 text-cyan-400">
                               {r.netas.toFixed(2)}h
                             </td>
+                            <td className="p-4 text-center whitespace-nowrap">
+                              {r.pagado ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleShiftPayment(r.id)}
+                                  className="px-2 py-1 rounded text-[9px] font-bold uppercase font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/40 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                                  title={`Amarrado como PAGADO${r.fechaPago ? ` el ${r.fechaPago}` : ''}. Clic para desmarcar y permitir corrección.`}
+                                >
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  <span>Pagado {r.fechaPago ? `(${r.fechaPago.slice(5)})` : ''} 🔒</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleShiftPayment(r.id)}
+                                  className="px-2 py-1 rounded text-[9px] font-bold uppercase font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-emerald-950/40 hover:text-emerald-300 hover:border-emerald-500/40 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                                  title="Turno pendiente por liquidar. Clic para amarrar como pagado."
+                                >
+                                  <span>⏳ Pendiente</span>
+                                </button>
+                              )}
+                            </td>
                             <td className="p-4 text-center">
                               <div className="flex justify-center gap-1.5">
                                 <button
                                   onClick={() => handleEditRecord(r)}
                                   className="p-1.5 hover:bg-slate-700/50 text-cyan-400 rounded transition-colors"
-                                  title="Editar turno"
+                                  title="Editar turno (corregir error)"
                                 >
                                   <Edit className="w-3.5 h-3.5" />
                                 </button>
@@ -2192,6 +2461,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                           <td className="p-4 text-center text-emerald-400 font-extrabold text-sm bg-cyan-950/40 border-l border-r border-slate-850">
                             {filteredRecords.reduce((acc, r) => acc + r.netas, 0).toFixed(2)}h
                           </td>
+                          <td className="p-4 text-center text-[10px] font-mono text-slate-300 whitespace-nowrap">
+                            {filteredRecords.filter(r => !r.pagado).length} pend / {filteredRecords.filter(r => r.pagado).length} pag
+                          </td>
                           <td></td>
                         </tr>
                       </tfoot>
@@ -2205,7 +2477,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                         
                         {/* Card Header */}
                         <div className="flex items-center justify-between pb-3 border-b border-slate-850/60">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_6px_#22d3ee]" />
                             <span className="text-sm font-bold text-slate-100 font-mono">{r.fec}</span>
                             <span className={`px-2.5 py-0.5 rounded text-[9px] font-bold uppercase font-mono ${
@@ -2222,13 +2494,35 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                                 -{r.comp.toFixed(1)}h
                               </span>
                             )}
+
+                            {/* Amarre y Corrección de Pago */}
+                            {r.pagado ? (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleShiftPayment(r.id)}
+                                className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/40 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                                title={`Turno amarrado como PAGADO${r.fechaPago ? ` el ${r.fechaPago}` : ''}. Clic para desmarcar y permitir corrección.`}
+                              >
+                                <Check className="w-2.5 h-2.5 text-emerald-400" />
+                                <span>Pagado {r.fechaPago ? `(${r.fechaPago.slice(5)})` : ''} 🔒</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleShiftPayment(r.id)}
+                                className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-emerald-950/40 hover:text-emerald-300 hover:border-emerald-500/40 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                                title="Turno pendiente por liquidar. Clic para amarrar como pagado."
+                              >
+                                <span>⏳ Pendiente</span>
+                              </button>
+                            )}
                           </div>
 
                           <div className="flex gap-1.5 opacity-80 group-hover:opacity-100 transition-opacity">
                             <button
                               onClick={() => handleEditRecord(r)}
                               className="p-1.5 hover:bg-slate-800 text-cyan-400 rounded transition-colors"
-                              title="Editar turno"
+                              title="Editar turno (corregir error)"
                             >
                               <Edit className="w-3.5 h-3.5" />
                             </button>
@@ -3174,19 +3468,36 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           {/* Bloque Informativo de Período Amarrado */}
           <div className="bg-slate-100 border-2 border-slate-800 rounded p-2.5 mb-3 flex items-center justify-between">
             <div>
-              <h2 className="text-xs font-black uppercase text-slate-950 font-mono tracking-wide">
-                PLANILLA OFICIAL DE LIQUIDACIÓN DE HORAS EXTRAS & RECARGOS
-              </h2>
-              <p className="text-[10px] text-slate-800 font-mono mt-0.5">
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-xs font-black uppercase text-slate-950 font-mono tracking-wide">
+                  PLANILLA OFICIAL DE LIQUIDACIÓN DE HORAS EXTRAS & RECARGOS
+                </h2>
+                {corteStats.pendingCount === 0 && corteStats.paidCount > 0 ? (
+                  <span className="text-[8px] font-black uppercase font-mono px-2 py-0.5 rounded bg-emerald-100 border border-emerald-800 text-emerald-950">
+                    ESTADO: CORTE LIQUIDADO & PAGADO 🔒
+                  </span>
+                ) : corteStats.paidCount === 0 ? (
+                  <span className="text-[8px] font-black uppercase font-mono px-2 py-0.5 rounded bg-amber-100 border border-amber-800 text-amber-950">
+                    ESTADO: PENDIENTE DE PAGO ⏳
+                  </span>
+                ) : (
+                  <span className="text-[8px] font-black uppercase font-mono px-2 py-0.5 rounded bg-blue-100 border border-blue-800 text-blue-950">
+                    ESTADO: PARCIALMENTE PAGADO ({corteStats.paidCount} Pagados / {corteStats.pendingCount} Pendientes)
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-800 font-mono">
                 Período Liquidado: <strong className="text-slate-950 uppercase">{getHistoryRangeLabel()}</strong>
               </p>
               <p className="text-[9px] text-slate-600 font-mono">
                 Límites de Corte: Del <strong>{corteStartDate || 'Primer registro'}</strong> al <strong>{corteEndDate || 'Último registro'}</strong>
               </p>
             </div>
-            <div className="text-right text-[10px] font-mono">
+            <div className="text-right text-[9.5px] font-mono space-y-0.5">
               <div className="text-slate-700">Turnos en este corte: <strong className="text-slate-950 font-bold">{printPayrollSummary.grandTotals.count} registros</strong></div>
-              <div className="text-slate-700">Total Horas Netas: <strong className="text-slate-950 font-black text-xs">{printPayrollSummary.grandTotals.netas.toFixed(2)}h</strong></div>
+              <div className="text-amber-900 font-bold">Horas Pendientes a Liquidar: <strong className="text-amber-950 font-black text-xs">{printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h</strong></div>
+              <div className="text-emerald-900 font-bold">Horas Ya Amarradas / Pagadas: <strong className="text-emerald-950">{printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h</strong></div>
+              <div className="text-slate-700 border-t border-slate-300 pt-0.5">Total Horas Netas: <strong className="text-slate-950 font-black">{printPayrollSummary.grandTotals.netas.toFixed(2)}h</strong></div>
             </div>
           </div>
 
@@ -3197,59 +3508,73 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             </div>
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-slate-200 text-slate-950 text-[9px] uppercase font-bold text-center">
-                  <th className="border border-slate-700 p-1.5 text-left w-6">N°</th>
-                  <th className="border border-slate-700 p-1.5 text-left">Colaborador / Trabajador</th>
-                  <th className="border border-slate-700 p-1.5 text-left">Cargo / Proceso</th>
-                  <th className="border border-slate-700 p-1.5">Turnos</th>
-                  <th className="border border-slate-700 p-1.5">H. Trab.</th>
-                  <th className="border border-slate-700 p-1.5">Ext. Diurna (1.25)</th>
-                  <th className="border border-slate-700 p-1.5">Ext. Nocturna (1.75)</th>
-                  <th className="border border-slate-700 p-1.5">Recargo Noct. (0.35)</th>
-                  <th className="border border-slate-700 p-1.5">Dom. / Fest. (1.75)</th>
-                  <th className="border border-slate-700 p-1.5">Comp. (-)</th>
-                  <th className="border border-slate-700 p-1.5 bg-slate-300 font-black">Total Netas</th>
+                <tr className="bg-slate-200 text-slate-950 text-[8.5px] uppercase font-bold text-center">
+                  <th className="border border-slate-700 p-1 text-left w-6">N°</th>
+                  <th className="border border-slate-700 p-1 text-left">Colaborador / Trabajador</th>
+                  <th className="border border-slate-700 p-1 text-left">Cargo / Proceso</th>
+                  <th className="border border-slate-700 p-1">Turnos</th>
+                  <th className="border border-slate-700 p-1">H. Trab.</th>
+                  <th className="border border-slate-700 p-1">Ext. Diurna (1.25)</th>
+                  <th className="border border-slate-700 p-1">Ext. Nocturna (1.75)</th>
+                  <th className="border border-slate-700 p-1">Recargo Noct. (0.35)</th>
+                  <th className="border border-slate-700 p-1">Dom. / Fest. (1.75)</th>
+                  <th className="border border-slate-700 p-1">Comp. (-)</th>
+                  <th className="border border-slate-700 p-1 bg-amber-100 font-black">Pendientes</th>
+                  <th className="border border-slate-700 p-1 bg-emerald-100 font-black">Pagadas</th>
+                  <th className="border border-slate-700 p-1 bg-slate-300 font-black">Total Netas</th>
                 </tr>
               </thead>
-              <tbody className="text-[9px] font-mono text-slate-900">
+              <tbody className="text-[8.5px] font-mono text-slate-900">
                 {printPayrollSummary.rows.map((row, idx) => (
                   <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                    <td className="border border-slate-600 p-1.5 text-center font-bold">{idx + 1}</td>
-                    <td className="border border-slate-600 p-1.5 font-bold uppercase">{row.nom}</td>
-                    <td className="border border-slate-600 p-1.5">{row.car} ({row.are})</td>
-                    <td className="border border-slate-600 p-1.5 text-center">{row.count}</td>
-                    <td className="border border-slate-600 p-1.5 text-center">{row.hT.toFixed(1)}h</td>
-                    <td className="border border-slate-600 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1.5 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1.5 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1.5 text-center font-black bg-slate-100 text-slate-950">
+                    <td className="border border-slate-600 p-1 text-center font-bold">{idx + 1}</td>
+                    <td className="border border-slate-600 p-1 font-bold uppercase">{row.nom}</td>
+                    <td className="border border-slate-600 p-1">{row.car} ({row.are})</td>
+                    <td className="border border-slate-600 p-1 text-center">{row.count}</td>
+                    <td className="border border-slate-600 p-1 text-center">{row.hT.toFixed(1)}h</td>
+                    <td className="border border-slate-600 p-1 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-600 p-1 text-center font-black bg-amber-50/70 text-amber-950">
+                      {row.pendingNetas > 0 ? `${row.pendingNetas.toFixed(2)}h` : '0.00h'}
+                    </td>
+                    <td className="border border-slate-600 p-1 text-center font-bold bg-emerald-50/70 text-emerald-950">
+                      {row.paidNetas > 0 ? `${row.paidNetas.toFixed(2)}h` : '—'}
+                    </td>
+                    <td className="border border-slate-600 p-1 text-center font-black bg-slate-100 text-slate-950">
                       {row.netas.toFixed(2)}h
                     </td>
                   </tr>
                 ))}
                 {printPayrollSummary.rows.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="border border-slate-600 p-4 text-center text-slate-600 font-mono">
+                    <td colSpan={13} className="border border-slate-600 p-4 text-center text-slate-600 font-mono">
                       No hay turnos registrados para el período seleccionado ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}).
                     </td>
                   </tr>
                 )}
               </tbody>
               <tfoot>
-                <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9.5px]">
-                  <td colSpan={3} className="border border-slate-800 p-1.5 text-right uppercase">
-                    TOTALES GENERALES A LIQUIDAR:
+                <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9px]">
+                  <td colSpan={3} className="border border-slate-800 p-1 text-right uppercase">
+                    TOTALES GENERALES DEL CORTE:
                   </td>
-                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.count}</td>
-                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
-                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1.5 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1.5 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1.5 text-center bg-slate-300 text-slate-950 font-black text-xs">
+                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.count}</td>
+                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
+                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
+                  <td className="border border-slate-800 p-1 text-center bg-amber-100 text-amber-950 font-black text-xs">
+                    {printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h
+                  </td>
+                  <td className="border border-slate-800 p-1 text-center bg-emerald-100 text-emerald-950 font-bold text-xs">
+                    {printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h
+                  </td>
+                  <td className="border border-slate-800 p-1 text-center bg-slate-300 text-slate-950 font-black text-xs">
                     {printPayrollSummary.grandTotals.netas.toFixed(2)}h
                   </td>
                 </tr>
@@ -3265,23 +3590,23 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
               </div>
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="bg-slate-200 text-slate-950 text-[8px] uppercase font-bold text-center">
-                    <th className="border border-slate-700 p-1 w-6">#</th>
-                    <th className="border border-slate-700 p-1 text-left w-16">Fecha</th>
+                  <tr className="bg-slate-200 text-slate-950 text-[7.5px] uppercase font-bold text-center">
+                    <th className="border border-slate-700 p-1 w-5">#</th>
+                    <th className="border border-slate-700 p-1 text-left w-14">Fecha</th>
                     <th className="border border-slate-700 p-1 text-left">Colaborador</th>
-                    <th className="border border-slate-700 p-1 text-center w-14">Entrada</th>
-                    <th className="border border-slate-700 p-1 text-center w-14">Salida</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">H. Trab</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Base</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Diurna</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Noct</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Recargo</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Dom/Fest</th>
-                    <th className="border border-slate-700 p-1 text-center w-12 font-black bg-slate-300">Netas</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Entrada</th>
+                    <th className="border border-slate-700 p-1 text-center w-12">Salida</th>
+                    <th className="border border-slate-700 p-1 text-center w-10">H. Trab</th>
+                    <th className="border border-slate-700 p-1 text-center w-10">Diurna</th>
+                    <th className="border border-slate-700 p-1 text-center w-10">Noct</th>
+                    <th className="border border-slate-700 p-1 text-center w-10">Recargo</th>
+                    <th className="border border-slate-700 p-1 text-center w-10">Dom/Fest</th>
+                    <th className="border border-slate-700 p-1 text-center w-10 font-black bg-slate-300">Netas</th>
+                    <th className="border border-slate-700 p-1 text-center w-20">Estado Pago</th>
                     <th className="border border-slate-700 p-1 text-left">Sello / Autoría</th>
                   </tr>
                 </thead>
-                <tbody className="text-[8px] font-mono text-slate-900">
+                <tbody className="text-[7.5px] font-mono text-slate-900">
                   {filteredRecords.slice(0, 50).map((r, idx) => (
                     <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                       <td className="border border-slate-600 p-1 text-center">{idx + 1}</td>
@@ -3290,13 +3615,19 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       <td className="border border-slate-600 p-1 text-center">{r._ent}</td>
                       <td className="border border-slate-600 p-1 text-center">{r._sal}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.hT ? r.hT.toFixed(1) : '—'}h</td>
-                      <td className="border border-slate-600 p-1 text-center">{r.base || 0}h</td>
                       <td className="border border-slate-600 p-1 text-center">{r.extDiurna > 0 ? `${r.extDiurna.toFixed(2)}h` : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.extNocturna > 0 ? `${r.extNocturna.toFixed(2)}h` : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.recNoct > 0 ? `${r.recNoct.toFixed(2)}h` : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.domFest > 0 ? `${r.domFest.toFixed(2)}h` : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center font-bold bg-slate-100">{r.netas.toFixed(2)}h</td>
-                      <td className="border border-slate-600 p-1 text-[7.5px] truncate max-w-[140px] text-slate-700">{r.creadoPor || 'Sistema'}</td>
+                      <td className="border border-slate-600 p-1 text-center font-bold">
+                        {r.pagado ? (
+                          <span className="text-emerald-800">✅ PAGADO {r.fechaPago ? `(${r.fechaPago.slice(5)})` : ''}</span>
+                        ) : (
+                          <span className="text-amber-800">⏳ PENDIENTE</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-600 p-1 text-[7px] truncate max-w-[130px] text-slate-700">{r.creadoPor || 'Sistema'}</td>
                     </tr>
                   ))}
                   {filteredRecords.length > 50 && (
@@ -3334,7 +3665,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             <div className="text-center">
               <div className="border-b border-slate-700 mb-1 h-9"></div>
               <p className="text-[9.5px] font-black uppercase">Washington Quiñones</p>
-              <p className="text-[8px] text-slate-700">Administrador Principal & Propietario</p>
+              <p className="text-[8px] text-slate-700">Aux coordinador logistico</p>
               <p className="text-[7.5px] text-slate-500">soporteyabi@gmail.com</p>
               <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">REVISÓ Y APROBÓ</span>
             </div>

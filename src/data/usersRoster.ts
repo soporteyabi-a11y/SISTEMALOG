@@ -52,10 +52,10 @@ export const USERS_ROSTER: AppUser[] = [
     email: 'soporteyabi@gmail.com',
     nombre: 'Washington Quiñones',
     rol: 'SUPER_ADMIN',
-    cargo: 'Dueño de la App & Administrador Principal',
+    cargo: 'Aux coordinador logistico',
     avatar: 'WQ',
     color: '#00f0b5',
-    departamento: 'Dirección General & Operaciones',
+    departamento: 'Logística & Despacho',
     modulosPermitidos: [
       'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
@@ -192,16 +192,18 @@ export const loadUsersRoster = (): AppUser[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Guarantee every user has horas module access so workers can register
+        // Guarantee every user has horas module access so workers can register and update Washington cargo
         const enriched = parsed.map((u: AppUser) => {
-          const currentMods = u.modulosPermitidos || [];
-          if (!currentMods.includes('horas')) {
-            return {
-              ...u,
-              modulosPermitidos: [...currentMods, 'horas', 'horasExtras']
-            };
+          let updatedUser = { ...u };
+          if (updatedUser.email.toLowerCase() === 'soporteyabi@gmail.com') {
+            updatedUser.cargo = 'Aux coordinador logistico';
+            updatedUser.departamento = 'Logística & Despacho';
           }
-          return u;
+          const currentMods = updatedUser.modulosPermitidos || [];
+          if (!currentMods.includes('horas')) {
+            updatedUser.modulosPermitidos = [...currentMods, 'horas', 'horasExtras'];
+          }
+          return updatedUser;
         });
 
         // Ensure Juan Carlos and Antonio Calderon exist in roster
@@ -251,7 +253,7 @@ export const getAuthorStamp = (user: AppUser | null): { creador: string; rol: st
     return {
       creador: 'Washington Quiñones (soporteyabi@gmail.com)',
       rol: 'SUPER_ADMIN',
-      cargo: 'Dueño de la App & Administrador Principal'
+      cargo: 'Aux coordinador logistico'
     };
   }
   return {

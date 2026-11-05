@@ -3648,9 +3648,9 @@ export default function App() {
         <div className="p-4 border-t border-sky-950/40 space-y-2">
           {sidebarOpen && (
             <div className="bg-slate-950/80 border border-hud-accent/30 rounded-lg p-2.5 text-[10px] font-mono space-y-0.5">
-              <div className="text-hud-accent font-bold uppercase tracking-wider">Propietario Principal</div>
+              <div className="text-hud-accent font-bold uppercase tracking-wider">Aux coordinador logistico</div>
               <div className="text-white font-bold truncate" title="soporteyabi@gmail.com">soporteyabi@gmail.com</div>
-              <div className="text-emerald-400 text-[9px]">● Cuenta Firebase</div>
+              <div className="text-emerald-400 text-[9px]">● Cuenta Activa</div>
             </div>
           )}
           <button 
@@ -3718,11 +3718,11 @@ export default function App() {
                       color: currentUser?.color || '#00f0b5'
                     }}
                   >
-                    {currentUser?.rol === 'SUPER_ADMIN' ? 'PROPIETARIO' : currentUser?.rol}
+                    {currentUser?.rol === 'SUPER_ADMIN' ? 'SUPER ADMIN' : currentUser?.rol}
                   </span>
                 </div>
                 <span className="text-[9px] text-slate-400 font-sans truncate max-w-[160px] leading-tight">
-                  {currentUser?.cargo || 'Administrador Principal'}
+                  {currentUser?.cargo || 'Aux coordinador logistico'}
                 </span>
               </div>
             </div>
@@ -6702,7 +6702,7 @@ export default function App() {
             </div>
 
             <div className="text-[10px] text-slate-500 text-center border-t border-slate-800/80 pt-3">
-              ID Base Firestore: <code className="text-hud-accent">{cloudStatus.databaseId}</code> | Propietario: soporteyabi@gmail.com
+              ID Base: <code className="text-hud-accent">{cloudStatus.databaseId}</code> | Contacto: soporteyabi@gmail.com
             </div>
           </div>
         </div>

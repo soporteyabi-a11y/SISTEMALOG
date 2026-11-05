@@ -95,7 +95,7 @@ export default function UsuariosModule({
 
     // Prevent removing super admin permissions from Washington
     if (userId === 'user_washington' && privilegeKey === 'puedeGestionarUsuarios') {
-      triggerToast('El Propietario principal debe conservar la administración de usuarios', 'error');
+      triggerToast('La cuenta principal debe conservar la administración de usuarios', 'error');
       return;
     }
 
@@ -239,7 +239,7 @@ export default function UsuariosModule({
   const handleDeleteUser = (userId: string, userName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (userId === 'user_washington') {
-      triggerToast('No se puede eliminar la cuenta del Propietario y Administrador Principal', 'error');
+      triggerToast('No se puede eliminar la cuenta principal de administración', 'error');
       return;
     }
 
@@ -414,7 +414,7 @@ export default function UsuariosModule({
                   <div className="flex flex-col items-end gap-1">
                     {user.rol === 'SUPER_ADMIN' ? (
                       <span className="text-[9px] font-mono font-black uppercase px-2 py-0.5 rounded-full bg-[#00f0b5]/20 border border-[#00f0b5]/50 text-[#00f0b5]">
-                        Propietario & Admin
+                        Admin General
                       </span>
                     ) : (
                       <span className="text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded-full bg-slate-900 border border-slate-800 text-slate-300">
@@ -934,7 +934,7 @@ export default function UsuariosModule({
                       onChange={e => setEditingUser({ ...editingUser, rol: e.target.value as UserRole })}
                       className="w-full bg-[#02161a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5] cursor-pointer"
                     >
-                      <option value="SUPER_ADMIN">SUPER_ADMIN (Propietario / Acceso Total)</option>
+                      <option value="SUPER_ADMIN">SUPER_ADMIN (Control Total / Acceso General)</option>
                       <option value="AUXILIAR_LOGISTICO">AUXILIAR_LOGISTICO (Operaciones & Despacho)</option>
                       <option value="LOGISTICA">LOGISTICA (Coordinación de Transporte)</option>
                       <option value="SST_TALENTO">SST_TALENTO (SST & Talento Humano)</option>
