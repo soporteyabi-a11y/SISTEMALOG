@@ -55,8 +55,77 @@ interface ProvisionesModuleProps {
   initialTab?: 'auditoria' | 'historial';
 }
 
+// Safe currency formatter that never crashes on undefined, null or NaN
+function formatCurrency(val: any): string {
+  const num = Number(val);
+  if (isNaN(num) || !isFinite(num)) return '0';
+  return num.toLocaleString('es-CO');
+}
+
+export function sanitizeSavedProvisionRecord(r: any): SavedProvisionRecord {
+  if (!r || typeof r !== 'object') {
+    return {
+      id: `PROV-${Date.now()}`,
+      soporteNum: 'SOP-PROV-0000',
+      fechaGuardado: '',
+      transportadora: 'TRANSPORTADORA',
+      mesGestion: '',
+      quincenaLabel: '',
+      cantidadOrdenes: 0,
+      subtotalFletes: 0,
+      otrosGastosMonto: 0,
+      otrosGastosConcepto: '',
+      totalPagar: 0,
+      elaboradoPor: 'LOGÍSTICA Y DESPACHOS',
+      autorizadoPor: 'MESA CONTABLE SAS',
+      orders: []
+    };
+  }
+  const rawOrders = Array.isArray(r.orders) ? r.orders : [];
+  const orders = rawOrders.map((o: any) => ({
+    id: String(o?.id || ''),
+    fechaSalida: String(o?.fechaSalida || ''),
+    pv: String(o?.pv || ''),
+    factura: String(o?.factura || ''),
+    cliente: String(o?.cliente || ''),
+    transportadora: String(o?.transportadora || r.transportadora || ''),
+    flete: Number(o?.flete) || 0,
+    facturaProvision: String(o?.facturaProvision || ''),
+    destino: String(o?.destino || ''),
+    oc: String(o?.oc || ''),
+    ciudad: String(o?.ciudad || ''),
+    cajas: Number(o?.cajas) || 0,
+  }));
+
+  const subtotal = Number(r.subtotalFletes ?? r.subtotal ?? r.totalFlete ?? orders.reduce((sum: number, o: any) => sum + (Number(o.flete) || 0), 0)) || 0;
+  const otrosMonto = Number(r.otrosGastosMonto ?? r.otrosGastos ?? 0) || 0;
+  const total = Number(r.totalPagar ?? r.total ?? r.montoTotal ?? (subtotal + otrosMonto)) || 0;
+
+  return {
+    ...r,
+    id: String(r.id || `PROV-${Date.now()}`),
+    soporteNum: String(r.soporteNum || 'SOP-PROV-0000'),
+    fechaGuardado: String(r.fechaGuardado || ''),
+    transportadora: String(r.transportadora || 'TRANSPORTADORA'),
+    mesGestion: String(r.mesGestion || ''),
+    quincenaLabel: String(r.quincenaLabel || ''),
+    cantidadOrdenes: Number(r.cantidadOrdenes ?? orders.length) || orders.length,
+    subtotalFletes: subtotal,
+    otrosGastosMonto: otrosMonto,
+    otrosGastosConcepto: String(r.otrosGastosConcepto || ''),
+    totalPagar: total,
+    elaboradoPor: String(r.elaboradoPor || 'LOGÍSTICA Y DESPACHOS'),
+    autorizadoPor: String(r.autorizadoPor || 'MESA CONTABLE SAS'),
+    isSummaryView: !!r.isSummaryView,
+    orders,
+    notas: String(r.notas || '')
+  };
+}
+
 // Utility function to convert numbers to Spanish words for authentic DIAN style billing documentation
-function numeroALetras(num: number): string {
+function numeroALetras(num: any): string {
+  const parsed = Number(num);
+  if (isNaN(parsed) || !isFinite(parsed) || parsed <= 0) return "CERO PESOS M/CTE";
   const unidades = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
   const decenas = ["", "DIEZ", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
   const especiales = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISEIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
@@ -83,7 +152,7 @@ function numeroALetras(num: number): string {
     return centenasStr[c] + getDecenas(d);
   }
   
-  let entero = Math.floor(num);
+  let entero = Math.floor(parsed);
   if (entero === 0) return "CERO PESOS M/CTE";
   
   let millones = Math.floor(entero / 1000000);
@@ -152,7 +221,10 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
   const [savedProvisionRecords, setSavedProvisionRecords] = useState<SavedProvisionRecord[]>(() => {
     try {
       const local = localStorage.getItem('prov_saved_vouchers');
-      return local ? JSON.parse(local) : [];
+      if (!local) return [];
+      const parsed = JSON.parse(local);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map(sanitizeSavedProvisionRecord);
     } catch {
       return [];
     }
@@ -167,13 +239,19 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
   // Filtered history records calculation
   const filteredHistoryRecords = useMemo(() => {
     return savedProvisionRecords.filter(record => {
-      const matchesSearch = !historySearchTerm || 
-        record.soporteNum.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-        record.transportadora.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-        record.mesGestion.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
-        (record.otrosGastosConcepto && record.otrosGastosConcepto.toLowerCase().includes(historySearchTerm.toLowerCase()));
+      if (!record) return false;
+      const soporte = String(record.soporteNum || '');
+      const transp = String(record.transportadora || '');
+      const mes = String(record.mesGestion || '');
+      const otros = String(record.otrosGastosConcepto || '');
 
-      const matchesCarrier = !historyCarrierFilter || record.transportadora === historyCarrierFilter;
+      const matchesSearch = !historySearchTerm || 
+        soporte.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+        transp.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+        mes.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+        otros.toLowerCase().includes(historySearchTerm.toLowerCase());
+
+      const matchesCarrier = !historyCarrierFilter || transp === historyCarrierFilter;
 
       return matchesSearch && matchesCarrier;
     });
@@ -185,8 +263,8 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
       if (Array.isArray(data) && data.length > 0) {
         setSavedProvisionRecords(prev => {
           const map = new Map<string, SavedProvisionRecord>();
-          prev.forEach(r => { if (r && r.id) map.set(r.id, r); });
-          data.forEach((r: SavedProvisionRecord) => { if (r && r.id) map.set(r.id, r); });
+          prev.forEach(r => { if (r && r.id) map.set(r.id, sanitizeSavedProvisionRecord(r)); });
+          data.forEach((r: any) => { if (r && r.id) map.set(r.id, sanitizeSavedProvisionRecord(r)); });
           const merged = Array.from(map.values()).sort((a, b) => new Date(b.fechaGuardado || 0).getTime() - new Date(a.fechaGuardado || 0).getTime());
           try {
             localStorage.setItem('prov_saved_vouchers', JSON.stringify(merged));
@@ -629,31 +707,41 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
   // Active display variables for voucher rendering (either active selection or historical saved record)
   const displayVoucherData = useMemo(() => {
     if (activeSavedRecordForVoucher) {
+      const sanitized = sanitizeSavedProvisionRecord(activeSavedRecordForVoucher);
       return {
-        orders: activeSavedRecordForVoucher.orders,
-        totalFlete: activeSavedRecordForVoucher.subtotalFletes,
-        carrier: activeSavedRecordForVoucher.transportadora,
-        date: activeSavedRecordForVoucher.fechaGuardado
+        orders: sanitized.orders || [],
+        totalFlete: Number(sanitized.subtotalFletes) || 0,
+        carrier: sanitized.transportadora || '',
+        date: sanitized.fechaGuardado || ''
       };
     }
-    return voucherData;
+    return {
+      orders: voucherData.orders || [],
+      totalFlete: Number(voucherData.totalFlete) || 0,
+      carrier: voucherData.carrier || '',
+      date: voucherData.date || ''
+    };
   }, [activeSavedRecordForVoucher, voucherData]);
 
-  const displayOtrosGastosMonto = activeSavedRecordForVoucher 
-    ? activeSavedRecordForVoucher.otrosGastosMonto 
-    : otrosGastosMonto;
+  const displayOtrosGastosMonto = Number(
+    activeSavedRecordForVoucher 
+      ? activeSavedRecordForVoucher.otrosGastosMonto 
+      : otrosGastosMonto
+  ) || 0;
 
   const displayOtrosGastosConcepto = activeSavedRecordForVoucher 
-    ? activeSavedRecordForVoucher.otrosGastosConcepto 
-    : otrosGastosConcepto;
+    ? (activeSavedRecordForVoucher.otrosGastosConcepto || '') 
+    : (otrosGastosConcepto || '');
 
-  const displayTotalNetoPagar = activeSavedRecordForVoucher 
-    ? activeSavedRecordForVoucher.totalPagar 
-    : totalNetoPagar;
+  const displayTotalNetoPagar = Number(
+    activeSavedRecordForVoucher 
+      ? activeSavedRecordForVoucher.totalPagar 
+      : totalNetoPagar
+  ) || 0;
 
   const displaySoporteNum = activeSavedRecordForVoucher
-    ? activeSavedRecordForVoucher.soporteNum
-    : `SOP-PROV-${String(totalNetoPagar % 10000).padStart(4, '0')}-${voucherData.orders.length}`;
+    ? (activeSavedRecordForVoucher.soporteNum || 'SOP-PROV-0000')
+    : `SOP-PROV-${String((totalNetoPagar || 0) % 10000).padStart(4, '0')}-${(voucherData.orders || []).length}`;
 
   const displayMesGestion = activeSavedRecordForVoucher
     ? activeSavedRecordForVoucher.mesGestion
@@ -954,7 +1042,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                     </td>
                     <td className="p-1 text-center font-bold">{group.orderCount}</td>
                     <td className="p-1 text-right text-black font-bold">
-                      $ {group.totalFlete.toLocaleString('es-CO')}
+                      $ {formatCurrency(group.totalFlete)}
                     </td>
                   </tr>
                 ))
@@ -974,7 +1062,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                       {o.ciudad && <span className="text-[8px] text-gray-600 block font-normal font-mono">{o.ciudad.toUpperCase()}</span>}
                     </td>
                     <td className="p-1 text-right text-black font-bold font-mono">
-                      $ {o.flete.toLocaleString('es-CO')}
+                      $ {formatCurrency(o.flete)}
                     </td>
                   </tr>
                 ))
@@ -993,7 +1081,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                   </td>
                   {isSummaryView && <td className="p-1 text-center font-bold">1</td>}
                   <td className="p-1 text-right text-black font-black font-mono">
-                    $ {displayOtrosGastosMonto.toLocaleString('es-CO')}
+                    $ {formatCurrency(displayOtrosGastosMonto)}
                   </td>
                 </tr>
               )}
@@ -1020,12 +1108,12 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
           <div className="col-span-5 divide-y divide-black font-sans text-[9.5px] bg-white text-black">
             <div className="flex justify-between p-1">
               <span className="text-gray-500 font-medium">SUBTOTAL FLETES:</span>
-              <span className="font-bold font-mono">$ {displayVoucherData.totalFlete.toLocaleString('es-CO')}</span>
+              <span className="font-bold font-mono">$ {formatCurrency(displayVoucherData.totalFlete)}</span>
             </div>
             {displayOtrosGastosMonto > 0 ? (
               <div className="flex justify-between p-1 bg-amber-100/70 font-bold">
                 <span className="text-black font-bold uppercase text-[8.5px]">OTROS GASTOS / EXTRAS:</span>
-                <span className="font-bold font-mono text-black">$ {displayOtrosGastosMonto.toLocaleString('es-CO')}</span>
+                <span className="font-bold font-mono text-black">$ {formatCurrency(displayOtrosGastosMonto)}</span>
               </div>
             ) : (
               <div className="flex justify-between p-1">
@@ -1039,7 +1127,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
             </div>
             <div className="flex justify-between items-center p-1.5 bg-gray-100 font-black text-[11px] border-t border-black text-black">
               <span className="uppercase text-[9px]">VALOR NETO A PAGAR:</span>
-              <span className="font-mono text-xs">$ {displayTotalNetoPagar.toLocaleString('es-CO')} COP</span>
+              <span className="font-mono text-xs">$ {formatCurrency(displayTotalNetoPagar)} COP</span>
             </div>
           </div>
         </div>
@@ -1428,7 +1516,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
 
                       {/* Costo flete */}
                       <td className="p-4 font-bold text-white text-sm">
-                        $ {order.flete.toLocaleString('es-CO')}
+                        $ {formatCurrency(order.flete)}
                       </td>
 
                       {/* Factura provisión */}
@@ -1705,12 +1793,12 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                           </span>
                         </td>
                         <td className="p-4 text-right font-bold text-slate-300">
-                          $ {record.subtotalFletes.toLocaleString('es-CO')}
+                          $ {formatCurrency(record.subtotalFletes)}
                         </td>
                         <td className="p-4 text-right font-mono">
-                          {record.otrosGastosMonto > 0 ? (
+                          {Number(record.otrosGastosMonto || 0) > 0 ? (
                             <div>
-                              <span className="font-bold text-amber-400">$ {record.otrosGastosMonto.toLocaleString('es-CO')}</span>
+                              <span className="font-bold text-amber-400">$ {formatCurrency(record.otrosGastosMonto)}</span>
                               {record.otrosGastosConcepto && (
                                 <span className="text-[9px] text-amber-500/80 block uppercase truncate max-w-[120px]" title={record.otrosGastosConcepto}>
                                   {record.otrosGastosConcepto}
@@ -1723,7 +1811,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                         </td>
                         <td className="p-4 text-right">
                           <span className="font-black text-hud-green text-sm">
-                            $ {record.totalPagar.toLocaleString('es-CO')}
+                            $ {formatCurrency(record.totalPagar)}
                           </span>
                         </td>
                         <td className="p-4 text-center">
