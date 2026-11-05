@@ -10,11 +10,54 @@ import {
   Activity, Bell, AlertTriangle, CheckCircle2, Calendar, 
   DollarSign, Sliders, Settings, ChevronDown, Download, 
   RefreshCw, Save, FileSpreadsheet, Sparkles, Filter, Briefcase, UserCheck,
-  ChevronLeft, ChevronRight, Lock, Unlock, Check
+  ChevronLeft, ChevronRight, Lock, Unlock, Check, X, Eye, FileText, Printer
 } from 'lucide-react';
-import { saveToCloud, subscribeToCloud } from '../firebaseService';
+import { saveToCloud, subscribeToCloud, forceRefreshFromCloud } from '../firebaseService';
 import { SEED_WORKERS, SEED_OVERTIME_RECORDS } from '../data/seedOvertime';
 import { AppUser } from '../types';
+
+// Canonical Normalization Helper: Consolidates variations into the 5 official employees
+export const normalizeWorkerName = (raw: string): string => {
+  if (!raw) return '';
+  const clean = raw.trim().toLowerCase();
+  if (clean.includes('washington') || clean.includes('quiñones') || clean.includes('quinones')) {
+    return 'Washington Quiñones Tenorio';
+  }
+  if (clean.includes('deyci') || clean.includes('anacona')) {
+    return 'Deyci Magali Anacona';
+  }
+  if (clean.includes('juan') && clean.includes('soler')) {
+    return 'Juan Carlos Soler';
+  }
+  if (clean.includes('julian') || clean.includes('barrios')) {
+    return 'Julian Barrios';
+  }
+  if (clean.includes('antonio') || clean.includes('calderon')) {
+    return 'Antonio Calderon';
+  }
+  // Title case fallback
+  return clean.replace(/\b\w/g, l => l.toUpperCase());
+};
+
+export const getWorkerRole = (name: string): string => {
+  const norm = normalizeWorkerName(name);
+  if (norm === 'Washington Quiñones Tenorio') return 'Aux coordinador logistico';
+  if (norm === 'Deyci Magali Anacona') return 'Auxiliar Logística';
+  if (norm === 'Juan Carlos Soler') return 'Aux Producción';
+  if (norm === 'Julian Barrios') return 'Aux Despacho';
+  if (norm === 'Antonio Calderon') return 'Jefe Despacho';
+  return 'Operario Logístico';
+};
+
+export const getWorkerArea = (name: string): string => {
+  const norm = normalizeWorkerName(name);
+  if (norm === 'Washington Quiñones Tenorio') return 'Logística y Despacho';
+  if (norm === 'Deyci Magali Anacona') return 'Logística y Despacho';
+  if (norm === 'Juan Carlos Soler') return 'Despacho y Producción';
+  if (norm === 'Julian Barrios') return 'Despacho';
+  if (norm === 'Antonio Calderon') return 'Despacho';
+  return 'Operaciones';
+};
 
 // Safe LocalStorage proxy to prevent SecurityErrors in sandboxed environments
 const safeLocalStorage = {

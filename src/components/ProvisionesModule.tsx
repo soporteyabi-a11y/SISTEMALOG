@@ -620,6 +620,43 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
     return filteredOrders.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredOrders, provisionPage, itemsPerPage]);
 
+  // Summary metrics for the filtered view in Auditoría mode
+  const auditMetrics = useMemo(() => {
+    let totalMonto = 0;
+    let provisionedCount = 0;
+    let provisionedMonto = 0;
+    let pendingCount = 0;
+    let pendingMonto = 0;
+
+    filteredOrders.forEach(o => {
+      const fl = Number(o.flete) || 0;
+      totalMonto += fl;
+      if (o.provision && o.provision.trim() !== '') {
+        provisionedCount++;
+        provisionedMonto += fl;
+      } else {
+        pendingCount++;
+        pendingMonto += fl;
+      }
+    });
+
+    const selectedOrders = orders.filter(o => selectedIds.includes(o.id));
+    const selectedMonto = selectedOrders.reduce((sum, o) => sum + (Number(o.flete) || 0), 0);
+    const selectedTotalNeto = selectedMonto + (otrosGastosMonto || 0);
+
+    return {
+      totalCount: filteredOrders.length,
+      totalMonto,
+      provisionedCount,
+      provisionedMonto,
+      pendingCount,
+      pendingMonto,
+      selectedCount: selectedIds.length,
+      selectedMonto,
+      selectedTotalNeto
+    };
+  }, [filteredOrders, orders, selectedIds, otrosGastosMonto]);
+
   const exportProvisionesToCSV = () => {
     const headers = ["Flete ID", "Fecha Despacho", "PV", "Factura Venta", "Cliente", "Socio Transportador", "Destino", "Costo Flete", "Factura Provisión (FP)", "Estado"];
     const rows: (string | number)[][] = filteredOrders.map(o => [
@@ -1490,6 +1527,69 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
               LIMPIAR
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Executive KPI Metrics Cards for current filtered period */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
+        {/* Total Fletes Card */}
+        <div className="bg-[#030610] border border-slate-800 p-3 rounded-lg shadow-sm">
+          <span className="text-[9.5px] font-mono text-slate-400 block uppercase font-bold tracking-wider">
+            Total Fletes Filtrados
+          </span>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-sm md:text-base font-black font-mono text-white">
+              $ {formatCurrency(auditMetrics.totalMonto)}
+            </span>
+            <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 font-bold">
+              {auditMetrics.totalCount} ord.
+            </span>
+          </div>
+        </div>
+
+        {/* Ya Provisionados (Con FP) */}
+        <div className="bg-[#030610] border border-emerald-500/20 p-3 rounded-lg shadow-sm">
+          <span className="text-[9.5px] font-mono text-emerald-400/90 block uppercase font-bold tracking-wider">
+            Ya Provisionados (Con FP)
+          </span>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-sm md:text-base font-black font-mono text-emerald-400">
+              $ {formatCurrency(auditMetrics.provisionedMonto)}
+            </span>
+            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/30 font-bold">
+              {auditMetrics.provisionedCount} listos
+            </span>
+          </div>
+        </div>
+
+        {/* Pendientes por Liquidar (Sin FP) */}
+        <div className="bg-[#030610] border border-rose-500/20 p-3 rounded-lg shadow-sm">
+          <span className="text-[9.5px] font-mono text-rose-400/90 block uppercase font-bold tracking-wider">
+            Pendientes por Liquidar
+          </span>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-sm md:text-base font-black font-mono text-rose-400">
+              $ {formatCurrency(auditMetrics.pendingMonto)}
+            </span>
+            <span className="text-[10px] font-mono text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/30 font-bold">
+              {auditMetrics.pendingCount} pend.
+            </span>
+          </div>
+        </div>
+
+        {/* Selección Activa para Soporte */}
+        <div className="bg-[#030610] border border-cyan-500/30 p-3 rounded-lg shadow-sm">
+          <span className="text-[9.5px] font-mono text-cyan-400 block uppercase font-bold tracking-wider">
+            Selección Activa (Soporte)
+          </span>
+          <div className="flex items-baseline justify-between mt-1">
+            <span className="text-sm md:text-base font-black font-mono text-[#00c5d8]">
+              $ {formatCurrency(auditMetrics.selectedTotalNeto)}
+            </span>
+            <span className="text-[10px] font-mono text-cyan-400 bg-cyan-500/10 px-1.5 py-0.5 rounded border border-cyan-500/30 font-bold">
+              {auditMetrics.selectedCount} selec.
+            </span>
+          </div>
         </div>
       </div>
 
