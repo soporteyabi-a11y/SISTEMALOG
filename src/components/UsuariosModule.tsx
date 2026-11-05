@@ -322,7 +322,7 @@ export default function UsuariosModule({
             ? 'bg-rose-950 text-rose-200 border-rose-500'
             : toastMessage.type === 'info'
             ? 'bg-slate-900 text-cyan-300 border-cyan-500'
-            : 'bg-[#04242a] text-[#00f0b5] border-[#00f0b5] shadow-[0_0_20px_rgba(0,240,181,0.3)]'
+            : 'bg-[#04202c] text-[#00c5d8] border-[#00c5d8] shadow-[0_0_20px_rgba(0, 197, 216,0.3)]'
         }`}>
           <span>{toastMessage.type === 'error' ? '❌' : '✅'}</span>
           <span>{toastMessage.text}</span>
@@ -330,17 +330,17 @@ export default function UsuariosModule({
       )}
       
       {/* Top Banner Header */}
-      <div className="bg-hud-card border border-[#00f0b5]/30 rounded-2xl p-6 relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-[#00f0b5]/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="bg-hud-card border border-[#00c5d8]/30 rounded-2xl p-6 relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-[#00c5d8]/5 rounded-full blur-3xl pointer-events-none" />
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-4">
-            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#00f0b5]/20 to-[#04242a] border border-[#00f0b5]/40 text-[#00f0b5] shadow-[0_0_20px_rgba(0,240,181,0.2)]">
+            <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#00c5d8]/20 to-[#04202c] border border-[#00c5d8]/40 text-[#00c5d8] shadow-[0_0_20px_rgba(0, 197, 216,0.2)]">
               <ShieldCheck className="w-8 h-8" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-[#00f0b5] bg-[#00f0b5]/10 px-2 py-0.5 rounded-full border border-[#00f0b5]/30 font-bold">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-[#00c5d8] bg-[#00c5d8]/10 px-2 py-0.5 rounded-full border border-[#00c5d8]/30 font-bold">
                   Control de Accesos & Roles RBAC
                 </span>
                 <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
@@ -360,19 +360,19 @@ export default function UsuariosModule({
             <button
               type="button"
               onClick={() => setIsNewUserModalOpen(true)}
-              className="bg-[#00f0b5] hover:bg-[#25ffcb] text-slate-950 px-4 py-2.5 rounded-xl font-mono text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-[0_0_15px_rgba(0,240,181,0.35)] cursor-pointer transition-all"
+              className="bg-[#00c5d8] hover:bg-[#38d9f5] text-slate-950 px-4 py-2.5 rounded-xl font-mono text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-[0_0_15px_rgba(0, 197, 216,0.35)] cursor-pointer transition-all"
             >
               <UserPlus className="w-4 h-4" />
               <span>+ Nuevo Colaborador</span>
             </button>
 
             <div className="bg-slate-950/90 border border-slate-800 rounded-xl px-4 py-2 flex items-center gap-3">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#00f0b5] animate-pulse" />
+              <div className="w-2.5 h-2.5 rounded-full bg-[#00c5d8] animate-pulse" />
               <div className="text-left font-mono">
                 <div className="text-[8.5px] uppercase tracking-wider text-slate-400">Usuario Activo</div>
                 <div className="text-xs font-bold text-white flex items-center gap-1.5">
                   <span>{currentUser?.nombre || 'Washington Quiñones'}</span>
-                  <span className="text-[8.5px] bg-[#00f0b5]/20 text-[#00f0b5] px-1.5 py-0.2 rounded border border-[#00f0b5]/30">
+                  <span className="text-[8.5px] bg-[#00c5d8]/20 text-[#00c5d8] px-1.5 py-0.2 rounded border border-[#00c5d8]/30">
                     {currentUser?.rol || 'SUPER_ADMIN'}
                   </span>
                 </div>
@@ -394,8 +394,8 @@ export default function UsuariosModule({
               onClick={() => setSelectedUserEmail(user.email)}
               className={`rounded-2xl p-5 border transition-all cursor-pointer relative overflow-hidden flex flex-col justify-between group ${
                 isSelected 
-                  ? 'bg-gradient-to-b from-[#04242a] to-[#02161a] border-[#00f0b5] shadow-lg shadow-[#00f0b5]/15' 
-                  : 'bg-hud-card/90 border-slate-800/80 hover:border-[#00f0b5]/40 hover:bg-[#031d22]/50'
+                  ? 'bg-gradient-to-b from-[#04202c] to-[#02141c] border-[#00c5d8] shadow-lg shadow-[#00c5d8]/15' 
+                  : 'bg-hud-card/90 border-slate-800/80 hover:border-[#00c5d8]/40 hover:bg-[#031d22]/50'
               }`}
             >
               <div>
@@ -413,7 +413,7 @@ export default function UsuariosModule({
                   
                   <div className="flex flex-col items-end gap-1">
                     {user.rol === 'SUPER_ADMIN' ? (
-                      <span className="text-[9px] font-mono font-black uppercase px-2 py-0.5 rounded-full bg-[#00f0b5]/20 border border-[#00f0b5]/50 text-[#00f0b5]">
+                      <span className="text-[9px] font-mono font-black uppercase px-2 py-0.5 rounded-full bg-[#00c5d8]/20 border border-[#00c5d8]/50 text-[#00c5d8]">
                         Admin General
                       </span>
                     ) : (
@@ -422,8 +422,8 @@ export default function UsuariosModule({
                       </span>
                     )}
                     {isCurrent && (
-                      <span className="text-[8px] font-mono font-bold text-[#00f0b5] flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#00f0b5]"></span> EN SESIÓN
+                      <span className="text-[8px] font-mono font-bold text-[#00c5d8] flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#00c5d8]"></span> EN SESIÓN
                       </span>
                     )}
                   </div>
@@ -431,7 +431,7 @@ export default function UsuariosModule({
 
                 <div className="space-y-1 mb-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-black text-white group-hover:text-[#00f0b5] transition-colors">
+                    <h3 className="text-sm font-black text-white group-hover:text-[#00c5d8] transition-colors">
                       {user.nombre}
                     </h3>
                   </div>
@@ -469,7 +469,7 @@ export default function UsuariosModule({
               <div className="pt-3 border-t border-slate-800/80 space-y-2">
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
                   <span>Módulos con acceso:</span>
-                  <span className="text-[#00f0b5] font-bold">
+                  <span className="text-[#00c5d8] font-bold">
                     {user.rol === 'SUPER_ADMIN' ? 'Todos (100%)' : `${user.modulosPermitidos.length} módulos`}
                   </span>
                 </div>
@@ -478,7 +478,7 @@ export default function UsuariosModule({
                   <button
                     type="button"
                     onClick={(e) => handleOpenEditUser(user, e)}
-                    className="py-1.5 px-2 bg-[#04242a] hover:bg-[#06333c] border border-[#00f0b5]/30 hover:border-[#00f0b5] text-[#00f0b5] rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                    className="py-1.5 px-2 bg-[#04202c] hover:bg-[#06333c] border border-[#00c5d8]/30 hover:border-[#00c5d8] text-[#00c5d8] rounded-lg text-[10px] font-mono font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
                     title="Editar asignaciones, privilegios y módulos de este usuario"
                   >
                     <Edit3 className="w-3 h-3" />
@@ -514,7 +514,7 @@ export default function UsuariosModule({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* User Card & Interactive Capabilities (User requested this to be directly editable!) */}
-        <div className="bg-hud-card border border-[#00f0b5]/30 rounded-2xl p-6 space-y-5 shadow-xl">
+        <div className="bg-hud-card border border-[#00c5d8]/30 rounded-2xl p-6 space-y-5 shadow-xl">
           <div className="flex items-center justify-between pb-4 border-b border-slate-800">
             <div className="flex items-center gap-3">
               <div 
@@ -529,7 +529,7 @@ export default function UsuariosModule({
               </div>
               <div>
                 <h2 className="text-base font-black text-white">{selectedUser.nombre}</h2>
-                <p className="text-xs text-[#00f0b5] font-medium">{selectedUser.cargo}</p>
+                <p className="text-xs text-[#00c5d8] font-medium">{selectedUser.cargo}</p>
                 <p className="text-[10px] text-slate-400 font-mono">{selectedUser.departamento}</p>
               </div>
             </div>
@@ -537,7 +537,7 @@ export default function UsuariosModule({
             <button
               type="button"
               onClick={() => handleOpenEditUser(selectedUser)}
-              className="px-3 py-1.5 bg-[#00f0b5]/15 hover:bg-[#00f0b5]/25 border border-[#00f0b5]/40 text-[#00f0b5] rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+              className="px-3 py-1.5 bg-[#00c5d8]/15 hover:bg-[#00c5d8]/25 border border-[#00c5d8]/40 text-[#00c5d8] rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
               title="Abrir editor completo de privilegios y módulos"
             >
               <Edit3 className="w-3.5 h-3.5" />
@@ -548,8 +548,8 @@ export default function UsuariosModule({
           {/* Interactive Privileges Switch List */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider text-[#00f0b5] font-bold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#00f0b5]" />
+              <span className="text-[11px] font-mono uppercase tracking-wider text-[#00c5d8] font-bold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#00c5d8]" />
                 Privilegios Operativos (Haz clic para alternar)
               </span>
               <span className="text-[9px] text-slate-400 font-mono">Edición rápida</span>
@@ -561,21 +561,21 @@ export default function UsuariosModule({
                 onClick={() => handleTogglePrivilege(selectedUser.id, 'puedeCrearOrdenes')}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   selectedUser.permisos.puedeCrearOrdenes
-                    ? 'bg-[#04242a]/90 border-[#00f0b5]/40 text-white shadow-sm hover:border-[#00f0b5]'
+                    ? 'bg-[#04202c]/90 border-[#00c5d8]/40 text-white shadow-sm hover:border-[#00c5d8]'
                     : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700'
                 }`}
                 title="Haga clic para activar o desactivar este permiso"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeCrearOrdenes ? 'bg-[#00f0b5] shadow-[0_0_8px_#00f0b5]' : 'bg-slate-600'}`} />
+                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeCrearOrdenes ? 'bg-[#00c5d8] shadow-[0_0_8px_#00c5d8]' : 'bg-slate-600'}`} />
                   <span className="font-bold">Crear & Radicar Órdenes</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeCrearOrdenes ? 'text-[#00f0b5]' : 'text-rose-400'}`}>
+                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeCrearOrdenes ? 'text-[#00c5d8]' : 'text-rose-400'}`}>
                     {selectedUser.permisos.puedeCrearOrdenes ? 'Permitido' : 'Bloqueado'}
                   </span>
                   {selectedUser.permisos.puedeCrearOrdenes ? (
-                    <CheckCircle2 className="w-4 h-4 text-[#00f0b5]" />
+                    <CheckCircle2 className="w-4 h-4 text-[#00c5d8]" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-400" />
                   )}
@@ -587,21 +587,21 @@ export default function UsuariosModule({
                 onClick={() => handleTogglePrivilege(selectedUser.id, 'puedeEditarFletes')}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   selectedUser.permisos.puedeEditarFletes
-                    ? 'bg-[#04242a]/90 border-[#00f0b5]/40 text-white shadow-sm hover:border-[#00f0b5]'
+                    ? 'bg-[#04202c]/90 border-[#00c5d8]/40 text-white shadow-sm hover:border-[#00c5d8]'
                     : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700'
                 }`}
                 title="Haga clic para activar o desactivar este permiso"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeEditarFletes ? 'bg-[#00f0b5] shadow-[0_0_8px_#00f0b5]' : 'bg-slate-600'}`} />
+                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeEditarFletes ? 'bg-[#00c5d8] shadow-[0_0_8px_#00c5d8]' : 'bg-slate-600'}`} />
                   <span className="font-bold">Editar Fletes & Tarifas</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeEditarFletes ? 'text-[#00f0b5]' : 'text-rose-400'}`}>
+                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeEditarFletes ? 'text-[#00c5d8]' : 'text-rose-400'}`}>
                     {selectedUser.permisos.puedeEditarFletes ? 'Permitido' : 'Bloqueado'}
                   </span>
                   {selectedUser.permisos.puedeEditarFletes ? (
-                    <CheckCircle2 className="w-4 h-4 text-[#00f0b5]" />
+                    <CheckCircle2 className="w-4 h-4 text-[#00c5d8]" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-400" />
                   )}
@@ -613,21 +613,21 @@ export default function UsuariosModule({
                 onClick={() => handleTogglePrivilege(selectedUser.id, 'puedeVerFinanzas')}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   selectedUser.permisos.puedeVerFinanzas
-                    ? 'bg-[#04242a]/90 border-[#00f0b5]/40 text-white shadow-sm hover:border-[#00f0b5]'
+                    ? 'bg-[#04202c]/90 border-[#00c5d8]/40 text-white shadow-sm hover:border-[#00c5d8]'
                     : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700'
                 }`}
                 title="Haga clic para activar o desactivar este permiso"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeVerFinanzas ? 'bg-[#00f0b5] shadow-[0_0_8px_#00f0b5]' : 'bg-slate-600'}`} />
+                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeVerFinanzas ? 'bg-[#00c5d8] shadow-[0_0_8px_#00c5d8]' : 'bg-slate-600'}`} />
                   <span className="font-bold">Ver Finanzas & Rentabilidad</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeVerFinanzas ? 'text-[#00f0b5]' : 'text-rose-400'}`}>
+                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeVerFinanzas ? 'text-[#00c5d8]' : 'text-rose-400'}`}>
                     {selectedUser.permisos.puedeVerFinanzas ? 'Permitido' : 'Bloqueado'}
                   </span>
                   {selectedUser.permisos.puedeVerFinanzas ? (
-                    <CheckCircle2 className="w-4 h-4 text-[#00f0b5]" />
+                    <CheckCircle2 className="w-4 h-4 text-[#00c5d8]" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-400" />
                   )}
@@ -639,21 +639,21 @@ export default function UsuariosModule({
                 onClick={() => handleTogglePrivilege(selectedUser.id, 'puedeGestionarNomina')}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   selectedUser.permisos.puedeGestionarNomina
-                    ? 'bg-[#04242a]/90 border-[#00f0b5]/40 text-white shadow-sm hover:border-[#00f0b5]'
+                    ? 'bg-[#04202c]/90 border-[#00c5d8]/40 text-white shadow-sm hover:border-[#00c5d8]'
                     : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700'
                 }`}
                 title="Haga clic para activar o desactivar este permiso"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeGestionarNomina ? 'bg-[#00f0b5] shadow-[0_0_8px_#00f0b5]' : 'bg-slate-600'}`} />
+                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeGestionarNomina ? 'bg-[#00c5d8] shadow-[0_0_8px_#00c5d8]' : 'bg-slate-600'}`} />
                   <span className="font-bold">Gestionar Nómina & Horas Extras</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeGestionarNomina ? 'text-[#00f0b5]' : 'text-rose-400'}`}>
+                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeGestionarNomina ? 'text-[#00c5d8]' : 'text-rose-400'}`}>
                     {selectedUser.permisos.puedeGestionarNomina ? 'Permitido' : 'Bloqueado'}
                   </span>
                   {selectedUser.permisos.puedeGestionarNomina ? (
-                    <CheckCircle2 className="w-4 h-4 text-[#00f0b5]" />
+                    <CheckCircle2 className="w-4 h-4 text-[#00c5d8]" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-400" />
                   )}
@@ -665,21 +665,21 @@ export default function UsuariosModule({
                 onClick={() => handleTogglePrivilege(selectedUser.id, 'puedeGestionarUsuarios')}
                 className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
                   selectedUser.permisos.puedeGestionarUsuarios
-                    ? 'bg-[#04242a]/90 border-[#00f0b5]/40 text-white shadow-sm hover:border-[#00f0b5]'
+                    ? 'bg-[#04202c]/90 border-[#00c5d8]/40 text-white shadow-sm hover:border-[#00c5d8]'
                     : 'bg-slate-950/70 border-slate-800/80 text-slate-400 hover:border-slate-700'
                 }`}
                 title="Haga clic para activar o desactivar este permiso"
               >
                 <div className="flex items-center gap-2.5">
-                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeGestionarUsuarios ? 'bg-[#00f0b5] shadow-[0_0_8px_#00f0b5]' : 'bg-slate-600'}`} />
+                  <div className={`w-2 h-2 rounded-full ${selectedUser.permisos.puedeGestionarUsuarios ? 'bg-[#00c5d8] shadow-[0_0_8px_#00c5d8]' : 'bg-slate-600'}`} />
                   <span className="font-bold">Administración de Usuarios</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeGestionarUsuarios ? 'text-[#00f0b5]' : 'text-rose-400'}`}>
+                  <span className={`text-[10px] font-bold uppercase ${selectedUser.permisos.puedeGestionarUsuarios ? 'text-[#00c5d8]' : 'text-rose-400'}`}>
                     {selectedUser.permisos.puedeGestionarUsuarios ? 'Permitido' : 'Bloqueado'}
                   </span>
                   {selectedUser.permisos.puedeGestionarUsuarios ? (
-                    <CheckCircle2 className="w-4 h-4 text-[#00f0b5]" />
+                    <CheckCircle2 className="w-4 h-4 text-[#00c5d8]" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-400" />
                   )}
@@ -689,8 +689,8 @@ export default function UsuariosModule({
           </div>
 
           {/* Sello de Auditoría Activo */}
-          <div className="p-4 rounded-xl bg-slate-950/90 border border-[#00f0b5]/20 text-[11px] font-mono text-slate-300 space-y-1.5">
-            <div className="text-[#00f0b5] font-bold uppercase tracking-wider text-[10px] flex items-center justify-between">
+          <div className="p-4 rounded-xl bg-slate-950/90 border border-[#00c5d8]/20 text-[11px] font-mono text-slate-300 space-y-1.5">
+            <div className="text-[#00c5d8] font-bold uppercase tracking-wider text-[10px] flex items-center justify-between">
               <span>Sello de Auditoría Activo</span>
               <span className="text-[9px] text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30">EN LÍNEA</span>
             </div>
@@ -701,7 +701,7 @@ export default function UsuariosModule({
               creadoPor: "{selectedUser.nombre} ({selectedUser.email})"
             </div>
             {(selectedUser.id === 'user_juan' || selectedUser.id === 'user_antonio' || selectedUser.nombre.toLowerCase().includes('antonio') || selectedUser.nombre.toLowerCase().includes('juan')) && (
-              <div className="p-2.5 rounded-lg bg-[#04242a] border border-[#00f0b5]/40 text-[9.5px] text-[#00f0b5] font-mono leading-tight">
+              <div className="p-2.5 rounded-lg bg-[#04202c] border border-[#00c5d8]/40 text-[9.5px] text-[#00c5d8] font-mono leading-tight">
                 ℹ️ <strong>Terminal Compartida de Registro:</strong> Juan Carlos y Antonio no necesitan correo propio; pueden registrar directamente sus turnos en el módulo de Horas Extras seleccionando su nombre con un clic en la estación compartida de Julian.
               </div>
             )}
@@ -711,7 +711,7 @@ export default function UsuariosModule({
             <button
               type="button"
               onClick={() => handleOpenEditUser(selectedUser)}
-              className="w-full bg-[#04242a] hover:bg-[#00f0b5] text-[#00f0b5] hover:text-slate-950 border border-[#00f0b5]/50 py-3 rounded-xl font-mono text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+              className="w-full bg-[#04202c] hover:bg-[#00c5d8] text-[#00c5d8] hover:text-slate-950 border border-[#00c5d8]/50 py-3 rounded-xl font-mono text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
             >
               <Settings className="w-4 h-4" />
               <span>Configurar Módulos y Accesos Completos</span>
@@ -725,7 +725,7 @@ export default function UsuariosModule({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
               <div>
                 <h2 className="text-base font-black text-white flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#00f0b5]" /> Trazabilidad & Auditoría de Ingresos
+                  <Activity className="w-4 h-4 text-[#00c5d8]" /> Trazabilidad & Auditoría de Ingresos
                 </h2>
                 <p className="text-xs text-slate-400">
                   Historial de registros y modificaciones generadas con firma de autor.
@@ -740,7 +740,7 @@ export default function UsuariosModule({
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                     placeholder="Buscar PV, cliente o autor..."
-                    className="bg-slate-950 border border-slate-800 text-white rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono outline-none focus:border-[#00f0b5]"
+                    className="bg-slate-950 border border-slate-800 text-white rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono outline-none focus:border-[#00c5d8]"
                   />
                 </div>
 
@@ -748,21 +748,21 @@ export default function UsuariosModule({
                   <button
                     type="button"
                     onClick={() => setFilterAuditoria('todos')}
-                    className={`px-2 py-1 rounded cursor-pointer ${filterAuditoria === 'todos' ? 'bg-[#00f0b5] text-slate-950 font-bold' : 'text-slate-400'}`}
+                    className={`px-2 py-1 rounded cursor-pointer ${filterAuditoria === 'todos' ? 'bg-[#00c5d8] text-slate-950 font-bold' : 'text-slate-400'}`}
                   >
                     Todos
                   </button>
                   <button
                     type="button"
                     onClick={() => setFilterAuditoria('creados')}
-                    className={`px-2 py-1 rounded cursor-pointer ${filterAuditoria === 'creados' ? 'bg-[#00f0b5] text-slate-950 font-bold' : 'text-slate-400'}`}
+                    className={`px-2 py-1 rounded cursor-pointer ${filterAuditoria === 'creados' ? 'bg-[#00c5d8] text-slate-950 font-bold' : 'text-slate-400'}`}
                   >
                     Creaciones
                   </button>
                   <button
                     type="button"
                     onClick={() => setFilterAuditoria('modificados')}
-                    className={`px-2 py-1 rounded cursor-pointer ${filterAuditoria === 'modificados' ? 'bg-[#00f0b5] text-slate-950 font-bold' : 'text-slate-400'}`}
+                    className={`px-2 py-1 rounded cursor-pointer ${filterAuditoria === 'modificados' ? 'bg-[#00c5d8] text-slate-950 font-bold' : 'text-slate-400'}`}
                   >
                     Estados
                   </button>
@@ -803,7 +803,7 @@ export default function UsuariosModule({
                     </div>
 
                     <div className="text-right shrink-0">
-                      <div className="text-[#00f0b5] font-bold text-[11px]">{item.autor}</div>
+                      <div className="text-[#00c5d8] font-bold text-[11px]">{item.autor}</div>
                       <div className="text-[10px] text-slate-500">{item.fecha}</div>
                     </div>
                   </div>
@@ -813,9 +813,9 @@ export default function UsuariosModule({
           </div>
 
           {/* Database Migration to Supabase + Render notification */}
-          <div className="p-4 rounded-xl bg-gradient-to-r from-[#02161a] to-[#04242a] border border-[#00f0b5]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-xl bg-gradient-to-r from-[#02141c] to-[#04202c] border border-[#00c5d8]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Server className="w-5 h-5 text-[#00f0b5]" />
+              <Server className="w-5 h-5 text-[#00c5d8]" />
               <div>
                 <div className="text-xs font-bold text-white">Infraestructura Supabase + Render</div>
                 <div className="text-[10px] text-slate-400">
@@ -827,7 +827,7 @@ export default function UsuariosModule({
               <button
                 type="button"
                 onClick={onOpenSupabaseModal}
-                className="px-3 py-1.5 bg-[#00f0b5] text-slate-950 hover:bg-[#25ffcb] rounded-lg text-xs font-mono font-black transition-all cursor-pointer whitespace-nowrap shadow"
+                className="px-3 py-1.5 bg-[#00c5d8] text-slate-950 hover:bg-[#38d9f5] rounded-lg text-xs font-mono font-black transition-all cursor-pointer whitespace-nowrap shadow"
               >
                 Ver Estado Supabase
               </button>
@@ -841,7 +841,7 @@ export default function UsuariosModule({
       {/* ========================================================================= */}
       {isEditModalOpen && editingUser && (
         <div className="fixed inset-0 z-[11000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#02161a] border-2 border-[#00f0b5]/50 rounded-2xl max-w-3xl w-full p-6 text-slate-200 shadow-2xl relative my-auto animate-fade-in font-sans space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="bg-[#02141c] border-2 border-[#00c5d8]/50 rounded-2xl max-w-3xl w-full p-6 text-slate-200 shadow-2xl relative my-auto animate-fade-in font-sans space-y-5 max-h-[90vh] overflow-y-auto">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
@@ -859,7 +859,7 @@ export default function UsuariosModule({
                 <div>
                   <h3 className="text-base font-black text-white flex items-center gap-2">
                     <span>Editar Asignaciones:</span>
-                    <span className="text-[#00f0b5]">{editingUser.nombre}</span>
+                    <span className="text-[#00c5d8]">{editingUser.nombre}</span>
                   </h3>
                   <p className="text-xs text-slate-400 font-mono">
                     {editingUser.email} • {editingUser.cargo}
@@ -879,8 +879,8 @@ export default function UsuariosModule({
             <form onSubmit={handleSaveEditedUser} className="space-y-6">
               
               {/* Profile Details Inputs */}
-              <div className="bg-[#04242a] p-4 rounded-xl border border-[#00f0b5]/20 space-y-3">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#00f0b5] font-bold">
+              <div className="bg-[#04202c] p-4 rounded-xl border border-[#00c5d8]/20 space-y-3">
+                <div className="text-[11px] font-mono uppercase tracking-wider text-[#00c5d8] font-bold">
                   1. Datos del Colaborador
                 </div>
                 
@@ -891,7 +891,7 @@ export default function UsuariosModule({
                       type="text"
                       value={editingUser.nombre}
                       onChange={e => setEditingUser({ ...editingUser, nombre: e.target.value })}
-                      className="w-full bg-[#02161a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                      className="w-full bg-[#02141c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                       required
                     />
                   </div>
@@ -902,7 +902,7 @@ export default function UsuariosModule({
                       type="email"
                       value={editingUser.email}
                       onChange={e => setEditingUser({ ...editingUser, email: e.target.value })}
-                      className="w-full bg-[#02161a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                      className="w-full bg-[#02141c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                       required
                     />
                   </div>
@@ -913,7 +913,7 @@ export default function UsuariosModule({
                       type="text"
                       value={editingUser.cargo}
                       onChange={e => setEditingUser({ ...editingUser, cargo: e.target.value })}
-                      className="w-full bg-[#02161a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                      className="w-full bg-[#02141c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                     />
                   </div>
 
@@ -923,7 +923,7 @@ export default function UsuariosModule({
                       type="text"
                       value={editingUser.departamento}
                       onChange={e => setEditingUser({ ...editingUser, departamento: e.target.value })}
-                      className="w-full bg-[#02161a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                      className="w-full bg-[#02141c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                     />
                   </div>
 
@@ -932,7 +932,7 @@ export default function UsuariosModule({
                     <select
                       value={editingUser.rol}
                       onChange={e => setEditingUser({ ...editingUser, rol: e.target.value as UserRole })}
-                      className="w-full bg-[#02161a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5] cursor-pointer"
+                      className="w-full bg-[#02141c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8] cursor-pointer"
                     >
                       <option value="SUPER_ADMIN">SUPER_ADMIN (Control Total / Acceso General)</option>
                       <option value="AUXILIAR_LOGISTICO">AUXILIAR_LOGISTICO (Operaciones & Despacho)</option>
@@ -957,14 +957,14 @@ export default function UsuariosModule({
               </div>
 
               {/* Privilegios Operativos Toggles */}
-              <div className="bg-[#04242a] p-4 rounded-xl border border-[#00f0b5]/20 space-y-3">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-[#00f0b5] font-bold">
+              <div className="bg-[#04202c] p-4 rounded-xl border border-[#00c5d8]/20 space-y-3">
+                <div className="text-[11px] font-mono uppercase tracking-wider text-[#00c5d8] font-bold">
                   2. Privilegios Operativos Directos
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs font-mono">
                   {/* Crear órdenes */}
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02161a] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02141c] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
                     <span className="text-slate-200">Crear & Radicar Órdenes</span>
                     <input
                       type="checkbox"
@@ -973,12 +973,12 @@ export default function UsuariosModule({
                         ...editingUser,
                         permisos: { ...editingUser.permisos, puedeCrearOrdenes: e.target.checked }
                       })}
-                      className="w-4 h-4 accent-[#00f0b5] cursor-pointer"
+                      className="w-4 h-4 accent-[#00c5d8] cursor-pointer"
                     />
                   </label>
 
                   {/* Editar fletes */}
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02161a] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02141c] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
                     <span className="text-slate-200">Editar Fletes & Tarifas</span>
                     <input
                       type="checkbox"
@@ -987,12 +987,12 @@ export default function UsuariosModule({
                         ...editingUser,
                         permisos: { ...editingUser.permisos, puedeEditarFletes: e.target.checked }
                       })}
-                      className="w-4 h-4 accent-[#00f0b5] cursor-pointer"
+                      className="w-4 h-4 accent-[#00c5d8] cursor-pointer"
                     />
                   </label>
 
                   {/* Ver finanzas */}
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02161a] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02141c] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
                     <span className="text-slate-200">Ver Finanzas & Rentabilidad</span>
                     <input
                       type="checkbox"
@@ -1001,12 +1001,12 @@ export default function UsuariosModule({
                         ...editingUser,
                         permisos: { ...editingUser.permisos, puedeVerFinanzas: e.target.checked }
                       })}
-                      className="w-4 h-4 accent-[#00f0b5] cursor-pointer"
+                      className="w-4 h-4 accent-[#00c5d8] cursor-pointer"
                     />
                   </label>
 
                   {/* Gestionar nómina */}
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02161a] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02141c] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
                     <span className="text-slate-200">Gestionar Nómina & H. Extras</span>
                     <input
                       type="checkbox"
@@ -1015,12 +1015,12 @@ export default function UsuariosModule({
                         ...editingUser,
                         permisos: { ...editingUser.permisos, puedeGestionarNomina: e.target.checked }
                       })}
-                      className="w-4 h-4 accent-[#00f0b5] cursor-pointer"
+                      className="w-4 h-4 accent-[#00c5d8] cursor-pointer"
                     />
                   </label>
 
                   {/* Administrar usuarios */}
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02161a] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02141c] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
                     <span className="text-slate-200">Administración de Usuarios</span>
                     <input
                       type="checkbox"
@@ -1029,12 +1029,12 @@ export default function UsuariosModule({
                         ...editingUser,
                         permisos: { ...editingUser.permisos, puedeGestionarUsuarios: e.target.checked }
                       })}
-                      className="w-4 h-4 accent-[#00f0b5] cursor-pointer"
+                      className="w-4 h-4 accent-[#00c5d8] cursor-pointer"
                     />
                   </label>
 
                   {/* Exportar datos */}
-                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02161a] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
+                  <label className="flex items-center justify-between p-3 rounded-lg bg-[#02141c] border border-slate-800 hover:border-slate-700 cursor-pointer select-none">
                     <span className="text-slate-200">Exportar Datos (Excel/CSV)</span>
                     <input
                       type="checkbox"
@@ -1043,17 +1043,17 @@ export default function UsuariosModule({
                         ...editingUser,
                         permisos: { ...editingUser.permisos, puedeExportarDatos: e.target.checked }
                       })}
-                      className="w-4 h-4 accent-[#00f0b5] cursor-pointer"
+                      className="w-4 h-4 accent-[#00c5d8] cursor-pointer"
                     />
                   </label>
                 </div>
               </div>
 
               {/* Módulos con Acceso Asignado Checkboxes */}
-              <div className="bg-[#04242a] p-4 rounded-xl border border-[#00f0b5]/20 space-y-4">
+              <div className="bg-[#04202c] p-4 rounded-xl border border-[#00c5d8]/20 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <span className="text-[11px] font-mono uppercase tracking-wider text-[#00f0b5] font-bold block">
+                    <span className="text-[11px] font-mono uppercase tracking-wider text-[#00c5d8] font-bold block">
                       3. Asignación de Módulos del Sistema
                     </span>
                     <span className="text-[10px] text-slate-400">
@@ -1065,7 +1065,7 @@ export default function UsuariosModule({
                     <button
                       type="button"
                       onClick={() => handleSetAllModules(true)}
-                      className="px-2.5 py-1 bg-[#00f0b5]/20 hover:bg-[#00f0b5]/30 border border-[#00f0b5]/40 text-[#00f0b5] rounded text-[10px] font-mono font-bold cursor-pointer"
+                      className="px-2.5 py-1 bg-[#00c5d8]/20 hover:bg-[#00c5d8]/30 border border-[#00c5d8]/40 text-[#00c5d8] rounded text-[10px] font-mono font-bold cursor-pointer"
                     >
                       Marcar Todos
                     </button>
@@ -1084,7 +1084,7 @@ export default function UsuariosModule({
                   {Object.entries(modulesByCategory).map(([category, modules]) => (
                     <div key={category} className="space-y-2">
                       <div className="text-[10px] font-mono font-black uppercase text-teal-300 tracking-wider flex items-center gap-1.5 border-b border-slate-800/80 pb-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#00f0b5]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#00c5d8]" />
                         <span>{category}</span>
                       </div>
 
@@ -1099,7 +1099,7 @@ export default function UsuariosModule({
                               key={mod.id}
                               className={`flex items-start gap-2.5 p-2 rounded-lg border transition-all cursor-pointer select-none ${
                                 isAssigned 
-                                  ? 'bg-[#02161a] border-[#00f0b5]/40 text-white' 
+                                  ? 'bg-[#02141c] border-[#00c5d8]/40 text-white' 
                                   : 'bg-slate-950/40 border-slate-850 text-slate-500 hover:border-slate-700'
                               }`}
                             >
@@ -1107,7 +1107,7 @@ export default function UsuariosModule({
                                 type="checkbox"
                                 checked={isAssigned}
                                 onChange={() => handleToggleModuleInEdit(mod.id)}
-                                className="w-4 h-4 accent-[#00f0b5] rounded mt-0.5 cursor-pointer shrink-0"
+                                className="w-4 h-4 accent-[#00c5d8] rounded mt-0.5 cursor-pointer shrink-0"
                               />
                               <div className="text-left">
                                 <div className={`text-xs font-bold leading-tight ${isAssigned ? 'text-white' : 'text-slate-400'}`}>
@@ -1155,7 +1155,7 @@ export default function UsuariosModule({
 
                   <button
                     type="submit"
-                    className="px-6 py-2.5 bg-[#00f0b5] hover:bg-[#25ffcb] text-slate-950 rounded-xl text-xs font-mono font-black uppercase tracking-wider flex items-center gap-2 shadow-[0_0_15px_rgba(0,240,181,0.35)] cursor-pointer transition-all"
+                    className="px-6 py-2.5 bg-[#00c5d8] hover:bg-[#38d9f5] text-slate-950 rounded-xl text-xs font-mono font-black uppercase tracking-wider flex items-center gap-2 shadow-[0_0_15px_rgba(0, 197, 216,0.35)] cursor-pointer transition-all"
                   >
                     <Save className="w-4 h-4" />
                     <span>Guardar Asignaciones</span>
@@ -1173,10 +1173,10 @@ export default function UsuariosModule({
       {/* ========================================================================= */}
       {isNewUserModalOpen && (
         <div className="fixed inset-0 z-[11000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-[#02161a] border-2 border-[#00f0b5]/50 rounded-2xl max-w-xl w-full p-6 text-slate-200 shadow-2xl relative my-auto animate-fade-in font-sans space-y-5">
+          <div className="bg-[#02141c] border-2 border-[#00c5d8]/50 rounded-2xl max-w-xl w-full p-6 text-slate-200 shadow-2xl relative my-auto animate-fade-in font-sans space-y-5">
             
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-3 text-[#00f0b5]">
+              <div className="flex items-center gap-3 text-[#00c5d8]">
                 <UserPlus className="w-6 h-6" />
                 <h3 className="text-base font-black text-white">Registrar Nuevo Colaborador</h3>
               </div>
@@ -1197,7 +1197,7 @@ export default function UsuariosModule({
                   placeholder="Ej. Carlos Mendoza"
                   value={newUserForm.nombre}
                   onChange={e => setNewUserForm({ ...newUserForm, nombre: e.target.value })}
-                  className="w-full bg-[#04242a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                  className="w-full bg-[#04202c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                   required
                 />
               </div>
@@ -1209,7 +1209,7 @@ export default function UsuariosModule({
                   placeholder="usuario@latinproducts.com.co"
                   value={newUserForm.email}
                   onChange={e => setNewUserForm({ ...newUserForm, email: e.target.value })}
-                  className="w-full bg-[#04242a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                  className="w-full bg-[#04202c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                   required
                 />
               </div>
@@ -1222,7 +1222,7 @@ export default function UsuariosModule({
                     placeholder="Ej. Despachador de Muelle"
                     value={newUserForm.cargo}
                     onChange={e => setNewUserForm({ ...newUserForm, cargo: e.target.value })}
-                    className="w-full bg-[#04242a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                    className="w-full bg-[#04202c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                   />
                 </div>
 
@@ -1231,7 +1231,7 @@ export default function UsuariosModule({
                   <select
                     value={newUserForm.rol}
                     onChange={e => setNewUserForm({ ...newUserForm, rol: e.target.value as UserRole })}
-                    className="w-full bg-[#04242a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5] cursor-pointer"
+                    className="w-full bg-[#04202c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8] cursor-pointer"
                   >
                     <option value="AUXILIAR_LOGISTICO">Auxiliar Logístico</option>
                     <option value="LOGISTICA">Coordinador Logístico</option>
@@ -1248,7 +1248,7 @@ export default function UsuariosModule({
                     type="text"
                     value={newUserForm.departamento}
                     onChange={e => setNewUserForm({ ...newUserForm, departamento: e.target.value })}
-                    className="w-full bg-[#04242a] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00f0b5]"
+                    className="w-full bg-[#04202c] border border-slate-700 rounded-lg px-3 py-2 text-white outline-none focus:border-[#00c5d8]"
                   />
                 </div>
 
@@ -1276,7 +1276,7 @@ export default function UsuariosModule({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-[#00f0b5] hover:bg-[#25ffcb] text-slate-950 font-black rounded-xl text-xs font-mono uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(0,240,181,0.3)]"
+                  className="px-5 py-2.5 bg-[#00c5d8] hover:bg-[#38d9f5] text-slate-950 font-black rounded-xl text-xs font-mono uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-[0_0_15px_rgba(0, 197, 216,0.3)]"
                 >
                   <UserPlus className="w-4 h-4" />
                   <span>Crear Colaborador</span>

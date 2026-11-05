@@ -6,13 +6,13 @@
   --font-display: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-hud-bg: #02161a;
-  --color-hud-card: #04242a;
-  --color-hud-accent: #00f0b5;
-  --color-hud-green: #00dfc0;
+  --color-hud-bg: #02141c;
+  --color-hud-card: #04202c;
+  --color-hud-accent: #00c5d8;
+  --color-hud-green: #00b4d8;
   --color-hud-orange: #ff9100;
   --color-hud-red: #ef4444;
-  --color-hud-border: rgba(0, 240, 181, 0.22);
+  --color-hud-border: rgba(0, 197, 216, 0.25);
 }
 
 @layer base {

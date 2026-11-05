@@ -895,7 +895,7 @@ export default function App() {
         rol: 'LOGISTICA',
         cargo: 'Operador Logístico',
         avatar: cleanEmail.substring(0, 2).toUpperCase(),
-        color: '#00c9a7',
+        color: '#00a8cc',
         departamento: 'Operaciones',
         modulosPermitidos: ['inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado', 'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers', 'carriers', 'pedidos', 'pedidoEmpleados', 'novedades'],
         permisos: {
@@ -3275,17 +3275,17 @@ export default function App() {
             
             {/* Hologram aesthetic lines */}
             <div className="absolute top-0 right-0 w-48 h-48 bg-hud-accent/10 rounded-full blur-3xl pointer-events-none"></div>
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#00f0b5]/10 rounded-full blur-3xl pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-48 h-48 bg-[#00c5d8]/10 rounded-full blur-3xl pointer-events-none"></div>
 
             <div className="text-center space-y-3 mb-6 relative z-10">
-              <div className="inline-flex items-center justify-center bg-gradient-to-br from-[#00f0b5]/20 to-[#04242a] p-3 rounded-2xl border border-[#00f0b5]/40 shadow-lg">
-                <ShieldCheck className="w-8 h-8 text-[#00f0b5] pulse-led" />
+              <div className="inline-flex items-center justify-center bg-gradient-to-br from-[#00c5d8]/20 to-[#04202c] p-3 rounded-2xl border border-[#00c5d8]/40 shadow-lg">
+                <ShieldCheck className="w-8 h-8 text-[#00c5d8] pulse-led" />
               </div>
               <div className="space-y-1">
                 <h2 className="text-xl font-display font-black text-white tracking-widest uppercase text-relief-title">
                   CONTROL DE ACCESO SEGURO
                 </h2>
-                <p className="text-[11px] text-[#00f0b5] font-mono tracking-widest uppercase font-bold">
+                <p className="text-[11px] text-[#00c5d8] font-mono tracking-widest uppercase font-bold">
                   SISTEMALOG S.A.S. | DIVISIÓN LOGÍSTICA
                 </p>
                 <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-[9.5px] font-mono text-slate-400 mt-1">
@@ -3314,7 +3314,7 @@ export default function App() {
                       }}
                       className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 relative ${
                         isSelected 
-                          ? 'bg-gradient-to-r from-[#04242a] to-[#02181c] border-[#00f0b5] shadow-[0_0_15px_rgba(0,240,181,0.25)]' 
+                          ? 'bg-gradient-to-r from-[#04202c] to-[#021620] border-[#00c5d8] shadow-[0_0_15px_rgba(0, 197, 216,0.25)]' 
                           : 'bg-slate-950/70 hover:bg-slate-900 border-slate-800/90'
                       }`}
                     >
@@ -3333,7 +3333,7 @@ export default function App() {
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-xs font-bold text-white truncate">{u.nombre}</span>
                           {u.rol === 'SUPER_ADMIN' && (
-                            <span className="text-[8px] font-mono font-black text-[#00f0b5] bg-[#00f0b5]/15 px-1 rounded uppercase">
+                            <span className="text-[8px] font-mono font-black text-[#00c5d8] bg-[#00c5d8]/15 px-1 rounded uppercase">
                               ADMIN
                             </span>
                           )}
@@ -3359,7 +3359,7 @@ export default function App() {
                   value={loginEmail}
                   onChange={e => setLoginEmail(e.target.value)}
                   placeholder="usuario@latinproducts.com.co"
-                  className="bg-slate-950 border border-slate-800 focus:border-[#00f0b5] text-white rounded-xl p-3 w-full outline-none font-bold text-[11px] tracking-wide transition-colors"
+                  className="bg-slate-950 border border-slate-800 focus:border-[#00c5d8] text-white rounded-xl p-3 w-full outline-none font-bold text-[11px] tracking-wide transition-colors"
                 />
               </div>
 
@@ -3372,7 +3372,7 @@ export default function App() {
                   value={loginPass}
                   onChange={e => setLoginPassword(e.target.value)}
                   placeholder="•••••••• (Presione entrar para continuar)"
-                  className="bg-slate-950 border border-slate-800 focus:border-[#00f0b5] text-white rounded-xl p-3 w-full outline-none transition-colors"
+                  className="bg-slate-950 border border-slate-800 focus:border-[#00c5d8] text-white rounded-xl p-3 w-full outline-none transition-colors"
                 />
               </div>
 
@@ -3385,7 +3385,7 @@ export default function App() {
               <div className="pt-2 flex flex-col sm:flex-row gap-2.5">
                 <button 
                   type="submit"
-                  className="flex-1 bg-[#00c9a7] hover:bg-[#00f0b5] text-slate-950 py-3.5 rounded-xl font-display font-black tracking-widest text-xs uppercase cursor-pointer transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,201,167,0.35)]"
+                  className="flex-1 bg-[#00a8cc] hover:bg-[#00c5d8] text-slate-950 py-3.5 rounded-xl font-display font-black tracking-widest text-xs uppercase cursor-pointer transition-all flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(0,201,167,0.35)]"
                 >
                   <ShieldCheck className="w-4 h-4" /> Ingresar a Sesión
                 </button>
@@ -3397,7 +3397,7 @@ export default function App() {
                     if (matched) handleLoginSubmit(undefined, matched);
                     else handleLoginSubmit();
                   }}
-                  className="px-4 py-3.5 rounded-xl border border-[#00f0b5]/40 hover:bg-[#00f0b5]/15 text-[#00f0b5] font-bold text-xs uppercase font-mono cursor-pointer transition-all"
+                  className="px-4 py-3.5 rounded-xl border border-[#00c5d8]/40 hover:bg-[#00c5d8]/15 text-[#00c5d8] font-bold text-xs uppercase font-mono cursor-pointer transition-all"
                   title="Acceso directo con el usuario seleccionado"
                 >
                   Entrada Rápida ➔
@@ -3674,7 +3674,7 @@ export default function App() {
             <button 
               type="button"
               onClick={() => setActiveTab('inicio')}
-              className="bg-[#00c9a7]/20 hover:bg-[#00c9a7]/35 border border-[#00f0b5]/50 text-[#00f0b5] px-3.5 py-1.5 rounded-xl flex items-center gap-2 text-xs font-bold font-mono transition-all cursor-pointer shadow-sm group shrink-0"
+              className="bg-[#00a8cc]/20 hover:bg-[#00a8cc]/35 border border-[#00c5d8]/50 text-[#00c5d8] px-3.5 py-1.5 rounded-xl flex items-center gap-2 text-xs font-bold font-mono transition-all cursor-pointer shadow-sm group shrink-0"
               title="Ir al Menú Central (Hub de Módulos)"
             >
               <Home className="w-4 h-4 group-hover:scale-110 transition-transform" />
@@ -3695,15 +3695,15 @@ export default function App() {
                   setActiveTab('usuarios');
                 }
               }}
-              className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-[#00f0b5]/50 transition-all cursor-pointer group"
+              className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-[#00c5d8]/50 transition-all cursor-pointer group"
               title={currentUser?.rol === 'SUPER_ADMIN' ? 'Abrir Módulo de Gestión de Usuarios y Auditoría' : `Perfil: ${currentUser?.nombre}`}
             >
               <div 
                 className="w-7 h-7 rounded-lg flex items-center justify-center font-mono font-black text-[10px] border shrink-0"
                 style={{
-                  backgroundColor: `${currentUser?.color || '#00f0b5'}20`,
-                  borderColor: `${currentUser?.color || '#00f0b5'}60`,
-                  color: currentUser?.color || '#00f0b5'
+                  backgroundColor: `${currentUser?.color || '#00c5d8'}20`,
+                  borderColor: `${currentUser?.color || '#00c5d8'}60`,
+                  color: currentUser?.color || '#00c5d8'
                 }}
               >
                 {currentUser?.avatar || 'WQ'}
@@ -3714,8 +3714,8 @@ export default function App() {
                   <span 
                     className="text-[8px] px-1.5 py-0.2 rounded font-mono font-black uppercase"
                     style={{
-                      backgroundColor: `${currentUser?.color || '#00f0b5'}20`,
-                      color: currentUser?.color || '#00f0b5'
+                      backgroundColor: `${currentUser?.color || '#00c5d8'}20`,
+                      color: currentUser?.color || '#00c5d8'
                     }}
                   >
                     {currentUser?.rol === 'SUPER_ADMIN' ? 'SUPER ADMIN' : currentUser?.rol}
@@ -3734,8 +3734,8 @@ export default function App() {
                 onClick={() => setActiveTab('usuarios')}
                 className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[10px] uppercase font-bold cursor-pointer transition-all ${
                   activeTab === 'usuarios'
-                    ? 'bg-[#00f0b5] text-slate-950 border-[#00f0b5]'
-                    : 'bg-[#00f0b5]/10 border-[#00f0b5]/30 text-[#00f0b5] hover:bg-[#00f0b5]/20'
+                    ? 'bg-[#00c5d8] text-slate-950 border-[#00c5d8]'
+                    : 'bg-[#00c5d8]/10 border-[#00c5d8]/30 text-[#00c5d8] hover:bg-[#00c5d8]/20'
                 }`}
                 title="Gestión de Cuentas de Usuario y Auditoría de Ingresos"
               >
@@ -3895,7 +3895,7 @@ export default function App() {
               </button>
 
               <div className="flex items-center gap-2 text-xs font-mono">
-                <span className="w-2 h-2 rounded-full bg-[#00f0b5] pulse-led shadow-[0_0_8px_rgba(0,240,181,0.8)]"></span>
+                <span className="w-2 h-2 rounded-full bg-[#00c5d8] pulse-led shadow-[0_0_8px_rgba(0, 197, 216,0.8)]"></span>
                 <span className="text-teal-200/80 font-bold uppercase">
                   Módulo: <span className="text-white text-relief-card font-extrabold">{getTabTitle(activeTab)}</span>
                 </span>
@@ -5080,7 +5080,7 @@ export default function App() {
               <div className="space-y-1">
                 <h3 className="text-lg font-black text-white">Módulo Restringido</h3>
                 <p className="text-xs text-slate-300">
-                  Tu perfil actual (<strong className="text-[#00f0b5]">{currentUser.nombre}</strong> — {currentUser.cargo}) no tiene autorización para acceder a este módulo.
+                  Tu perfil actual (<strong className="text-[#00c5d8]">{currentUser.nombre}</strong> — {currentUser.cargo}) no tiene autorización para acceder a este módulo.
                 </p>
                 <p className="text-[11px] text-slate-500 font-mono">
                   Si requieres acceso a esta sección, contacta a Washington Quiñones (soporteyabi@gmail.com).
@@ -5089,7 +5089,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setActiveTab('inicio')}
-                className="px-5 py-2.5 rounded-xl bg-[#00c9a7] text-slate-950 font-black text-xs uppercase cursor-pointer hover:bg-[#00f0b5] transition-all shadow-md"
+                className="px-5 py-2.5 rounded-xl bg-[#00a8cc] text-slate-950 font-black text-xs uppercase cursor-pointer hover:bg-[#00c5d8] transition-all shadow-md"
               >
                 Volver al Menú Central
               </button>
@@ -5527,9 +5527,9 @@ export default function App() {
             {/* Sello de Auditoría & Autoría en la Orden */}
             <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-[10.5px] font-mono">
               <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#00f0b5] animate-pulse"></span>
+                <span className="w-2 h-2 rounded-full bg-[#00c5d8] animate-pulse"></span>
                 <span className="text-slate-400">Registrado por:</span>
-                <strong className="text-[#00f0b5]">{editingOrder.creadoPor || 'Washington Quiñones (soporteyabi@gmail.com)'}</strong>
+                <strong className="text-[#00c5d8]">{editingOrder.creadoPor || 'Washington Quiñones (soporteyabi@gmail.com)'}</strong>
                 {editingOrder.creadoEn && (
                   <span className="text-slate-500">· {editingOrder.creadoEn.split('T')[0]}</span>
                 )}

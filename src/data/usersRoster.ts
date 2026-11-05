@@ -54,7 +54,7 @@ export const USERS_ROSTER: AppUser[] = [
     rol: 'SUPER_ADMIN',
     cargo: 'Aux coordinador logistico',
     avatar: 'WQ',
-    color: '#00f0b5',
+    color: '#00c5d8',
     departamento: 'Logística & Despacho',
     modulosPermitidos: [
       'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',

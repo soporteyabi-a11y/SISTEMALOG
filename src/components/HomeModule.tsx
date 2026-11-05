@@ -449,12 +449,12 @@ export default function HomeModule({
                   placeholder="BUSCAR PV, CÓDIGO, CLIENTE..."
                   value={searchTerm}
                   onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="bg-[#02181c] border border-teal-500/30 focus:border-teal-400 text-xs text-white rounded-lg px-8 py-1.5 outline-none w-64 transition-all font-mono"
+                  className="bg-[#021620] border border-teal-500/30 focus:border-teal-400 text-xs text-white rounded-lg px-8 py-1.5 outline-none w-64 transition-all font-mono"
                 />
               </div>
 
               {/* Pagination Controls */}
-              <div className="flex items-center gap-0.5 bg-[#02181c] border border-teal-500/30 p-0.5 rounded-lg font-mono">
+              <div className="flex items-center gap-0.5 bg-[#021620] border border-teal-500/30 p-0.5 rounded-lg font-mono">
                 <button
                   onClick={() => handlePageChange(-1)}
                   disabled={currentPage === 1}
@@ -487,7 +487,7 @@ export default function HomeModule({
                 <div 
                   key={order.id}
                   onClick={() => onOpenOrder(order)}
-                  className="bg-gradient-to-b from-[#052d34] to-[#02181c] hover:border-teal-400/60 border border-teal-500/30 rounded-xl p-4 cursor-pointer transition-all duration-200 group relative flex flex-col justify-between shadow-md hover:-translate-y-0.5"
+                  className="bg-gradient-to-b from-[#052d34] to-[#021620] hover:border-teal-400/60 border border-teal-500/30 rounded-xl p-4 cursor-pointer transition-all duration-200 group relative flex flex-col justify-between shadow-md hover:-translate-y-0.5"
                 >
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
@@ -559,7 +559,7 @@ export default function HomeModule({
     <div className="space-y-6 animate-fade-in font-sans pb-12">
       
       {/* 1. Hero Banner matching Synapsis ERP in image_52a4c99e.png */}
-      <div className="bg-gradient-to-r from-[#042429] via-[#02181c] to-[#042429] border border-teal-500/35 rounded-2xl p-6 sm:p-7 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.12)] relative overflow-hidden flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+      <div className="bg-gradient-to-r from-[#042429] via-[#021620] to-[#042429] border border-teal-500/35 rounded-2xl p-6 sm:p-7 shadow-[0_12px_36px_-6px_rgba(0,0,0,0.65),inset_0_1px_1px_rgba(255,255,255,0.12)] relative overflow-hidden flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
         <div className="space-y-2.5 max-w-2xl">
           <div className="flex items-center gap-2 text-[11px] font-mono font-extrabold text-teal-400 uppercase tracking-widest text-relief-card">
             <Sparkles className="w-3.5 h-3.5 text-teal-300" />
@@ -574,7 +574,7 @@ export default function HomeModule({
         </div>
 
         {/* Live Widget Badge matching Synapsis Live in image_52a4c99e.png */}
-        <div className="bg-[#02161a]/95 border border-teal-500/30 rounded-2xl p-4 flex flex-col justify-between w-full lg:w-72 h-36 shrink-0 shadow-inner font-mono">
+        <div className="bg-[#02141c]/95 border border-teal-500/30 rounded-2xl p-4 flex flex-col justify-between w-full lg:w-72 h-36 shrink-0 shadow-inner font-mono">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
@@ -590,7 +590,7 @@ export default function HomeModule({
           <div className="flex items-end gap-2.5 h-12 px-2">
             <div className="w-1/5 bg-[#052d34] rounded-t-md h-5"></div>
             <div className="w-1/5 bg-teal-400/80 rounded-t-md h-8"></div>
-            <div className="w-1/5 bg-cyan-500 rounded-t-md h-12 shadow-[0_0_10px_rgba(0,240,181,0.5)]"></div>
+            <div className="w-1/5 bg-cyan-500 rounded-t-md h-12 shadow-[0_0_10px_rgba(0, 197, 216,0.5)]"></div>
             <div className="w-1/5 bg-indigo-500/80 rounded-t-md h-9"></div>
             <div className="w-1/5 bg-emerald-400 rounded-t-md h-12 animate-pulse shadow-[0_0_12px_rgba(0,223,192,0.6)]"></div>
           </div>
@@ -627,7 +627,7 @@ export default function HomeModule({
 
         <button
           onClick={() => setIsPrivateMode(prev => !prev)}
-          className="bg-[#00c9a7]/15 hover:bg-[#00c9a7]/25 text-[#00f0b5] border border-[#00c9a7]/40 px-4 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold font-mono transition-all cursor-pointer shrink-0 shadow-sm"
+          className="bg-[#00a8cc]/15 hover:bg-[#00a8cc]/25 text-[#00c5d8] border border-[#00a8cc]/40 px-4 py-1.5 rounded-xl flex items-center gap-1.5 text-xs font-bold font-mono transition-all cursor-pointer shrink-0 shadow-sm"
         >
           {isPrivateMode ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
           <span>{isPrivateMode ? 'Revelar tarjetas de métricas' : 'Ocultar tarjetas de métricas'}</span>
@@ -714,7 +714,7 @@ export default function HomeModule({
                 onClick={() => setActiveCategory(cat.id)}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold font-mono whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
                   isActive
-                    ? 'bg-[#00c9a7] text-slate-950 shadow-[0_0_15px_rgba(0,201,167,0.45)] border border-[#00f0b5]'
+                    ? 'bg-[#00a8cc] text-slate-950 shadow-[0_0_15px_rgba(0,201,167,0.45)] border border-[#00c5d8]'
                     : 'bg-[#042429]/80 hover:bg-[#06333a] text-teal-100 border border-teal-500/30'
                 }`}
               >
@@ -739,12 +739,12 @@ export default function HomeModule({
             <span>{isFolded ? 'Desplegar Todos' : 'Plegar Todos'}</span>
           </button>
 
-          <div className="flex items-center gap-1 bg-[#02181c] p-1 rounded-xl border border-teal-500/30 text-[10px] font-bold">
+          <div className="flex items-center gap-1 bg-[#021620] p-1 rounded-xl border border-teal-500/30 text-[10px] font-bold">
             <span className="text-teal-400/60 px-1 uppercase">Tamaño:</span>
             <button
               onClick={() => setCardSize('mini')}
               className={`px-2.5 py-0.5 rounded-lg transition-all cursor-pointer ${
-                cardSize === 'mini' ? 'bg-[#00c9a7] text-slate-950 font-extrabold' : 'text-teal-200 hover:text-white'
+                cardSize === 'mini' ? 'bg-[#00a8cc] text-slate-950 font-extrabold' : 'text-teal-200 hover:text-white'
               }`}
             >
               Mini
@@ -752,7 +752,7 @@ export default function HomeModule({
             <button
               onClick={() => setCardSize('mediana')}
               className={`px-2.5 py-0.5 rounded-lg transition-all cursor-pointer ${
-                cardSize === 'mediana' ? 'bg-[#00c9a7] text-slate-950 font-extrabold' : 'text-teal-200 hover:text-white'
+                cardSize === 'mediana' ? 'bg-[#00a8cc] text-slate-950 font-extrabold' : 'text-teal-200 hover:text-white'
               }`}
             >
               Mediana
@@ -774,7 +774,7 @@ export default function HomeModule({
                 {/* Section Title with Badge exactly like image_52a4c99e.png */}
                 <div className="flex items-center justify-between border-b border-teal-500/20 pb-2">
                   <div className="flex items-center gap-2.5">
-                    <span className="w-2 h-2 rounded-full bg-[#00f0b5] shadow-[0_0_8px_rgba(0,240,181,0.8)]"></span>
+                    <span className="w-2 h-2 rounded-full bg-[#00c5d8] shadow-[0_0_8px_rgba(0, 197, 216,0.8)]"></span>
                     <h3 className="text-xs font-mono font-extrabold text-white tracking-wider uppercase text-relief-card">
                       {header.title}
                     </h3>
@@ -782,7 +782,7 @@ export default function HomeModule({
                       Categoría seleccionada
                     </span>
                   </div>
-                  <span className="text-[10px] font-mono text-teal-300 bg-[#02181c] px-2.5 py-0.5 rounded-lg border border-teal-500/30">
+                  <span className="text-[10px] font-mono text-teal-300 bg-[#021620] px-2.5 py-0.5 rounded-lg border border-teal-500/30">
                     {catModules.length} módulos ▾
                   </span>
                 </div>
@@ -911,7 +911,7 @@ export default function HomeModule({
             <span className="text-[9px] font-mono font-bold text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-led"></span> En Línea
             </span>
-            <span className="text-[10px] font-mono font-bold text-teal-200 bg-[#02181c] border border-teal-500/30 px-2.5 py-0.5 rounded-lg">
+            <span className="text-[10px] font-mono font-bold text-teal-200 bg-[#021620] border border-teal-500/30 px-2.5 py-0.5 rounded-lg">
               Respaldos
             </span>
           </div>
