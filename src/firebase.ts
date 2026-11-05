@@ -29,7 +29,14 @@ try {
   }
 }
 
-export { app, db, firebaseConfig, databaseId };
+let dbDefault: any;
+try {
+  dbDefault = primaryDbId === '(default)' ? db : getFirestore(app);
+} catch (e) {
+  dbDefault = db;
+}
+
+export { app, db, dbDefault, firebaseConfig, databaseId };
 
 
 

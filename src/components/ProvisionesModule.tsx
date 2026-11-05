@@ -8,7 +8,7 @@ import { createPortal } from 'react-dom';
 import { Order, Carrier } from '../types';
 import { matchOrderSearch } from '../utils/searchHelper';
 import * as XLSX from 'xlsx';
-import { saveToCloud, subscribeToCloud } from '../firebaseService';
+import { saveToCloud, subscribeToCloud, forceRefreshFromCloud } from '../firebaseService';
 import { 
   FileCheck, ShieldAlert, Award, FileSpreadsheet, CheckSquare, 
   MapPin, Printer, Clipboard, DollarSign, Calendar, ChevronLeft, ChevronRight, Pencil,
@@ -120,6 +120,18 @@ export function sanitizeSavedProvisionRecord(r: any): SavedProvisionRecord {
     orders,
     notas: String(r.notas || '')
   };
+}
+
+export function getRecordTimestamp(r: SavedProvisionRecord): number {
+  if (r && r.id && r.id.startsWith('PROV-')) {
+    const parsed = parseInt(r.id.replace('PROV-', ''), 10);
+    if (!isNaN(parsed) && parsed > 1000000000000) return parsed;
+  }
+  if (r && r.fechaGuardado) {
+    const dt = new Date(r.fechaGuardado).getTime();
+    if (!isNaN(dt) && dt > 0) return dt;
+  }
+  return 0;
 }
 
 // Utility function to convert numbers to Spanish words for authentic DIAN style billing documentation
@@ -257,15 +269,36 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
     });
   }, [savedProvisionRecords, historySearchTerm, historyCarrierFilter]);
 
-  // Real-time synchronization with Cloud Firestore
+  // Real-time synchronization and fast cloud fetch with Cloud Firestore
+  const [isReloadingCloud, setIsReloadingCloud] = useState(false);
+
   useEffect(() => {
+    // 1. Immediate fast REST fetch to guarantee all saved vouchers load without websocket delay
+    forceRefreshFromCloud('provisiones_state', 'saved_vouchers').then(cloudVouchers => {
+      if (Array.isArray(cloudVouchers) && cloudVouchers.length > 0) {
+        setSavedProvisionRecords(prev => {
+          const map = new Map<string, SavedProvisionRecord>();
+          prev.forEach(r => { if (r && r.id) map.set(r.id, sanitizeSavedProvisionRecord(r)); });
+          cloudVouchers.forEach((r: any) => { if (r && r.id) map.set(r.id, sanitizeSavedProvisionRecord(r)); });
+          const merged = Array.from(map.values()).sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a));
+          try {
+            localStorage.setItem('prov_saved_vouchers', JSON.stringify(merged));
+          } catch (e) {
+            console.error("Error writing prov_saved_vouchers to local storage", e);
+          }
+          return merged;
+        });
+      }
+    }).catch(console.warn);
+
+    // 2. Real-time subscription for live multi-PC synchronization
     const unsub = subscribeToCloud('provisiones_state', 'saved_vouchers', (data) => {
       if (Array.isArray(data) && data.length > 0) {
         setSavedProvisionRecords(prev => {
           const map = new Map<string, SavedProvisionRecord>();
           prev.forEach(r => { if (r && r.id) map.set(r.id, sanitizeSavedProvisionRecord(r)); });
           data.forEach((r: any) => { if (r && r.id) map.set(r.id, sanitizeSavedProvisionRecord(r)); });
-          const merged = Array.from(map.values()).sort((a, b) => new Date(b.fechaGuardado || 0).getTime() - new Date(a.fechaGuardado || 0).getTime());
+          const merged = Array.from(map.values()).sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a));
           try {
             localStorage.setItem('prov_saved_vouchers', JSON.stringify(merged));
           } catch (e) {
@@ -277,6 +310,28 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
     });
     return () => unsub();
   }, []);
+
+  const handleReloadCloudHistory = async () => {
+    setIsReloadingCloud(true);
+    try {
+      const data = await forceRefreshFromCloud('provisiones_state', 'saved_vouchers');
+      if (Array.isArray(data) && data.length > 0) {
+        const sanitized = data.map(sanitizeSavedProvisionRecord).sort((a, b) => getRecordTimestamp(b) - getRecordTimestamp(a));
+        setSavedProvisionRecords(sanitized);
+        try {
+          localStorage.setItem('prov_saved_vouchers', JSON.stringify(sanitized));
+        } catch (e) {}
+        setSaveSuccessToast(`☁️ Se sincronizaron ${sanitized.length} comprobantes de la nube`);
+      } else {
+        setSaveSuccessToast(`☁️ Historial en la nube verificado (${savedProvisionRecords.length} registros)`);
+      }
+    } catch (err: any) {
+      setSaveSuccessToast(`⚠️ Error al consultar la nube: ${err.message || 'Sin conexión'}`);
+    } finally {
+      setIsReloadingCloud(false);
+      setTimeout(() => setSaveSuccessToast(null), 3500);
+    }
+  };
 
   // Otros Gastos Manuales persistence per filter combination (Carrier + Month + Fortnight)
   const [otrosGastosMap, setOtrosGastosMap] = useState<Record<string, { monto: number; concepto: string }>>(() => {
@@ -802,8 +857,25 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
       console.error("Error saving local prov_saved_vouchers", e);
     }
 
+    // Link selected orders to this provision support number so they are marked as provisioned
+    currentOrders.forEach(o => {
+      const existing = orders.find(ord => ord.id === o.id);
+      if (existing && !existing.provision) {
+        onUpdateOrder({
+          ...existing,
+          provision: currentSoporte
+        });
+      }
+    });
+
     setSaveSuccessToast(`✅ Provisión ${currentSoporte} guardada en el historial`);
     setTimeout(() => setSaveSuccessToast(null), 3500);
+  };
+
+  // Close voucher modal and clear active saved record state
+  const handleCloseVoucher = () => {
+    setIsVoucherOpen(false);
+    setActiveSavedRecordForVoucher(null);
   };
 
   // Delete saved provision record from history
@@ -1340,9 +1412,11 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
           <button
             onClick={() => {
               if (selectedIds.length > 0) {
+                setActiveSavedRecordForVoucher(null);
                 setIsVoucherOpen(true);
               } else {
-                alert("Por favor, seleccione al menos un flete para generar el soporte de pago.");
+                setSaveSuccessToast("⚠️ Por favor, selecciona al menos un flete para generar el soporte de pago");
+                setTimeout(() => setSaveSuccessToast(null), 3000);
               }
             }}
             className={`text-[11px] font-mono font-bold tracking-wider px-3 py-1.5 rounded flex items-center gap-1 transition-all uppercase ${
@@ -1587,9 +1661,16 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
             {/* Header controls inside overlay (hidden during print) */}
             <div className="flex flex-col gap-4 border-b border-slate-900 pb-4">
               <div className="flex items-center justify-between">
-                <span className="font-display font-black text-hud-green tracking-widest text-base uppercase">
-                  VISTA PREVIA: SOPORTE DE PAGO
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-display font-black text-hud-green tracking-widest text-base uppercase">
+                    VISTA PREVIA: SOPORTE DE PAGO
+                  </span>
+                  {activeSavedRecordForVoucher && (
+                    <span className="text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">
+                      {activeSavedRecordForVoucher.soporteNum}
+                    </span>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-4">
                   {/* Summary view toggle */}
@@ -1605,7 +1686,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                   </div>
 
                   <button 
-                    onClick={() => setIsVoucherOpen(false)} 
+                    onClick={handleCloseVoucher} 
                     className="text-slate-400 hover:text-white transition-colors cursor-pointer text-sm font-bold font-mono"
                   >
                     ✕
@@ -1646,16 +1727,26 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                   <div className="flex gap-1.5">
                     <input 
                       type="number" 
-                      value={otrosGastosMonto || ''} 
-                      onChange={e => handleUpdateOtrosGastos(parseFloat(e.target.value) || 0)}
-                      className="bg-slate-950 border border-amber-500/50 text-amber-300 font-bold px-2 py-1.5 rounded w-28 outline-none focus:border-amber-400 text-[11px] font-mono"
+                      value={activeSavedRecordForVoucher ? (displayOtrosGastosMonto || '') : (otrosGastosMonto || '')} 
+                      onChange={e => {
+                        if (!activeSavedRecordForVoucher) {
+                          handleUpdateOtrosGastos(parseFloat(e.target.value) || 0);
+                        }
+                      }}
+                      disabled={!!activeSavedRecordForVoucher}
+                      className={`bg-slate-950 border border-amber-500/50 text-amber-300 font-bold px-2 py-1.5 rounded w-28 outline-none focus:border-amber-400 text-[11px] font-mono ${activeSavedRecordForVoucher ? 'opacity-80 cursor-not-allowed' : ''}`}
                       placeholder="$ 0"
                     />
                     <input 
                       type="text" 
-                      value={otrosGastosConcepto} 
-                      onChange={e => handleUpdateOtrosGastosConcepto(e.target.value)}
-                      className="bg-slate-950 border border-slate-800 text-slate-300 px-2 py-1.5 rounded flex-grow outline-none text-[10px] font-mono"
+                      value={activeSavedRecordForVoucher ? displayOtrosGastosConcepto : otrosGastosConcepto} 
+                      onChange={e => {
+                        if (!activeSavedRecordForVoucher) {
+                          handleUpdateOtrosGastosConcepto(e.target.value);
+                        }
+                      }}
+                      disabled={!!activeSavedRecordForVoucher}
+                      className={`bg-slate-950 border border-slate-800 text-slate-300 px-2 py-1.5 rounded flex-grow outline-none text-[10px] font-mono ${activeSavedRecordForVoucher ? 'opacity-80 cursor-not-allowed' : ''}`}
                       placeholder="Concepto extra..."
                     />
                   </div>
@@ -1674,27 +1765,48 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
             {/* Bottom Actions strictly styled */}
             <div className="flex items-center justify-between pt-4 border-t border-slate-900">
               <button 
-                onClick={() => setIsVoucherOpen(false)}
+                onClick={handleCloseVoucher}
                 className="bg-slate-950/80 hover:bg-slate-900 border border-slate-800 text-slate-300 text-xs px-5 py-2.5 rounded-lg font-bold font-mono tracking-wider transition-all uppercase cursor-pointer"
               >
-                CANCELAR
+                {activeSavedRecordForVoucher ? 'CERRAR' : 'CANCELAR'}
               </button>
               
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => handleSaveCurrentProvision()}
-                  className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-mono font-bold tracking-wider px-4 py-2.5 text-xs rounded-lg cursor-pointer flex items-center gap-2 transition-all shadow-md hover:border-emerald-400"
-                  title="Guardar este soporte en el registro histórico de provisión"
-                >
-                  <Save className="w-4 h-4 text-emerald-400" /> GUARDAR EN HISTORIAL
-                </button>
+                {activeSavedRecordForVoucher ? (
+                  <>
+                    <button 
+                      onClick={() => handleExportSavedRecordExcel(activeSavedRecordForVoucher)}
+                      className="bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 font-mono font-bold tracking-wider px-4 py-2.5 text-xs rounded-lg cursor-pointer flex items-center gap-2 transition-all shadow-md hover:border-sky-400"
+                      title="Descargar este comprobante en formato Excel"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-sky-400" /> DESCARGAR EXCEL
+                    </button>
 
-                <button 
-                  onClick={triggerPrintVoucher}
-                  className="bg-[#00ffa3] hover:bg-[#00ffa3]/85 text-slate-950 font-black font-mono tracking-wider px-5 py-2.5 text-xs rounded-lg cursor-pointer flex items-center gap-2 shadow-lg transition-all"
-                >
-                  <Printer className="w-4 h-4" /> IMPRIMIR SOPORTE
-                </button>
+                    <button 
+                      onClick={triggerPrintVoucher}
+                      className="bg-[#00ffa3] hover:bg-[#00ffa3]/85 text-slate-950 font-black font-mono tracking-wider px-5 py-2.5 text-xs rounded-lg cursor-pointer flex items-center gap-2 shadow-lg transition-all"
+                    >
+                      <Printer className="w-4 h-4" /> IMPRIMIR SOPORTE
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button 
+                      onClick={() => handleSaveCurrentProvision()}
+                      className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-mono font-bold tracking-wider px-4 py-2.5 text-xs rounded-lg cursor-pointer flex items-center gap-2 transition-all shadow-md hover:border-emerald-400"
+                      title="Guardar este soporte en el registro histórico de provisión"
+                    >
+                      <Save className="w-4 h-4 text-emerald-400" /> GUARDAR EN HISTORIAL
+                    </button>
+
+                    <button 
+                      onClick={triggerPrintVoucher}
+                      className="bg-[#00ffa3] hover:bg-[#00ffa3]/85 text-slate-950 font-black font-mono tracking-wider px-5 py-2.5 text-xs rounded-lg cursor-pointer flex items-center gap-2 shadow-lg transition-all"
+                    >
+                      <Printer className="w-4 h-4" /> IMPRIMIR SOPORTE
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1730,10 +1842,26 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+
+              {/* Reload Cloud Button */}
+              <button
+                onClick={handleReloadCloudHistory}
+                disabled={isReloadingCloud}
+                className="bg-slate-950 hover:bg-slate-900 border border-slate-700 text-hud-green text-[11px] font-mono font-bold px-3 py-1.5 rounded flex items-center gap-1.5 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                title="Recargar y sincronizar comprobantes desde Firebase Cloud"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isReloadingCloud ? 'animate-spin' : ''}`} />
+                <span>{isReloadingCloud ? 'SINCRONIZANDO...' : 'RECARGAR NUBE'}</span>
+              </button>
             </div>
 
-            <div className="text-xs font-mono text-slate-400">
-              Registros Guardados: <strong className="text-hud-green">{filteredHistoryRecords.length}</strong>
+            <div className="flex items-center gap-4 text-xs font-mono">
+              <div className="text-slate-400">
+                Comprobantes: <strong className="text-hud-green font-bold">{filteredHistoryRecords.length}</strong>
+              </div>
+              <div className="text-slate-400 border-l border-slate-800 pl-4">
+                Total Liquidado: <strong className="text-[#00ffa3] font-bold">$ {formatCurrency(filteredHistoryRecords.reduce((sum, r) => sum + (Number(r.totalPagar) || 0), 0))}</strong>
+              </div>
             </div>
           </div>
 

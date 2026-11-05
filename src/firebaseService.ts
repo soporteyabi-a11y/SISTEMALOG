@@ -1,4 +1,4 @@
-import { db, firebaseConfig, databaseId } from './firebase';
+import { db, dbDefault, firebaseConfig, databaseId } from './firebase';
 import { doc, getDoc, getDocFromServer, setDoc, onSnapshot } from 'firebase/firestore';
 
 // Cache for tracking last saved payloads per document to eliminate duplicate cloud writes
@@ -158,6 +158,14 @@ export async function saveToCloud(
     });
 
     await setDoc(docRef, payload);
+    
+    // Background dual-write redundancy: Also mirror to (default) DB so other machines stay in sync
+    if (databaseId && databaseId !== '(default)' && dbDefault) {
+      try {
+        const mirrorRef = doc(dbDefault, collectionName, docId);
+        setDoc(mirrorRef, payload).catch(() => {});
+      } catch (err) {}
+    }
     
     isCloudConnected = true;
     isSyncedWithServer = true;
