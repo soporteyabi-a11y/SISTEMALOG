@@ -568,6 +568,22 @@ export default function App() {
     };
   }, []);
 
+  // Cloud & Sync Tools Dropdown Menu state
+  const [isCloudToolsMenuOpen, setIsCloudToolsMenuOpen] = useState(false);
+  const cloudToolsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleCloudToolsClickOutside(event: MouseEvent) {
+      if (cloudToolsMenuRef.current && !cloudToolsMenuRef.current.contains(event.target as Node)) {
+        setIsCloudToolsMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleCloudToolsClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleCloudToolsClickOutside);
+    };
+  }, []);
+
   // Custom entity Creation states
   const [isCarrierFormOpen, setIsCarrierFormOpen] = useState(false);
   const [isCustomerFormOpen, setIsCustomerFormOpen] = useState(false);
@@ -3782,92 +3798,194 @@ export default function App() {
               className="hidden" 
             />
 
-            <label className="flex items-center gap-1.5 cursor-pointer select-none text-slate-400 hover:text-white transition-colors" title="Activa esto solo si el PDF es una imagen escaneada y requiere OCR con IA (más lento)">
-              <input 
-                type="checkbox" 
-                checked={useAi} 
-                onChange={e => setUseAi(e.target.checked)}
-                className="w-3.5 h-3.5 accent-hud-green rounded border-slate-800 bg-slate-950 text-hud-green cursor-pointer"
-              />
-              <span className="text-[10px] uppercase font-mono tracking-wider font-bold">Usar IA (Lento)</span>
-            </label>
+            {/* Desplegable de Herramientas de Sincronización & Nube */}
+            <div className="relative" ref={cloudToolsMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsCloudToolsMenuOpen(!isCloudToolsMenuOpen)}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-2 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold shadow-sm ${
+                  isCloudToolsMenuOpen
+                    ? 'bg-[#00c5d8] text-slate-950 border-[#00c5d8]'
+                    : cloudStatus.connected && cloudStatus.isSyncedWithServer
+                    ? 'bg-slate-950 border-emerald-500/40 text-emerald-300 hover:border-emerald-400 hover:bg-emerald-950/20'
+                    : 'bg-slate-950 border-amber-500/40 text-amber-300 hover:border-amber-400'
+                }`}
+                title="Menú de Herramientas Nube, Sincronización, Copias de Seguridad y Manual"
+              >
+                <span className={`w-2 h-2 rounded-full ${
+                  cloudStatus.connected 
+                    ? (cloudStatus.isSyncedWithServer ? 'bg-emerald-400 pulse-led' : 'bg-sky-400') 
+                    : 'bg-amber-400'
+                }`}></span>
+                <span>{cloudStatus.connected ? (cloudStatus.isSyncedWithServer ? '4-PC NUBE OK' : 'SYNC NUBE...') : 'MODO LOCAL'}</span>
+                
+                {syncStats.pending > 0 && (
+                  <span className="bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded-full text-[8.5px]">
+                    {syncStats.pending}
+                  </span>
+                )}
+                {syncStats.failed > 0 && (
+                  <span className="bg-rose-500 text-white font-black px-1.5 py-0.5 rounded-full text-[8.5px]">
+                    {syncStats.failed} ERR
+                  </span>
+                )}
 
-            <button 
-              onClick={() => {
-                setBackupRestoreMessage(null);
-                setIsBackupModalOpen(true);
-              }}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-2 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold ${
-                cloudStatus.connected && cloudStatus.isSyncedWithServer
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20' 
-                  : cloudStatus.connected
-                  ? 'bg-sky-500/10 border-sky-500/30 text-sky-400 hover:bg-sky-500/20'
-                  : 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
-              }`}
-              title={`Sincronización multi-dispositivo activa en base de datos ${cloudStatus.databaseId}. Último sync servidor: ${cloudStatus.lastServerSyncTime || 'Conectando...'}`}
-            >
-              <span className={`w-2 h-2 rounded-full ${cloudStatus.connected ? (cloudStatus.isSyncedWithServer ? 'bg-emerald-400 pulse-led' : 'bg-sky-400') : 'bg-amber-400'}`}></span>
-              <span>{cloudStatus.connected ? (cloudStatus.isSyncedWithServer ? '4-PC NUBE OK' : 'SYNC NUBE...') : 'MODO LOCAL'}</span>
-              <span className="bg-slate-900 border border-slate-700 text-slate-300 px-1.5 py-0.5 rounded text-[9px] ml-0.5 flex items-center gap-1">
-                <Database className="w-3 h-3 text-hud-accent" /> BACKUP
-              </span>
-            </button>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isCloudToolsMenuOpen ? 'rotate-180 text-slate-950' : 'text-slate-400'}`} />
+              </button>
 
-            {/* Quick Force Cloud Refresh Button */}
-            <button
-              onClick={handleForceCloudSync}
-              className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold bg-emerald-500/10 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 hover:text-emerald-200"
-              title="Forzar lectura directa desde Firestore para descargar todos los 1,318 fletes y 137 clientes"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-              <span>RECARGAR NUBE</span>
-            </button>
+              {/* Menú Desplegable Flotante */}
+              {isCloudToolsMenuOpen && (
+                <div className="absolute right-0 mt-2 w-72 bg-[#02141c] border border-slate-700 rounded-xl shadow-2xl p-2.5 z-50 animate-fade-in font-mono space-y-2 divide-y divide-slate-800">
+                  
+                  {/* Encabezado del Desplegable con Estado de Conexión */}
+                  <div className="pb-2 px-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5 text-[#00c5d8]" />
+                        <span>Sincronización & Nube</span>
+                      </span>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                        cloudStatus.connected && cloudStatus.isSyncedWithServer
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : cloudStatus.connected
+                          ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {cloudStatus.connected ? (cloudStatus.isSyncedWithServer ? '4-PC NUBE OK' : 'SYNC ACTIVO') : 'OFFLINE'}
+                      </span>
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-1 truncate">
+                      BD: {cloudStatus.databaseId || 'Remix Conciliación'}
+                    </p>
+                  </div>
 
-            {/* Supabase Migration Bridge Button */}
-            <button
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold bg-emerald-500/15 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/25 shadow-sm"
-              title="Panel de Migración Segura y Doble Escritura hacia Supabase PostgreSQL"
-            >
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <span>MIGRACIÓN SUPABASE</span>
-            </button>
+                  {/* Grupo 1: Acciones de Sincronización y Respaldo */}
+                  <div className="pt-2 space-y-1">
+                    {/* Botón 1: Backup / Copia de Seguridad */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCloudToolsMenuOpen(false);
+                        setBackupRestoreMessage(null);
+                        setIsBackupModalOpen(true);
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-[#04202c] text-slate-200 hover:text-white flex items-center justify-between text-[11px] font-bold transition-colors cursor-pointer group"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Database className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <span>Copias de Seguridad (Backup)</span>
+                      </span>
+                      <span className="text-[9px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                        JSON
+                      </span>
+                    </button>
 
-            {/* Sync Queue Monitor Button */}
-            <button 
-              onClick={() => setIsSyncMonitorOpen(true)}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-2 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold ${
-                syncStats.failed > 0
-                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20 animate-pulse'
-                  : syncStats.pending > 0
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20'
-                  : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20'
-              }`}
-              title="Monitor de Sincronización Atómica y Cola de Eventos (Despacho -> Provisiones -> Análisis)"
-            >
-              <Activity className="w-3.5 h-3.5 text-cyan-400" />
-              <span>COLA SYNC</span>
-              {syncStats.pending > 0 && (
-                <span className="bg-amber-500 text-slate-950 font-extrabold px-1.5 py-0.5 rounded-full text-[9px]">
-                  {syncStats.pending}
-                </span>
+                    {/* Botón 2: Recargar Nube */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCloudToolsMenuOpen(false);
+                        handleForceCloudSync();
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-emerald-950/30 text-emerald-300 hover:text-emerald-200 flex items-center justify-between text-[11px] font-bold transition-colors cursor-pointer group"
+                      title="Forzar lectura directa desde Firestore para descargar todos los fletes y clientes"
+                    >
+                      <span className="flex items-center gap-2">
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-400 group-hover:rotate-180 transition-transform duration-500" />
+                        <span>Recargar Nube</span>
+                      </span>
+                      <span className="text-[9px] text-emerald-400/80">
+                        Firestore
+                      </span>
+                    </button>
+
+                    {/* Botón 3: Migración Supabase */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCloudToolsMenuOpen(false);
+                        setIsSupabaseModalOpen(true);
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-emerald-950/40 text-emerald-300 hover:text-emerald-100 flex items-center justify-between text-[11px] font-bold transition-colors cursor-pointer group"
+                      title="Panel de Migración Segura y Doble Escritura hacia Supabase PostgreSQL"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Database className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+                        <span>Migración Supabase</span>
+                      </span>
+                      <span className="text-[9px] text-emerald-300 bg-emerald-950/60 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                        SQL
+                      </span>
+                    </button>
+
+                    {/* Botón 4: Cola Sync */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCloudToolsMenuOpen(false);
+                        setIsSyncMonitorOpen(true);
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-cyan-950/30 text-cyan-300 hover:text-cyan-100 flex items-center justify-between text-[11px] font-bold transition-colors cursor-pointer group"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Activity className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                        <span>Monitor Cola Sync</span>
+                      </span>
+                      {syncStats.pending > 0 ? (
+                        <span className="bg-amber-500 text-slate-950 font-black px-1.5 py-0.5 rounded-full text-[9px]">
+                          {syncStats.pending} pend
+                        </span>
+                      ) : syncStats.failed > 0 ? (
+                        <span className="bg-rose-500 text-white font-black px-1.5 py-0.5 rounded-full text-[9px]">
+                          {syncStats.failed} ERR
+                        </span>
+                      ) : (
+                        <span className="text-[9px] text-cyan-400/70">
+                          Al día
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Grupo 2: Documentación y Preferencias */}
+                  <div className="pt-2 space-y-1.5">
+                    {/* Botón 5: Manual PDF */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCloudToolsMenuOpen(false);
+                        generateAppStructurePdf();
+                      }}
+                      className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-sky-950/30 text-sky-300 hover:text-sky-100 flex items-center justify-between text-[11px] font-bold transition-colors cursor-pointer group"
+                      title="Genera e imprime el Manual Completo en PDF con la Estructura y Funcionamiento de la App"
+                    >
+                      <span className="flex items-center gap-2">
+                        <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400 group-hover:scale-110 transition-transform" />
+                        <span>Manual del Sistema</span>
+                      </span>
+                      <span className="text-[9px] text-sky-400 bg-sky-950/60 border border-sky-500/30 px-1.5 py-0.5 rounded">
+                        PDF
+                      </span>
+                    </button>
+
+                    {/* Toggle: Usar IA (Lento) */}
+                    <label className="flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-[#04202c] cursor-pointer select-none transition-colors">
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-bold text-slate-200">Usar IA en PDF</span>
+                        <span className="text-[8.5px] text-slate-400 font-normal">OCR avanzado (más lento)</span>
+                      </div>
+                      <input 
+                        type="checkbox" 
+                        checked={useAi} 
+                        onChange={e => setUseAi(e.target.checked)}
+                        className="w-4 h-4 accent-[#00c5d8] rounded border-slate-700 bg-slate-950 text-[#00c5d8] cursor-pointer"
+                      />
+                    </label>
+                  </div>
+
+                </div>
               )}
-              {syncStats.failed > 0 && (
-                <span className="bg-rose-500 text-white font-extrabold px-1.5 py-0.5 rounded-full text-[9px]">
-                  {syncStats.failed} ERR
-                </span>
-              )}
-            </button>
-
-            {/* Manual PDF Button */}
-            <button
-              onClick={() => generateAppStructurePdf()}
-              className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer transition-all border font-mono text-[10px] uppercase font-bold bg-sky-500/10 border-sky-500/30 text-sky-300 hover:bg-sky-500/20"
-              title="Genera e imprime el Manual Completo en PDF con la Estructura y Funcionamiento de la App"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />
-              <span>MANUAL PDF</span>
-            </button>
+            </div>
 
             <button 
               onClick={() => handleOpenOrderForm()}
