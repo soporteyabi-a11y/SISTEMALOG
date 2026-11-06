@@ -313,11 +313,15 @@ const getNextCustomerId = (existingCustomers: Customer[]): string => {
 
 export default function App() {
   const isEmployeeMode = typeof window !== 'undefined' && (
-    window.location.search.includes('tab=pedidoEmpleados') ||
-    window.location.search.includes('modulo=pedidos') ||
-    window.location.search.includes('modulo=empleados') ||
-    window.location.search.includes('seccion=pedidos') ||
-    window.location.search.includes('seccion=empleados')
+    window.location.search.toLowerCase().includes('tab=pedidoempleados') ||
+    window.location.search.toLowerCase().includes('modulo=pedidos') ||
+    window.location.search.toLowerCase().includes('modulo=empleados') ||
+    window.location.search.toLowerCase().includes('seccion=pedidos') ||
+    window.location.search.toLowerCase().includes('seccion=empleados') ||
+    window.location.search.toLowerCase().includes('pedidos-empleados') ||
+    window.location.search.toLowerCase().includes('pedido-empleado') ||
+    window.location.search.toLowerCase().includes('pedidos') ||
+    window.location.hash.toLowerCase().includes('pedidos')
   );
 
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
@@ -359,11 +363,15 @@ export default function App() {
   // Navigation state
   const [activeTab, setActiveTab] = useState<string>(() => {
     const isEmployee = typeof window !== 'undefined' && (
-      window.location.search.includes('tab=pedidoEmpleados') ||
-      window.location.search.includes('modulo=pedidos') ||
-      window.location.search.includes('modulo=empleados') ||
-      window.location.search.includes('seccion=pedidos') ||
-      window.location.search.includes('seccion=empleados')
+      window.location.search.toLowerCase().includes('tab=pedidoempleados') ||
+      window.location.search.toLowerCase().includes('modulo=pedidos') ||
+      window.location.search.toLowerCase().includes('modulo=empleados') ||
+      window.location.search.toLowerCase().includes('seccion=pedidos') ||
+      window.location.search.toLowerCase().includes('seccion=empleados') ||
+      window.location.search.toLowerCase().includes('pedidos-empleados') ||
+      window.location.search.toLowerCase().includes('pedido-empleado') ||
+      window.location.search.toLowerCase().includes('pedidos') ||
+      window.location.hash.toLowerCase().includes('pedidos')
     );
     return isEmployee ? 'pedidoEmpleados' : 'inicio';
   });
@@ -4360,17 +4368,17 @@ export default function App() {
                                 <span className="text-[10px] text-slate-500 font-normal"> / {o.cajas}</span>
                               </td>
                               <td className="p-4 text-center text-slate-300">
-                                <span className="text-slate-200 font-bold">{(o.pesoFact || o.peso).toLocaleString()}</span>
-                                <span className="text-[10px] text-slate-500 font-normal"> / {o.peso.toLocaleString()} kg</span>
+                                <span className="text-slate-200 font-bold">{(Number(o.pesoFact ?? o.peso) || 0).toLocaleString('es-CO')}</span>
+                                <span className="text-[10px] text-slate-500 font-normal"> / {(Number(o.peso) || 0).toLocaleString('es-CO')} kg</span>
                               </td>
                               <td className="p-4 text-center text-hud-green font-bold">
-                                ${(o.facturado || o.venta).toLocaleString('es-CO')}
-                                <span className="text-[9px] text-slate-500 block font-normal">Solicitado: ${o.venta.toLocaleString('es-CO')}</span>
+                                ${(Number(o.facturado ?? o.venta) || 0).toLocaleString('es-CO')}
+                                <span className="text-[9px] text-slate-500 block font-normal">Solicitado: ${(Number(o.venta) || 0).toLocaleString('es-CO')}</span>
                               </td>
                               <td className="p-4 text-center">
                                 <span className={`${colorClass} font-mono`}>{pct.toFixed(2)}%</span>
                               </td>
-                              <td className="p-4 text-center text-hud-green font-bold">${o.flete.toLocaleString('es-CO')}</td>
+                              <td className="p-4 text-center text-hud-green font-bold">${(Number(o.flete) || 0).toLocaleString('es-CO')}</td>
                               <td className="p-4 text-center">
                                 <span className="text-[9px] bg-hud-green/10 border border-hud-green text-hud-green px-2 py-0.5 rounded font-mono uppercase font-bold">
                                   {o.estado}
@@ -4498,7 +4506,7 @@ export default function App() {
                           <td className="p-3 font-sans text-slate-400">{o.ciudad}</td>
                           <td className="p-3 text-center font-bold text-white">{o.cajas} cj</td>
                           <td className="p-3 text-center text-hud-green">{o.peso} kg</td>
-                          <td className="p-3 text-center text-hud-green font-bold">${o.venta.toLocaleString('es-CO')}</td>
+                          <td className="p-3 text-center text-hud-green font-bold">${(Number(o.venta) || 0).toLocaleString('es-CO')}</td>
                           <td className="p-3 text-center text-slate-400">{o.fechaIngreso || '-'}</td>
                           <td className="p-3 text-center">
                             <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${
@@ -4644,7 +4652,7 @@ export default function App() {
                           <div className="text-[10px] text-slate-400 font-mono">📞 {c.tel}</div>
                           {c.correo && <div className="text-[10px] text-hud-accent font-mono truncate max-w-[200px]" title={c.correo}>✉️ {c.correo}</div>}
                         </td>
-                        <td className="p-4 text-right text-hud-green font-bold">${c.costoSugerido.toLocaleString('es-CO')}</td>
+                        <td className="p-4 text-right text-hud-green font-bold">${(Number(c.costoSugerido) || 0).toLocaleString('es-CO')}</td>
                         <td className="p-4 text-center">
                           <div className="flex items-center justify-center gap-3">
                             <button 
@@ -5165,7 +5173,11 @@ export default function App() {
           ) : null}
 
           {activeTab === 'pedidoEmpleados' ? (
-            <PedidosModule />
+            <PedidosModule 
+              currentUser={currentUser}
+              hasAdminRights={currentUser?.rol === 'SUPER_ADMIN' || currentUser?.email?.toLowerCase().includes('soporteyabi') || !!currentUser?.permisos?.puedeVerFinanzas}
+              isExternalEmployeeLink={isEmployeeMode}
+            />
           ) : null}
 
           {activeTab === 'usuarios' ? (

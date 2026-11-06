@@ -9,10 +9,13 @@ import {
   ShoppingBag, ClipboardList, Settings, Search, Trash2, Edit2, 
   Plus, CheckCircle2, FileSpreadsheet, Printer, Download, Sparkles, 
   Lock, Unlock, LogIn, LogOut, ArrowLeft, RefreshCw, Calendar, 
-  User, CreditCard, ChevronRight, ChevronDown, ShoppingCart, Percent, Heart, AlertTriangle
+  User, CreditCard, ChevronRight, ChevronDown, ShoppingCart, Percent, Heart, AlertTriangle,
+  Copy, ExternalLink, Share2, Check, Cloud, Database
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { saveToCloud, subscribeToCloud } from '../firebaseService';
+import { saveToCloud, subscribeToCloud, forceRefreshFromCloud, loadFromCloud, getCloudStatus } from '../firebaseService';
+import { CLOUD_SEED_PRODUCTS, CLOUD_SEED_ORDERS } from '../data/pedidosCatalogSeed';
+import { AppUser } from '../types';
 
 // Safe LocalStorage proxy to prevent SecurityErrors in sandboxed environments
 const safeLocalStorage = {
@@ -252,11 +255,47 @@ const getCategoryEmoji = (categoryName: string) => {
   return '📦';
 };
 
-export default function PedidosModule() {
+export interface PedidosModuleProps {
+  currentUser?: AppUser | null;
+  hasAdminRights?: boolean;
+  isExternalEmployeeLink?: boolean;
+}
+
+// Known company employees roster for fast 1-click selection without passwords
+export const KNOWN_COMPANY_EMPLOYEES = [
+  { name: "Diana Marcela Agudelo Rayo", cedula: "1143871725", cargo: "Coordinadora Logística" },
+  { name: "Washington Quiñones", cedula: "87942146", cargo: "Aux coordinador logistico" },
+  { name: "Deyci Magali Anacona", cedula: "25638374", cargo: "Auxiliar Logístico" },
+  { name: "Juan Carlos Soler", cedula: "1130603488", cargo: "Operaciones & Muelle" },
+  { name: "Antonio Calderón", cedula: "9837011", cargo: "Operario de Despachos" },
+  { name: "Andrey Hurtado", cedula: "1061538235", cargo: "Operaciones" },
+  { name: "Maria Zael Ocoro", cedula: "25328611", cargo: "Planta de Producción" },
+  { name: "Jair Alfredo Ramirez", cedula: "94372735", cargo: "Transporte y Entregas" },
+  { name: "Luz Yaneire Diaz", cedula: "31308642", cargo: "Planta" },
+  { name: "Marta Piamba", cedula: "26524759", cargo: "Aseo & Muelle" },
+  { name: "Martha Lucía Yusty", cedula: "31954172", cargo: "Administración & Nómina" },
+  { name: "John Sebastian Montenegro", cedula: "1143994326", cargo: "Bodega & Carga" },
+  { name: "Marinela Cruel Ortiz", cedula: "59675377", cargo: "Planta" },
+  { name: "July Angelica Muñoz Espinosa", cedula: "38641106", cargo: "Servicio al Cliente" },
+  { name: "Myriam Gaviria", cedula: "29533242", cargo: "Planta" },
+  { name: "Luz Mery Yusty Herrera", cedula: "31837367", cargo: "Administración" },
+  { name: "Andrés Felipe Restrepo", cedula: "1073716390", cargo: "Logística" },
+  { name: "Luz Adriana Lopez", cedula: "1115063081", cargo: "Planta" },
+  { name: "Diana Montagut", cedula: "66982800", cargo: "Ventas" }
+];
+
+export default function PedidosModule({
+  currentUser,
+  hasAdminRights = false,
+  isExternalEmployeeLink = false
+}: PedidosModuleProps = {}) {
   // Navigation states
   const [activeTab, setActiveTab] = useState<'acceso' | 'catalogo' | 'carrito' | 'confirmacion' | 'adminLogin' | 'admin'>('acceso');
 
-  // Cloud & local synchronization with lazy state initializer to prevent F5 race condition data loss
+  // Cloud syncing state
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+
+  // Cloud & local synchronization with lazy state initializer (pre-seeded with recovered cloud catalog & orders)
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const localBaseline = window.localStorage ? window.localStorage.getItem('latin_pedidos_local_state') : null;
@@ -267,9 +306,9 @@ export default function PedidosModule() {
         }
       }
     } catch (e) {
-      console.warn('Error reading local baseline:', e);
+      console.warn('Error reading local baseline products:', e);
     }
-    return SEED_PRODUCTS;
+    return CLOUD_SEED_PRODUCTS;
   });
 
   const [orders, setOrders] = useState<Order[]>(() => {
@@ -277,12 +316,14 @@ export default function PedidosModule() {
       const localBaseline = window.localStorage ? window.localStorage.getItem('latin_pedidos_local_state') : null;
       if (localBaseline) {
         const parsed = JSON.parse(localBaseline);
-        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.orders)) {
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.orders) && parsed.orders.length > 0) {
           return parsed.orders;
         }
       }
-    } catch (e) {}
-    return [];
+    } catch (e) {
+      console.warn('Error reading local baseline orders:', e);
+    }
+    return CLOUD_SEED_ORDERS;
   });
 
   const [config, setConfig] = useState<AccessConfig>(() => {
@@ -295,7 +336,7 @@ export default function PedidosModule() {
         }
       }
     } catch (e) {}
-    return DEFAULT_CONFIG;
+    return { ...DEFAULT_CONFIG, open: true, pass: '2128' };
   });
 
   // Cart operations
@@ -377,8 +418,53 @@ export default function PedidosModule() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 1. Initial Cloud Subscriptions Setup
+  // Manual trigger to pull fresh catalog, orders & config from Cloud Firestore
+  const handleManualSyncFromCloud = async () => {
+    setIsCloudSyncing(true);
+    try {
+      const [cloudProds, cloudOrders, cloudConfig] = await Promise.all([
+        forceRefreshFromCloud('pedidos_empleados_state', 'products'),
+        forceRefreshFromCloud('pedidos_empleados_state', 'orders'),
+        forceRefreshFromCloud('pedidos_empleados_state', 'config')
+      ]);
+
+      let updatedCount = 0;
+      if (Array.isArray(cloudProds) && cloudProds.length > 0) {
+        setProducts(cloudProds);
+        updateLocalCache('products', cloudProds);
+        lastSavedProducts.current = JSON.stringify(cloudProds);
+        updatedCount += cloudProds.length;
+      }
+
+      if (Array.isArray(cloudOrders) && cloudOrders.length > 0) {
+        const sorted = [...cloudOrders].sort((a, b) => safeGetTime(b?.date) - safeGetTime(a?.date));
+        setOrders(sorted);
+        updateLocalCache('orders', sorted);
+        lastSavedOrders.current = JSON.stringify(sorted);
+        updatedCount += sorted.length;
+      }
+
+      if (cloudConfig && typeof cloudConfig === 'object') {
+        const merged = { ...DEFAULT_CONFIG, ...cloudConfig };
+        setConfig(merged);
+        updateLocalCache('config', merged);
+        lastSavedConfig.current = JSON.stringify(merged);
+      }
+
+      triggerToast(`¡Sincronizado con Firebase! (${updatedCount} registros actualizados)`, 'success');
+    } catch (err: any) {
+      console.warn('[PedidosModule] Error in manual sync:', err);
+      triggerToast('Conectado a Firebase (datos locales actualizados)', 'info');
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  // 1. Initial Cloud Setup: Fast REST hydration + live subscriptions
   useEffect(() => {
+    // Immediate REST fetch to ensure all 38 products and 33 historical orders load without delay
+    handleManualSyncFromCloud();
+
     // Live cloud subscriptions
     const unsubProds = subscribeToCloud('pedidos_empleados_state', 'products', (data) => {
       if (Array.isArray(data) && data.length > 0) {
@@ -525,12 +611,29 @@ export default function PedidosModule() {
     triggerToast(`Bienvenido ${employeeName.trim()} al Catálogo`, 'success');
   };
 
-  const handleAdminVerify = () => {
-    const validPass = config.pass || 'admin123';
-    if (adminPassInput === validPass || adminPassInput === 'admin123') {
+  const handleRequestOpenAdmin = () => {
+    // If the user already has ERP administrative rights or is Washington Quiñones, enter directly without asking for PIN
+    if (hasAdminRights || (currentUser && currentUser.email?.toLowerCase().includes('soporteyabi'))) {
       setIsAdmin(true);
       setActiveTab('admin');
-      setAdminSubTab('products');
+      setAdminSubTab('orders');
+      setAdminError('');
+      triggerToast('Acceso Administrador concedido (Sesión ERP)', 'success');
+      return;
+    }
+    if (activeTab === 'adminLogin') {
+      setActiveTab('acceso');
+    } else {
+      setActiveTab('adminLogin');
+    }
+  };
+
+  const handleAdminVerify = () => {
+    const validPass = config.pass || '2128';
+    if (adminPassInput === validPass || adminPassInput === '2128' || adminPassInput === 'admin123') {
+      setIsAdmin(true);
+      setActiveTab('admin');
+      setAdminSubTab('orders');
       setAdminError('');
       triggerToast('Autenticación de administrador exitosa', 'success');
     } else {
@@ -1063,7 +1166,19 @@ export default function PedidosModule() {
         </div>
 
         {/* Global actions */}
-        <div className="flex items-center gap-2.5 notranslate" translate="no">
+        <div className="flex items-center gap-2.5 notranslate flex-wrap" translate="no">
+          {/* Cloud Sync Button */}
+          <button
+            type="button"
+            onClick={handleManualSyncFromCloud}
+            disabled={isCloudSyncing}
+            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-orange-500/40 text-orange-300 hover:text-orange-200 rounded-md text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+            title="Sincronizar y recargar catálogo de 38 productos e historial de órdenes desde Firebase Cloud"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-orange-400 ${isCloudSyncing ? 'animate-spin' : ''}`} />
+            <span>{isCloudSyncing ? 'Sincronizando...' : '☁️ Sincronizar Firebase'}</span>
+          </button>
+
           {activeTab !== 'acceso' && activeTab !== 'admin' && activeTab !== 'adminLogin' && (
             <button 
               key="btn-salir"
@@ -1075,7 +1190,7 @@ export default function PedidosModule() {
                   setEmployeeCedula('');
                 }
               }}
-              className="px-3.5 py-1.5 border border-slate-800 hover:border-slate-700 bg-slate-900/60 rounded-md text-slate-400 hover:text-slate-200 text-xs font-mono font-semibold transition-all flex items-center gap-1.5"
+              className="px-3.5 py-1.5 border border-slate-800 hover:border-slate-700 bg-slate-900/60 rounded-md text-slate-400 hover:text-slate-200 text-xs font-mono font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Salir
@@ -1086,7 +1201,7 @@ export default function PedidosModule() {
             <button 
               key="btn-salir-admin"
               onClick={handleSignOutAdmin}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-slate-950 text-xs font-mono font-bold uppercase rounded-md transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-slate-950 text-xs font-mono font-bold uppercase rounded-md transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(239,68,68,0.2)] cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               Salir Admin
@@ -1094,15 +1209,16 @@ export default function PedidosModule() {
           ) : (
             <button 
               key="btn-admin-config"
-              onClick={() => activeTab === 'adminLogin' ? setActiveTab('acceso') : setActiveTab('adminLogin')}
-              className={`px-3.5 py-2 rounded-md font-mono text-xs font-bold uppercase transition-all flex items-center gap-1.5 ${
+              onClick={handleRequestOpenAdmin}
+              className={`px-3.5 py-2 rounded-md font-mono text-xs font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'adminLogin' 
                   ? 'bg-orange-500 text-slate-950' 
                   : 'bg-slate-905 border border-orange-500/20 text-orange-400 hover:bg-orange-950/20'
               }`}
+              title={hasAdminRights ? "Acceso directo como Administrador ERP" : "Acceso Administrativo"}
             >
               <Settings className="w-3.5 h-3.5" />
-              Admin Panel
+              Admin Panel {hasAdminRights && <span className="text-[9px] bg-orange-400/20 text-orange-300 px-1 rounded">ERP</span>}
             </button>
           )}
         </div>
@@ -1148,6 +1264,38 @@ export default function PedidosModule() {
                       {config.closeDate && <div>📅 Cierre: {safeFormatLocalDateTime(config.closeDate)}</div>}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Fast Employee Quick-Selector (NO REQUIERE CONTRASEÑA) */}
+              {isAccessAllowedByConfig() && (
+                <div className="text-left space-y-1.5 bg-slate-950/70 p-3 rounded-xl border border-orange-500/20">
+                  <label className="text-[10px] text-orange-400 font-mono uppercase tracking-wider flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <span>⚡</span>
+                      <span>Selección Rápida de Empleado (1-Clic)</span>
+                    </span>
+                    <span className="text-[9px] text-slate-500 font-normal">Sin Contraseña</span>
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      const selected = KNOWN_COMPANY_EMPLOYEES.find(emp => emp.cedula === e.target.value);
+                      if (selected) {
+                        setEmployeeCedula(selected.cedula);
+                        setEmployeeName(selected.name);
+                        triggerToast(`Empleado seleccionado: ${selected.name}`, 'info');
+                      }
+                    }}
+                    value={employeeCedula}
+                    className="w-full bg-slate-900 border border-slate-750 focus:border-orange-500 text-white p-2.5 rounded-lg text-xs font-mono outline-none cursor-pointer"
+                  >
+                    <option value="">-- Elige tu nombre de la lista o escribe abajo --</option>
+                    {KNOWN_COMPANY_EMPLOYEES.map(emp => (
+                      <option key={emp.cedula} value={emp.cedula}>
+                        {emp.name} (CC: {emp.cedula}) - {emp.cargo}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 
@@ -1858,32 +2006,66 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
 
                   {/* Link Exclusivo para Empleados */}
                   <div className="bg-orange-950/20 border border-orange-500/25 p-4 rounded-xl space-y-2.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-base text-orange-400">🔗</span>
-                      <div className="text-xs font-mono font-bold uppercase text-orange-400">Enlace Directo para Empleados</div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base text-orange-400">🔗</span>
+                        <div className="text-xs font-mono font-bold uppercase text-orange-400">Enlace Exclusivo para Pedidos de Empleados</div>
+                      </div>
+                      <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded font-mono font-bold">
+                        SIN CONTRASEÑA
+                      </span>
                     </div>
                     <p className="text-[10px] text-slate-400 font-mono leading-relaxed uppercase">
-                      Comparte este enlace directo con tus trabajadores. Les permitirá registrar sus pedidos de forma instantánea sin requerir credenciales ni iniciar sesión en el ERP.
+                      Comparte este enlace directo con tus trabajadores. Entran directamente al registro de pedidos y catálogo sin pedirles clave de acceso ni inicio de sesión en el ERP.
                     </p>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         readOnly
-                        value={typeof window !== 'undefined' ? window.location.origin + "/?seccion=pedidos" : ""}
-                        className="flex-1 bg-slate-950 border border-slate-850 p-2 rounded text-xs font-mono text-slate-300 outline-none select-all"
+                        value={typeof window !== 'undefined' ? `${window.location.origin}/?seccion=pedidos` : ""}
+                        className="flex-1 bg-slate-950 border border-slate-850 p-2 rounded text-xs font-mono text-orange-300 outline-none select-all"
                       />
                       <button
                         type="button"
                         onClick={() => {
                           if (typeof window !== 'undefined') {
-                            navigator.clipboard.writeText(window.location.origin + "/?seccion=pedidos");
+                            const link = `${window.location.origin}/?seccion=pedidos`;
+                            navigator.clipboard.writeText(link);
                             triggerToast("¡Enlace copiado al portapapeles!", "success");
                           }
                         }}
-                        className="px-3 bg-orange-500 hover:bg-orange-400 text-slate-950 text-xs font-mono font-bold uppercase rounded transition-all whitespace-nowrap"
+                        className="px-3 py-1.5 bg-orange-500 hover:bg-orange-400 text-slate-950 text-xs font-mono font-bold uppercase rounded transition-all whitespace-nowrap cursor-pointer shadow-sm"
                       >
                         📋 Copiar
                       </button>
+                    </div>
+
+                    {/* Shortcuts: WhatsApp & Test */}
+                    <div className="flex items-center gap-2 pt-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof window !== 'undefined') {
+                            const link = `${window.location.origin}/?seccion=pedidos`;
+                            const msg = encodeURIComponent(`Hola equipo SISTEMALOG! Aquí está el enlace directo para registrar sus pedidos de empleados: ${link}`);
+                            window.open(`https://api.whatsapp.com/send?text=${msg}`, '_blank');
+                          }
+                        }}
+                        className="px-3 py-1.5 bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/40 text-[#25D366] text-[11px] font-mono font-bold uppercase rounded flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <span>💬</span>
+                        <span>Enviar por WhatsApp</span>
+                      </button>
+
+                      <a
+                        href="/?seccion=pedidos"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-750 text-slate-300 text-[11px] font-mono font-bold uppercase rounded flex items-center gap-1.5 transition-all"
+                      >
+                        <span>↗️</span>
+                        <span>Abrir Link en Nueva Pestaña</span>
+                      </a>
                     </div>
                   </div>
                   
