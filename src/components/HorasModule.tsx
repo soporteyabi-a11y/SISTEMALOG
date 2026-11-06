@@ -262,7 +262,8 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
   const [workerFilterSearch, setWorkerFilterSearch] = useState<string>('');
   const [isWorkerModalOpen, setIsWorkerModalOpen] = useState<boolean>(false);
-  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'paid'>('all');
+  const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'paid'>('pending');
+  const [printIncludeShiftDetails, setPrintIncludeShiftDetails] = useState<boolean>(false);
 
   // Personal consultation search states
   const [personalSearchWorker, setPersonalSearchWorker] = useState<string>('');
@@ -819,12 +820,14 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       setCorteEndDate(`${yearNum}-${pad(monthIdx + 1)}-12`);
       setHistoryRangeType('fortnightly');
       setFilterWeekDate(`${yearNum}-${pad(monthIdx + 1)}-12`);
+      setPaymentFilter('pending');
     } else if (type === 'corte27') {
       // Del 13 al 27 del mes actual
       setCorteStartDate(`${yearNum}-${pad(monthIdx + 1)}-13`);
       setCorteEndDate(`${yearNum}-${pad(monthIdx + 1)}-27`);
       setHistoryRangeType('fortnightly');
       setFilterWeekDate(`${yearNum}-${pad(monthIdx + 1)}-27`);
+      setPaymentFilter('pending');
     } else if (type === 'mes') {
       // Mes completo
       const lastDay = new Date(yearNum, monthIdx + 1, 0).getDate();
@@ -1176,7 +1179,19 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       }
     });
 
-    const rows = Object.values(summaryMap).sort((a, b) => a.nom.localeCompare(b.nom));
+    // Filtro estricto: cuando seleccione el corte solo tomar los trabajadores que efectivamente hicieron extras (> 0h)
+    const rows = Object.values(summaryMap)
+      .filter(row => {
+        if (paymentFilter === 'pending') {
+          return (row.pendingNetas || 0) > 0;
+        }
+        if (paymentFilter === 'paid') {
+          return (row.paidNetas || 0) > 0;
+        }
+        return (row.netas || 0) > 0;
+      })
+      .sort((a, b) => a.nom.localeCompare(b.nom));
+
     const grandTotals = rows.reduce((acc, row) => ({
       count: acc.count + row.count,
       hT: acc.hT + row.hT,
@@ -1193,7 +1208,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     }), { count: 0, hT: 0, extDiurna: 0, extNocturna: 0, recNoct: 0, domFest: 0, comp: 0, netas: 0, pendingNetas: 0, paidNetas: 0, pendingCount: 0, paidCount: 0 });
 
     return { rows, grandTotals };
-  }, [filteredRecords]);
+  }, [filteredRecords, paymentFilter]);
 
   return (
     <div className="bg-[#02141c] min-height-screen text-slate-100 font-sans border border-[#00c5d8]/25 rounded-2xl overflow-hidden shadow-2xl relative">
@@ -2086,6 +2101,18 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
                 {/* Print & Export Actions */}
                 <div className="flex items-center gap-2">
+                  <label 
+                    className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono text-slate-300 cursor-pointer bg-[#02141c] border border-slate-750 px-2.5 py-2 rounded-lg select-none hover:text-white hover:border-[#00c5d8]/40 transition-colors" 
+                    title="Activar para incluir el anexo cronológico con cada turno individual al imprimir"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={printIncludeShiftDetails}
+                      onChange={(e) => setPrintIncludeShiftDetails(e.target.checked)}
+                      className="rounded border-slate-700 bg-slate-900 text-[#00c5d8] focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                    />
+                    <span>Anexo turnos</span>
+                  </label>
                   <button
                     onClick={triggerDownloadJSON}
                     className="bg-[#02141c] border border-[#00c5d8]/40 px-3 py-2 rounded-lg text-xs font-mono text-[#00c5d8] hover:bg-[#031b24] transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -2100,7 +2127,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     title="Imprimir Planilla Oficial A4 con cabecera corporativa, firmas y cortes 12/27"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-slate-950" />
-                    <span>Impresión A4 Nómina ({filteredRecords.length})</span>
+                    <span>Impresión A4 Nómina ({printPayrollSummary.rows.length} Colab.)</span>
                   </button>
                 </div>
 
@@ -3509,115 +3536,130 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           </div>
 
           {/* Bloque Informativo de Período Amarrado */}
-          <div className="bg-slate-100 border-2 border-slate-800 rounded p-2.5 mb-3 flex items-center justify-between">
+          <div className="bg-slate-50 border-2 border-slate-900 rounded-lg p-3 mb-4 flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-xs font-black uppercase text-slate-950 font-mono tracking-wide">
-                  PLANILLA OFICIAL DE LIQUIDACIÓN DE HORAS EXTRAS & RECARGOS
+              <div className="flex items-center gap-2 mb-1.5">
+                <h2 className="text-sm font-black uppercase text-slate-950 font-mono tracking-wide">
+                  {paymentFilter === 'pending'
+                    ? 'PLANILLA DE LIQUIDACIÓN DE HORAS EXTRAS PENDIENTES'
+                    : paymentFilter === 'paid'
+                    ? 'COMPROBANTE DE HORAS EXTRAS LIQUIDADAS Y PAGADAS'
+                    : 'PLANILLA OFICIAL CONSOLIDADA DE HORAS EXTRAS & RECARGOS'}
                 </h2>
                 {corteStats.pendingCount === 0 && corteStats.paidCount > 0 ? (
-                  <span className="text-[8px] font-black uppercase font-mono px-2 py-0.5 rounded bg-emerald-100 border border-emerald-800 text-emerald-950">
-                    ESTADO: CORTE LIQUIDADO & PAGADO 🔒
+                  <span className="text-[9px] font-black uppercase font-mono px-2 py-0.5 rounded bg-emerald-100 border border-emerald-800 text-emerald-950">
+                    CORTE LIQUIDADO & PAGADO 🔒
                   </span>
                 ) : corteStats.paidCount === 0 ? (
-                  <span className="text-[8px] font-black uppercase font-mono px-2 py-0.5 rounded bg-amber-100 border border-amber-800 text-amber-950">
-                    ESTADO: PENDIENTE DE PAGO ⏳
+                  <span className="text-[9px] font-black uppercase font-mono px-2 py-0.5 rounded bg-amber-100 border border-amber-800 text-amber-950">
+                    PENDIENTE DE PAGO ⏳
                   </span>
                 ) : (
-                  <span className="text-[8px] font-black uppercase font-mono px-2 py-0.5 rounded bg-blue-100 border border-blue-800 text-blue-950">
-                    ESTADO: PARCIALMENTE PAGADO ({corteStats.paidCount} Pagados / {corteStats.pendingCount} Pendientes)
+                  <span className="text-[9px] font-black uppercase font-mono px-2 py-0.5 rounded bg-blue-100 border border-blue-800 text-blue-950">
+                    PARCIALMENTE PAGADO ({corteStats.paidCount} Pagados / {corteStats.pendingCount} Pendientes)
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-slate-800 font-mono">
+              <p className="text-[11px] text-slate-800 font-mono">
                 Período Liquidado: <strong className="text-slate-950 uppercase">{getHistoryRangeLabel()}</strong>
               </p>
-              <p className="text-[9px] text-slate-600 font-mono">
-                Límites de Corte: Del <strong>{corteStartDate || 'Primer registro'}</strong> al <strong>{corteEndDate || 'Último registro'}</strong>
+              <p className="text-[9.5px] text-slate-600 font-mono mt-0.5">
+                Límites de Corte: Del <strong>{corteStartDate || 'Primer registro'}</strong> al <strong>{corteEndDate || 'Último registro'}</strong> &bull; Colaboradores con horas extras: <strong>{printPayrollSummary.rows.length}</strong>
               </p>
             </div>
-            <div className="text-right text-[9.5px] font-mono space-y-0.5">
-              <div className="text-slate-700">Turnos en este corte: <strong className="text-slate-950 font-bold">{printPayrollSummary.grandTotals.count} registros</strong></div>
-              <div className="text-amber-900 font-bold">Horas Pendientes a Liquidar: <strong className="text-amber-950 font-black text-xs">{printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h</strong></div>
-              <div className="text-emerald-900 font-bold">Horas Ya Amarradas / Pagadas: <strong className="text-emerald-950">{printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h</strong></div>
-              <div className="text-slate-700 border-t border-slate-300 pt-0.5">Total Horas Netas: <strong className="text-slate-950 font-black">{printPayrollSummary.grandTotals.netas.toFixed(2)}h</strong></div>
+            <div className="text-right text-[10px] font-mono space-y-1 bg-white border border-slate-300 p-2.5 rounded shadow-sm min-w-[210px]">
+              <div className="text-slate-600">Turnos en el corte: <strong className="text-slate-900">{printPayrollSummary.grandTotals.count}</strong></div>
+              <div className="text-amber-900 font-bold">
+                A Liquidar / Pagar: <strong className="text-amber-950 font-black text-sm">{printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h</strong>
+              </div>
+              <div className="text-emerald-900">
+                Horas Ya Pagadas: <strong>{printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h</strong>
+              </div>
+              <div className="text-slate-900 border-t border-slate-300 pt-0.5 font-bold">
+                Total Netas Período: <strong>{printPayrollSummary.grandTotals.netas.toFixed(2)}h</strong>
+              </div>
             </div>
           </div>
 
           {/* TABLA 1: Resumen Oficial Consolidado por Colaborador */}
-          <div className="mb-3">
-            <div className="text-[9.5px] font-mono font-black uppercase text-slate-900 mb-1">
-              1. Consolidado de Liquidación por Colaborador ({printPayrollSummary.rows.length} colaboradores activos en el corte)
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-1.5">
+              <div className="text-[10px] font-mono font-black uppercase text-slate-950 tracking-wider">
+                1. Consolidado de Liquidación de Horas Extras por Colaborador ({printPayrollSummary.rows.length} colaboradores con extras)
+              </div>
+              <span className="text-[9px] font-mono text-slate-600 italic">
+                * Solo incluye colaboradores con horas extras en el corte
+              </span>
             </div>
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-slate-200 text-slate-950 text-[8.5px] uppercase font-bold text-center">
-                  <th className="border border-slate-700 p-1 text-left w-6">N°</th>
-                  <th className="border border-slate-700 p-1 text-left">Colaborador / Trabajador</th>
-                  <th className="border border-slate-700 p-1 text-left">Cargo / Proceso</th>
-                  <th className="border border-slate-700 p-1">Turnos</th>
-                  <th className="border border-slate-700 p-1">H. Trab.</th>
-                  <th className="border border-slate-700 p-1">Ext. Diurna (1.25)</th>
-                  <th className="border border-slate-700 p-1">Ext. Nocturna (1.75)</th>
-                  <th className="border border-slate-700 p-1">Recargo Noct. (0.35)</th>
-                  <th className="border border-slate-700 p-1">Dom. / Fest. (1.75)</th>
-                  <th className="border border-slate-700 p-1">Comp. (-)</th>
-                  <th className="border border-slate-700 p-1 bg-amber-100 font-black">Pendientes</th>
-                  <th className="border border-slate-700 p-1 bg-emerald-100 font-black">Pagadas</th>
-                  <th className="border border-slate-700 p-1 bg-slate-300 font-black">Total Netas</th>
+                <tr className="bg-slate-200 text-slate-950 text-[9px] uppercase font-black text-center">
+                  <th className="border border-slate-800 p-1.5 text-left w-6">N°</th>
+                  <th className="border border-slate-800 p-1.5 text-left">Colaborador / Trabajador</th>
+                  <th className="border border-slate-800 p-1.5 text-left">Cargo / Proceso</th>
+                  <th className="border border-slate-800 p-1.5">Turnos</th>
+                  <th className="border border-slate-800 p-1.5">H. Trab.</th>
+                  <th className="border border-slate-800 p-1.5">Ext. Diurna (1.25)</th>
+                  <th className="border border-slate-800 p-1.5">Ext. Nocturna (1.75)</th>
+                  <th className="border border-slate-800 p-1.5">Recargo Noct. (0.35)</th>
+                  <th className="border border-slate-800 p-1.5">Dom. / Fest. (1.75)</th>
+                  <th className="border border-slate-800 p-1.5">Comp. (-)</th>
+                  <th className="border border-slate-800 p-1.5 bg-amber-100 font-black">Pendientes</th>
+                  <th className="border border-slate-800 p-1.5 bg-emerald-100 font-black">Pagadas</th>
+                  <th className="border border-slate-800 p-1.5 bg-slate-300 font-black">Total Netas</th>
                 </tr>
               </thead>
-              <tbody className="text-[8.5px] font-mono text-slate-900">
+              <tbody className="text-[9px] font-mono text-slate-900">
                 {printPayrollSummary.rows.map((row, idx) => (
                   <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                    <td className="border border-slate-600 p-1 text-center font-bold">{idx + 1}</td>
-                    <td className="border border-slate-600 p-1 font-bold uppercase">{row.nom}</td>
-                    <td className="border border-slate-600 p-1">{row.car} ({row.are})</td>
-                    <td className="border border-slate-600 p-1 text-center">{row.count}</td>
-                    <td className="border border-slate-600 p-1 text-center">{row.hT.toFixed(1)}h</td>
-                    <td className="border border-slate-600 p-1 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-600 p-1 text-center font-black bg-amber-50/70 text-amber-950">
+                    <td className="border border-slate-700 p-1.5 text-center font-bold">{idx + 1}</td>
+                    <td className="border border-slate-700 p-1.5 font-bold uppercase">{row.nom}</td>
+                    <td className="border border-slate-700 p-1.5">{row.car} ({row.are})</td>
+                    <td className="border border-slate-700 p-1.5 text-center">{row.count}</td>
+                    <td className="border border-slate-700 p-1.5 text-center">{row.hT.toFixed(1)}h</td>
+                    <td className="border border-slate-700 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-700 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-700 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-700 p-1.5 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-700 p-1.5 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
+                    <td className="border border-slate-700 p-1.5 text-center font-black bg-amber-50/70 text-amber-950">
                       {row.pendingNetas > 0 ? `${row.pendingNetas.toFixed(2)}h` : '0.00h'}
                     </td>
-                    <td className="border border-slate-600 p-1 text-center font-bold bg-emerald-50/70 text-emerald-950">
+                    <td className="border border-slate-700 p-1.5 text-center font-bold bg-emerald-50/70 text-emerald-950">
                       {row.paidNetas > 0 ? `${row.paidNetas.toFixed(2)}h` : '—'}
                     </td>
-                    <td className="border border-slate-600 p-1 text-center font-black bg-slate-100 text-slate-950">
+                    <td className="border border-slate-700 p-1.5 text-center font-black bg-slate-100 text-slate-950">
                       {row.netas.toFixed(2)}h
                     </td>
                   </tr>
                 ))}
                 {printPayrollSummary.rows.length === 0 && (
                   <tr>
-                    <td colSpan={13} className="border border-slate-600 p-4 text-center text-slate-600 font-mono">
-                      No hay turnos registrados para el período seleccionado ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}).
+                    <td colSpan={13} className="border border-slate-700 p-6 text-center text-slate-600 font-mono">
+                      No hay colaboradores con horas extras en el período seleccionado ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}).
                     </td>
                   </tr>
                 )}
               </tbody>
               <tfoot>
-                <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9px]">
-                  <td colSpan={3} className="border border-slate-800 p-1 text-right uppercase">
+                <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9.5px]">
+                  <td colSpan={3} className="border border-slate-900 p-1.5 text-right uppercase">
                     TOTALES GENERALES DEL CORTE:
                   </td>
-                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.count}</td>
-                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
-                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
-                  <td className="border border-slate-800 p-1 text-center bg-amber-100 text-amber-950 font-black text-xs">
+                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.count}</td>
+                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center bg-amber-100 text-amber-950 font-black text-xs">
                     {printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h
                   </td>
-                  <td className="border border-slate-800 p-1 text-center bg-emerald-100 text-emerald-950 font-bold text-xs">
+                  <td className="border border-slate-900 p-1.5 text-center bg-emerald-100 text-emerald-950 font-bold text-xs">
                     {printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h
                   </td>
-                  <td className="border border-slate-800 p-1 text-center bg-slate-300 text-slate-950 font-black text-xs">
+                  <td className="border border-slate-900 p-1.5 text-center bg-slate-300 text-slate-950 font-black text-xs">
                     {printPayrollSummary.grandTotals.netas.toFixed(2)}h
                   </td>
                 </tr>
@@ -3625,9 +3667,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             </table>
           </div>
 
-          {/* TABLA 2: Detalle Cronológico de Turnos Amarrados en este Corte */}
-          {filteredRecords.length > 0 && (
-            <div className="mb-3">
+          {/* TABLA 2: Detalle Cronológico (Solo se imprime si el usuario activa 'printIncludeShiftDetails') */}
+          {printIncludeShiftDetails && filteredRecords.length > 0 && (
+            <div className="mb-4">
               <div className="text-[9.5px] font-mono font-black uppercase text-slate-900 mb-1">
                 2. Detalle Cronológico de Turnos Registrados en este Corte ({filteredRecords.length} turnos)
               </div>
@@ -3695,34 +3737,31 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             </div>
           </div>
 
-          {/* Bloque de Firmas y Autorizaciones Oficiales */}
-          <div className="grid grid-cols-3 gap-6 pt-4 border-t-2 border-slate-900 text-slate-900 font-mono">
+          {/* Bloque de Firmas y Autorizaciones Oficiales (Washington Elabora, Diana Aprueba, Sin Correos) */}
+          <div className="grid grid-cols-3 gap-6 pt-5 border-t-2 border-slate-900 text-slate-900 font-mono mt-5">
             <div className="text-center">
-              <div className="border-b border-slate-700 mb-1 h-9"></div>
-              <p className="text-[9.5px] font-black uppercase">Diana Agudelo</p>
-              <p className="text-[8px] text-slate-700">SST & Talento Humano</p>
-              <p className="text-[7.5px] text-slate-500">sst@latinproducts.com.co</p>
-              <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">ELABORÓ</span>
+              <div className="border-b border-slate-700 mb-2 h-12"></div>
+              <p className="text-[10px] font-black uppercase tracking-wide">Washington Quiñones</p>
+              <p className="text-[8.5px] text-slate-700 font-semibold">Aux coordinador logistico</p>
+              <span className="inline-block mt-1 text-[8px] text-slate-900 border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">ELABORÓ</span>
             </div>
 
             <div className="text-center">
-              <div className="border-b border-slate-700 mb-1 h-9"></div>
-              <p className="text-[9.5px] font-black uppercase">Washington Quiñones</p>
-              <p className="text-[8px] text-slate-700">Aux coordinador logistico</p>
-              <p className="text-[7.5px] text-slate-500">soporteyabi@gmail.com</p>
-              <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">REVISÓ Y APROBÓ</span>
+              <div className="border-b border-slate-700 mb-2 h-12"></div>
+              <p className="text-[10px] font-black uppercase tracking-wide">Diana Agudelo</p>
+              <p className="text-[8.5px] text-slate-700 font-semibold">SST & Talento Humano</p>
+              <span className="inline-block mt-1 text-[8px] text-slate-900 border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">REVISÓ Y APROBÓ</span>
             </div>
 
             <div className="text-center">
-              <div className="border-b border-slate-700 mb-1 h-9"></div>
-              <p className="text-[9.5px] font-black uppercase">Contabilidad & Nómina</p>
-              <p className="text-[8px] text-slate-700">Pagaduría Latin Products SAS</p>
-              <p className="text-[7.5px] text-slate-500">Fecha: ____/____/________</p>
-              <span className="inline-block mt-0.5 text-[7.5px] text-slate-800 border border-slate-400 px-1 rounded font-bold">RECIBIÓ CONFORME</span>
+              <div className="border-b border-slate-700 mb-2 h-12"></div>
+              <p className="text-[10px] font-black uppercase tracking-wide">Contabilidad & Nómina</p>
+              <p className="text-[8.5px] text-slate-700 font-semibold">Pagaduría Latin Products SAS</p>
+              <span className="inline-block mt-1 text-[8px] text-slate-900 border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">RECIBIÓ CONFORME</span>
             </div>
           </div>
 
-          <div className="mt-4 text-[7.5px] font-mono text-slate-600 text-center border-t border-slate-300 pt-1.5">
+          <div className="mt-4 text-[7.5px] font-mono text-slate-500 text-center border-t border-slate-300 pt-1.5">
             Documento Oficial generado por SISTEMALOG • Impresión formato A4 conforme a Ley 2466 • Liquidación aprobada para pago
           </div>
         </div>,
