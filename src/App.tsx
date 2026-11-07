@@ -31,7 +31,7 @@ import VehiclesModule from './components/VehiclesModule';
 import LiquidadorModule from './components/LiquidadorModule';
 import CitasModule from './components/CitasModule';
 import HorasModule from './components/HorasModule';
-import PedidosModule from './components/PedidosModule';
+import PedidosModule, { KNOWN_COMPANY_EMPLOYEES } from './components/PedidosModule';
 import UsuariosModule from './components/UsuariosModule';
 import SyncQueueMonitorModal from './components/SyncQueueMonitorModal';
 import SupabaseMigrationModal from './components/SupabaseMigrationModal';
@@ -2556,13 +2556,18 @@ export default function App() {
       } else {
         // Deep preserve: keep all existing values exactly as saved without destructive overwriting
         const matchedCarrier = carriers.find(c => c.nombre.trim().toUpperCase() === (order.transportadora || '').trim().toUpperCase());
+        const isEmp = order.tipoPedido === 'EMPLEADO' || (order.transportadora && order.transportadora.toUpperCase().includes('EMPLEADO')) || (order.cliente && order.cliente.toUpperCase().includes('(EMPLEADO)'));
         setEditingOrder({
           ...order,
-          transportadora: matchedCarrier ? matchedCarrier.nombre : (order.transportadora || ''),
+          tipoPedido: isEmp ? 'EMPLEADO' : (order.tipoPedido || 'CLIENTE'),
+          transportadora: isEmp ? (order.transportadora || 'ENTREGA DIRECTA (EMPLEADO)') : (matchedCarrier ? matchedCarrier.nombre : (order.transportadora || '')),
+          placa: isEmp ? (order.placa || 'N/A') : (order.placa || ''),
+          conductor: isEmp ? (order.conductor || order.cliente || 'EMPLEADO') : (order.conductor || ''),
+          flete: isEmp ? 0 : (order.flete || 0),
+          provision: isEmp ? '' : (order.provision || ''),
           facturado: order.facturado !== undefined && order.facturado !== null && order.facturado > 0 ? order.facturado : (order.venta || 0),
           cajasFact: order.cajasFact !== undefined && order.cajasFact !== null && order.cajasFact > 0 ? order.cajasFact : (order.cajas || 0),
           pesoFact: order.pesoFact !== undefined && order.pesoFact !== null && order.pesoFact > 0 ? order.pesoFact : (order.peso || 0),
-          provision: order.provision || '',
           fechaSalida: order.fechaSalida || '',
           fechaEntrega: order.fechaEntrega || '',
           fechaFactura: order.fechaFactura || '',
@@ -2598,6 +2603,7 @@ export default function App() {
         id: newId,
         pv: "",
         oc: "",
+        tipoPedido: "CLIENTE",
         fechaIngreso: new Date().toISOString().split('T')[0],
         fechaSalida: "",
         fechaEntrega: "",
@@ -3278,6 +3284,12 @@ export default function App() {
   const handleUpdateEditingOrderField = (field: keyof Order, value: any) => {
     if (!editingOrder) return;
     const nextOrder = { ...editingOrder, [field]: value };
+    const isEmp = nextOrder.tipoPedido === 'EMPLEADO' || (nextOrder.transportadora && nextOrder.transportadora.toUpperCase().includes('EMPLEADO'));
+    if (isEmp) {
+      nextOrder.flete = 0;
+      setEditingOrder(nextOrder);
+      return;
+    }
 
     const isDispatched = ['Despachado', 'En Sitio / Bodega', 'Entregado', 'Finalizado'].includes(editingOrder.estado);
 
@@ -5357,6 +5369,63 @@ export default function App() {
                   <span className="text-slate-400">Paso 1 de 3</span>
                 </div>
 
+                {/* Selector de Tipo de Pedido: Cliente Comercial vs Empleado */}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-950/80 rounded-xl border border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                      Modalidad de Pedido:
+                    </span>
+                    <div className="inline-flex rounded-lg p-0.5 bg-slate-900 border border-slate-800 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingOrder({
+                            ...editingOrder,
+                            tipoPedido: 'CLIENTE',
+                            transportadora: editingOrder.transportadora?.includes('EMPLEADO') ? '' : editingOrder.transportadora,
+                            placa: editingOrder.placa === 'N/A' ? '' : editingOrder.placa,
+                            conductor: editingOrder.conductor === 'EMPLEADO' ? '' : editingOrder.conductor,
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                          editingOrder.tipoPedido !== 'EMPLEADO'
+                            ? 'bg-[#38bdf8] text-slate-950 shadow font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        🏢 Comercial / Cliente
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingOrder({
+                            ...editingOrder,
+                            tipoPedido: 'EMPLEADO',
+                            transportadora: 'ENTREGA DIRECTA (EMPLEADO)',
+                            placa: 'N/A',
+                            conductor: editingOrder.cliente || 'EMPLEADO',
+                            ciudad: editingOrder.ciudad || 'ACOPI-YUMBO (SEDE PLANTA)',
+                            flete: 0,
+                            provision: '',
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                          editingOrder.tipoPedido === 'EMPLEADO'
+                            ? 'bg-[#00c9a7] text-slate-950 shadow font-black'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        👤 Pedido de Empleado (Venta Interna)
+                      </button>
+                    </div>
+                  </div>
+                  {editingOrder.tipoPedido === 'EMPLEADO' && (
+                    <span className="text-[10px] text-[#00c9a7] font-mono bg-[#00c9a7]/10 px-2 py-0.5 rounded border border-[#00c9a7]/30">
+                      ✓ No requiere transportadora, placa, conductor ni flete ($0).
+                    </span>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] text-[#38bdf8] font-bold uppercase block">Flete ID (Código Sistema)</label>
@@ -5400,17 +5469,19 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Cliente Destinatario con dropdown */}
+                  {/* Cliente Destinatario / Empleado con dropdown */}
                   <div className="space-y-1 col-span-2 relative" ref={customerDropdownRef}>
-                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Cliente Destinatario *</label>
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                      {editingOrder.tipoPedido === 'EMPLEADO' ? 'Empleado Beneficiario (Nombre y Cédula) *' : 'Cliente Destinatario *'}
+                    </label>
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="Escribe para buscar o ingresar cliente..."
+                        placeholder={editingOrder.tipoPedido === 'EMPLEADO' ? "Escribe para buscar por nombre o cédula..." : "Escribe para buscar o ingresar cliente..."}
                         value={
                           isCustomerDropdownOpen 
                             ? orderFormClientSearch 
-                            : (editingOrder.cliente ? `${editingOrder.cliente} (${editingOrder.ciudad})` : '')
+                            : (editingOrder.cliente ? `${editingOrder.cliente}${editingOrder.tipoPedido !== 'EMPLEADO' ? ` (${editingOrder.ciudad})` : ''}` : '')
                         }
                         onFocus={() => {
                           setIsCustomerDropdownOpen(true);
@@ -5433,52 +5504,100 @@ export default function App() {
 
                     {isCustomerDropdownOpen && (
                       <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-[#0a1224] border-2 border-hud-accent/40 rounded-lg shadow-2xl divide-y divide-slate-900 scrollbar-thin">
-                        {(() => {
-                          const q = orderFormClientSearch.toLowerCase().trim();
-                          const filtered = customers.filter(c => {
-                            if (!q) return true;
-                            return c.nombre.toLowerCase().includes(q) ||
-                                   (c.nit && c.nit.toLowerCase().includes(q)) ||
-                                   (c.dir && c.dir.toLowerCase().includes(q)) ||
-                                   (c.ciudad && c.ciudad.toLowerCase().includes(q));
-                          });
+                        {editingOrder.tipoPedido === 'EMPLEADO' ? (
+                          (() => {
+                            const q = orderFormClientSearch.toLowerCase().trim();
+                            const filteredEmp = KNOWN_COMPANY_EMPLOYEES.filter(emp => {
+                              if (!q) return true;
+                              return emp.name.toLowerCase().includes(q) || emp.cedula.toLowerCase().includes(q) || (emp.cargo && emp.cargo.toLowerCase().includes(q));
+                            });
 
-                          if (filtered.length === 0) {
-                            return (
-                              <div className="p-3 text-xs text-slate-500 italic">
-                                No se encontraron coincidencias. Puedes seguir escribiendo para un cliente nuevo.
-                              </div>
-                            );
-                          }
+                            if (filteredEmp.length === 0) {
+                              return (
+                                <div className="p-3 text-xs text-slate-500 italic">
+                                  No se encontró empleado con esa cédula o nombre. Puedes escribir el nombre directamente.
+                                </div>
+                              );
+                            }
 
-                          return filtered.map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                setEditingOrder({
-                                  ...editingOrder,
-                                  cliente: c.nombre,
-                                  ciudad: c.ciudad,
-                                  direccion: c.dir
-                                });
-                                setOrderFormClientSearch('');
-                                setIsCustomerDropdownOpen(false);
-                              }}
-                              className="w-full text-left p-3 hover:bg-slate-900/80 transition-colors flex flex-col gap-1 cursor-pointer"
-                            >
-                              <div className="flex justify-between items-center gap-2">
-                                <span className="font-bold text-white text-xs truncate">{c.nombre}</span>
-                                <span className="text-[10px] bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-hud-accent font-mono shrink-0">{c.ciudad}</span>
-                              </div>
-                              {c.dir && (
-                                <span className="text-[10px] text-slate-400 font-mono block truncate">
-                                  📍 {c.dir}
+                            return filteredEmp.map((emp, idx) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => {
+                                  setEditingOrder({
+                                    ...editingOrder,
+                                    cliente: `${emp.name} (CC ${emp.cedula})`,
+                                    ciudad: 'ACOPI-YUMBO (SEDE PLANTA)',
+                                    conductor: emp.name,
+                                    transportadora: 'ENTREGA DIRECTA (EMPLEADO)',
+                                    placa: 'N/A',
+                                    flete: 0,
+                                    provision: '',
+                                  });
+                                  setOrderFormClientSearch('');
+                                  setIsCustomerDropdownOpen(false);
+                                }}
+                                className="w-full text-left p-3 hover:bg-slate-900/80 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                              >
+                                <div>
+                                  <span className="font-bold text-white text-xs block">{emp.name}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">CC: {emp.cedula} · {emp.cargo}</span>
+                                </div>
+                                <span className="text-[10px] bg-[#00c9a7]/20 text-[#00c9a7] border border-[#00c9a7]/30 px-2 py-0.5 rounded font-mono shrink-0 font-bold">
+                                  EMPLEADO
                                 </span>
-                              )}
-                            </button>
-                          ));
-                        })()}
+                              </button>
+                            ));
+                          })()
+                        ) : (
+                          (() => {
+                            const q = orderFormClientSearch.toLowerCase().trim();
+                            const filtered = customers.filter(c => {
+                              if (!q) return true;
+                              return c.nombre.toLowerCase().includes(q) ||
+                                     (c.nit && c.nit.toLowerCase().includes(q)) ||
+                                     (c.dir && c.dir.toLowerCase().includes(q)) ||
+                                     (c.ciudad && c.ciudad.toLowerCase().includes(q));
+                            });
+
+                            if (filtered.length === 0) {
+                              return (
+                                <div className="p-3 text-xs text-slate-500 italic">
+                                  No se encontraron coincidencias. Puedes seguir escribiendo para un cliente nuevo.
+                                </div>
+                              );
+                            }
+
+                            return filtered.map(c => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => {
+                                  setEditingOrder({
+                                    ...editingOrder,
+                                    cliente: c.nombre,
+                                    ciudad: c.ciudad,
+                                    direccion: c.dir
+                                  });
+                                  setOrderFormClientSearch('');
+                                  setIsCustomerDropdownOpen(false);
+                                }}
+                                className="w-full text-left p-3 hover:bg-slate-900/80 transition-colors flex flex-col gap-1 cursor-pointer"
+                              >
+                                <div className="flex justify-between items-center gap-2">
+                                  <span className="font-bold text-white text-xs truncate">{c.nombre}</span>
+                                  <span className="text-[10px] bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-hud-accent font-mono shrink-0">{c.ciudad}</span>
+                                </div>
+                                {c.dir && (
+                                  <span className="text-[10px] text-slate-400 font-mono block truncate">
+                                    📍 {c.dir}
+                                  </span>
+                                )}
+                              </button>
+                            ));
+                          })()
+                        )}
                       </div>
                     )}
                   </div>
@@ -5561,189 +5680,306 @@ export default function App() {
             {/* ETAPA 2: DESPACHO / MUELLE (JULIÁN BARRIOS) */}
             {orderFormActiveStep === 'despacho' && (
               <div className="space-y-4 animate-fade-in">
-                <div className="bg-[#00c9a7]/5 border border-[#00c9a7]/20 p-2.5 rounded-lg text-[10px] font-mono text-[#00c9a7] flex items-center justify-between">
-                  <span>🚛 <strong>ETAPA 2: OPERACIÓN DE CARGUE Y DESPACHO EN MUELLE</strong> — Responsable: Julián Barrios / Logística</span>
-                  <span className="text-amber-400 font-bold">* Campos obligatorios de despacho (Hora entrega opcional)</span>
-                </div>
+                {editingOrder.tipoPedido === 'EMPLEADO' ? (
+                  <div className="bg-[#00c9a7]/10 border border-[#00c9a7]/30 p-2.5 rounded-lg text-[10px] font-mono text-[#00c9a7] flex items-center justify-between">
+                    <span>👤 <strong>ETAPA 2: ENTREGA INTERNA / DESPACHO A EMPLEADO</strong> — Responsable: Julián Barrios / Logística</span>
+                    <span className="text-emerald-400 font-bold">* No requiere transportadora, vehículo ni flete ($0). Facturación obligatoria.</span>
+                  </div>
+                ) : (
+                  <div className="bg-[#00c9a7]/5 border border-[#00c9a7]/20 p-2.5 rounded-lg text-[10px] font-mono text-[#00c9a7] flex items-center justify-between">
+                    <span>🚛 <strong>ETAPA 2: OPERACIÓN DE CARGUE Y DESPACHO EN MUELLE</strong> — Responsable: Julián Barrios / Logística</span>
+                    <span className="text-amber-400 font-bold">* Campos obligatorios de despacho (Hora entrega opcional)</span>
+                  </div>
+                )}
 
                 {/* Resumen fijo de Etapa 1 */}
                 <div className="bg-slate-950/60 border border-slate-800 p-2.5 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-2 text-[10.5px] font-mono">
                   <div><span className="text-slate-500 block">PV / Orden:</span> <strong className="text-white">{editingOrder.pv || 'S/N'} ({editingOrder.id})</strong></div>
-                  <div><span className="text-slate-500 block">Cliente:</span> <strong className="text-white truncate block">{editingOrder.cliente}</strong></div>
-                  <div><span className="text-slate-500 block">Ciudad:</span> <strong className="text-hud-accent">{editingOrder.ciudad}</strong></div>
+                  <div><span className="text-slate-500 block">Beneficiario / Cliente:</span> <strong className="text-white truncate block">{editingOrder.cliente}</strong></div>
+                  <div><span className="text-slate-500 block">Ciudad / Sede:</span> <strong className="text-hud-accent">{editingOrder.ciudad}</strong></div>
                   <div><span className="text-slate-500 block">Solicitado:</span> <strong className="text-slate-300">{editingOrder.cajas} cj / {editingOrder.peso} kg</strong></div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Transportadora */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
-                      Operador Transportador <span className="text-rose-400">*</span>
-                    </label>
-                    <select 
-                      value={editingOrder.transportadora}
-                      onChange={e => handleUpdateEditingOrderField('transportadora', e.target.value)}
-                      className="bg-slate-950 border border-[#00c9a7]/40 text-xs text-white rounded p-2.5 w-full outline-none font-bold"
-                    >
-                      <option value="">-- SELECCIONAR TRANSPORTADORA OBLIGATORIA --</option>
-                      {editingOrder.transportadora && !carriers.some(c => c.nombre.trim().toUpperCase() === editingOrder.transportadora.trim().toUpperCase()) && (
-                        <option value={editingOrder.transportadora}>{editingOrder.transportadora}</option>
-                      )}
-                      {carriers.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                    </select>
-                  </div>
+                {editingOrder.tipoPedido === 'EMPLEADO' ? (
+                  /* Modo Pedido Empleado: Sin campos de vehículo ni transportadora ni flete */
+                  <div className="space-y-4">
+                    <div className="bg-slate-950/70 border border-[#00c9a7]/30 rounded-xl p-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] font-mono">
+                      <div className="flex flex-col">
+                        <span className="text-slate-500 text-[9.5px] uppercase">Modalidad:</span>
+                        <strong className="text-[#00c9a7] font-bold">ENTREGA DIRECTA (EMPLEADO)</strong>
+                        <span className="text-slate-400 text-[9px]">Retiro interno en bodega planta</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-slate-500 text-[9.5px] uppercase">Transportadora & Placa:</span>
+                        <strong className="text-slate-300">N/A - PEATONAL / INTERNO</strong>
+                        <span className="text-slate-400 text-[9px]">Sin flete ni ruta de carretera</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-slate-500 text-[9.5px] uppercase">Costo de Flete de Carga:</span>
+                        <strong className="text-emerald-400 font-bold text-sm">$0 COP (EXENTO)</strong>
+                        <span className="text-slate-400 text-[9px]">Sin provisión contable de tercero</span>
+                      </div>
+                    </div>
 
-                  {/* Placa */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
-                      Placa Vehículo <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={editingOrder.placa || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, placa: e.target.value.toUpperCase() })}
-                      placeholder="Ej: SWD-913"
-                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
-                    />
-                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Factura Venta / Remisión / Vale */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-hud-green font-bold uppercase block">
+                          Factura Venta / Vale Entrega <span className="text-rose-400">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          value={editingOrder.factura || ''}
+                          onChange={e => handleUpdateEditingOrderField('factura', e.target.value)}
+                          placeholder="Ej: FE-1049 o VALE-05"
+                          className="bg-slate-950 border border-hud-green/40 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none focus:border-hud-green"
+                        />
+                      </div>
 
-                  {/* Conductor */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
-                      Nombre Conductor <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={editingOrder.conductor || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, conductor: e.target.value.toUpperCase() })}
-                      placeholder="Nombre del conductor"
-                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
-                    />
-                  </div>
+                      {/* Fecha Factura */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-hud-green font-bold uppercase block">
+                          Fecha Factura Venta <span className="text-rose-400">*</span>
+                        </label>
+                        <input 
+                          type="date" 
+                          value={editingOrder.fechaFactura || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setEditingOrder({ ...editingOrder, fechaFactura: val, fechaSalida: val });
+                          }}
+                          className="bg-slate-950 border border-hud-green/30 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none text-xs"
+                        />
+                      </div>
 
-                  {/* Celular */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
-                      Celular Conductor <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={editingOrder.celular || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, celular: e.target.value })}
-                      placeholder="Teléfono móvil de contacto"
-                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
-                    />
-                  </div>
+                      {/* Cajas Facturadas */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                          Cajas Facturadas / Entregadas <span className="text-rose-400">*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          value={editingOrder.cajasFact || ''}
+                          onChange={e => handleUpdateEditingOrderField('cajasFact', e.target.value === '' ? 0 : Number(e.target.value))}
+                          placeholder={String(editingOrder.cajas || 0)}
+                          className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
+                        />
+                      </div>
 
-                  {/* Factura Venta */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-hud-green font-bold uppercase block">
-                      Factura Venta Despacho <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      value={editingOrder.factura || ''}
-                      onChange={e => handleUpdateEditingOrderField('factura', e.target.value)}
-                      placeholder="Ej: 2650"
-                      className="bg-slate-950 border border-hud-green/40 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none focus:border-hud-green"
-                    />
-                  </div>
+                      {/* Peso Facturado */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                          Peso Facturado (kg) <span className="text-rose-400">*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          value={editingOrder.pesoFact || ''}
+                          onChange={e => handleUpdateEditingOrderField('pesoFact', e.target.value === '' ? 0 : Number(e.target.value))}
+                          placeholder={String(editingOrder.peso || 0)}
+                          className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
+                        />
+                      </div>
 
-                  {/* Fecha Factura */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-hud-green font-bold uppercase block">
-                      Fecha Factura Venta <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="date" 
-                      value={editingOrder.fechaFactura || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, fechaFactura: e.target.value })}
-                      className="bg-slate-950 border border-hud-green/30 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none text-xs"
-                    />
-                  </div>
+                      {/* Valor Facturado */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                          Valor Final Facturado ($) <span className="text-rose-400">*</span>
+                        </label>
+                        <input 
+                          type="number" 
+                          value={editingOrder.facturado || ''}
+                          onChange={e => handleUpdateEditingOrderField('facturado', e.target.value === '' ? 0 : Number(e.target.value))}
+                          placeholder={String(editingOrder.venta || 0)}
+                          className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
+                        />
+                      </div>
 
-                  {/* Fecha Salida */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
-                      Fecha de Salida (Despacho) <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="date" 
-                      value={editingOrder.fechaSalida || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, fechaSalida: e.target.value })}
-                      className="bg-slate-950 border border-[#00c9a7]/30 text-white font-bold rounded p-2.5 w-full outline-none text-xs"
-                    />
+                      {/* Observaciones de Entrega */}
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-400 uppercase block">Observaciones / Descuento Nómina</label>
+                        <input 
+                          type="text" 
+                          value={editingOrder.obs || ''}
+                          onChange={e => setEditingOrder({ ...editingOrder, obs: e.target.value })}
+                          placeholder="Ej: Descuento quincena / Entrega personal..."
+                          className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none text-xs"
+                        />
+                      </div>
+                    </div>
                   </div>
+                ) : (
+                  /* Modo Comercial / Cliente Externo: Exige todos los datos de vehículo y carga */
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Transportadora */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                        Operador Transportador <span className="text-rose-400">*</span>
+                      </label>
+                      <select 
+                        value={editingOrder.transportadora}
+                        onChange={e => handleUpdateEditingOrderField('transportadora', e.target.value)}
+                        className="bg-slate-950 border border-[#00c9a7]/40 text-xs text-white rounded p-2.5 w-full outline-none font-bold"
+                      >
+                        <option value="">-- SELECCIONAR TRANSPORTADORA OBLIGATORIA --</option>
+                        {editingOrder.transportadora && !carriers.some(c => c.nombre.trim().toUpperCase() === editingOrder.transportadora.trim().toUpperCase()) && (
+                          <option value={editingOrder.transportadora}>{editingOrder.transportadora}</option>
+                        )}
+                        {carriers.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                      </select>
+                    </div>
 
-                  {/* Cajas Facturadas */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
-                      Cajas Facturadas (cj) <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="number" 
-                      value={editingOrder.cajasFact || ''}
-                      onChange={e => handleUpdateEditingOrderField('cajasFact', e.target.value === '' ? 0 : Number(e.target.value))}
-                      placeholder={String(editingOrder.cajas || 0)}
-                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
-                    />
-                  </div>
+                    {/* Placa */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                        Placa Vehículo <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={editingOrder.placa || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, placa: e.target.value.toUpperCase() })}
+                        placeholder="Ej: SWD-913"
+                        className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                      />
+                    </div>
 
-                  {/* Peso Facturado */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
-                      Peso Facturado (kg) <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="number" 
-                      value={editingOrder.pesoFact || ''}
-                      onChange={e => handleUpdateEditingOrderField('pesoFact', e.target.value === '' ? 0 : Number(e.target.value))}
-                      placeholder={String(editingOrder.peso || 0)}
-                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
-                    />
-                  </div>
+                    {/* Conductor */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                        Nombre Conductor <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={editingOrder.conductor || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, conductor: e.target.value.toUpperCase() })}
+                        placeholder="Nombre del conductor"
+                        className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                      />
+                    </div>
 
-                  {/* Valor Facturado */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
-                      Valor Final Facturado ($) <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="number" 
-                      value={editingOrder.facturado || ''}
-                      onChange={e => handleUpdateEditingOrderField('facturado', e.target.value === '' ? 0 : Number(e.target.value))}
-                      placeholder={String(editingOrder.venta || 0)}
-                      className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
-                    />
-                  </div>
+                    {/* Celular */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                        Celular Conductor <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={editingOrder.celular || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, celular: e.target.value })}
+                        placeholder="Teléfono móvil de contacto"
+                        className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                      />
+                    </div>
 
-                  {/* Costo Flete */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-[#ffab00] font-bold uppercase block">
-                      Costo Flete Despacho ($) <span className="text-rose-400">*</span>
-                    </label>
-                    <input 
-                      type="number" 
-                      value={editingOrder.flete || 0}
-                      onChange={e => handleUpdateEditingOrderField('flete', Number(e.target.value))}
-                      className="bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none"
-                    />
-                  </div>
+                    {/* Factura Venta */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-hud-green font-bold uppercase block">
+                        Factura Venta Despacho <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        value={editingOrder.factura || ''}
+                        onChange={e => handleUpdateEditingOrderField('factura', e.target.value)}
+                        placeholder="Ej: 2650"
+                        className="bg-slate-950 border border-hud-green/40 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none focus:border-hud-green"
+                      />
+                    </div>
 
-                  {/* Hora Entrega Cita (OPCIONAL) */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase block">
-                      Hora Entrega / Cita <span className="text-slate-500 font-normal">(Opcional)</span>
-                    </label>
-                    <input 
-                      type="text" 
-                      placeholder="Ej: 10:30 AM (Opcional)"
-                      value={editingOrder.horaCita || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, horaCita: e.target.value })}
-                      className="bg-slate-950 border border-slate-850 text-slate-300 rounded p-2.5 w-full outline-none text-xs"
-                    />
+                    {/* Fecha Factura */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-hud-green font-bold uppercase block">
+                        Fecha Factura Venta <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="date" 
+                        value={editingOrder.fechaFactura || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, fechaFactura: e.target.value })}
+                        className="bg-slate-950 border border-hud-green/30 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none text-xs"
+                      />
+                    </div>
+
+                    {/* Fecha Salida */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                        Fecha de Salida (Despacho) <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="date" 
+                        value={editingOrder.fechaSalida || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, fechaSalida: e.target.value })}
+                        className="bg-slate-950 border border-[#00c9a7]/30 text-white font-bold rounded p-2.5 w-full outline-none text-xs"
+                      />
+                    </div>
+
+                    {/* Cajas Facturadas */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                        Cajas Facturadas (cj) <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editingOrder.cajasFact || ''}
+                        onChange={e => handleUpdateEditingOrderField('cajasFact', e.target.value === '' ? 0 : Number(e.target.value))}
+                        placeholder={String(editingOrder.cajas || 0)}
+                        className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
+                      />
+                    </div>
+
+                    {/* Peso Facturado */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                        Peso Facturado (kg) <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editingOrder.pesoFact || ''}
+                        onChange={e => handleUpdateEditingOrderField('pesoFact', e.target.value === '' ? 0 : Number(e.target.value))}
+                        placeholder={String(editingOrder.peso || 0)}
+                        className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
+                      />
+                    </div>
+
+                    {/* Valor Facturado */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                        Valor Final Facturado ($) <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editingOrder.facturado || ''}
+                        onChange={e => handleUpdateEditingOrderField('facturado', e.target.value === '' ? 0 : Number(e.target.value))}
+                        placeholder={String(editingOrder.venta || 0)}
+                        className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
+                      />
+                    </div>
+
+                    {/* Costo Flete */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-[#ffab00] font-bold uppercase block">
+                        Costo Flete Despacho ($) <span className="text-rose-400">*</span>
+                      </label>
+                      <input 
+                        type="number" 
+                        value={editingOrder.flete || 0}
+                        onChange={e => handleUpdateEditingOrderField('flete', Number(e.target.value))}
+                        className="bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none"
+                      />
+                    </div>
+
+                    {/* Hora Entrega Cita (OPCIONAL) */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-slate-400 uppercase block">
+                        Hora Entrega / Cita <span className="text-slate-500 font-normal">(Opcional)</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        placeholder="Ej: 10:30 AM (Opcional)"
+                        value={editingOrder.horaCita || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, horaCita: e.target.value })}
+                        className="bg-slate-950 border border-slate-850 text-slate-300 rounded p-2.5 w-full outline-none text-xs"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex justify-between pt-2">
                   <button
@@ -5756,18 +5992,28 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
+                      const isEmp = editingOrder.tipoPedido === 'EMPLEADO' || (editingOrder.transportadora && editingOrder.transportadora.toUpperCase().includes('EMPLEADO'));
                       const errors: string[] = [];
-                      if (!editingOrder.transportadora?.trim()) errors.push('Operador Transportador: Selección requerida.');
-                      if (!editingOrder.placa?.trim()) errors.push('Placa Vehículo: Requerida (Ej: SWD-913).');
-                      if (!editingOrder.conductor?.trim()) errors.push('Nombre Conductor: Requerido.');
-                      if (!editingOrder.celular?.trim()) errors.push('Celular Conductor: Requerido.');
-                      if (!editingOrder.factura?.trim()) errors.push('Factura Venta Despacho: Requerida.');
-                      if (!editingOrder.fechaFactura?.trim()) errors.push('Fecha Factura Venta: Requerida.');
-                      if (!editingOrder.fechaSalida?.trim()) errors.push('Fecha de Salida (Despacho): Requerida.');
-                      if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) errors.push('Cajas Facturadas: Requerido (> 0 cj).');
-                      if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) errors.push('Peso Facturado: Requerido (> 0 kg).');
-                      if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) errors.push('Valor Final Facturado: Requerido (> $0).');
-                      if (editingOrder.flete === undefined || editingOrder.flete === null || Number(editingOrder.flete) < 0) errors.push('Costo Flete Despacho: Requerido.');
+
+                      if (isEmp) {
+                        if (!editingOrder.factura?.trim()) errors.push('Factura Venta / Vale de Entrega: Requerido.');
+                        if (!editingOrder.fechaFactura?.trim()) errors.push('Fecha Factura Venta: Requerida.');
+                        if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) errors.push('Cajas Facturadas: Requerido (> 0 cj).');
+                        if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) errors.push('Peso Facturado: Requerido (> 0 kg).');
+                        if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) errors.push('Valor Final Facturado: Requerido (> $0).');
+                      } else {
+                        if (!editingOrder.transportadora?.trim()) errors.push('Operador Transportador: Selección requerida.');
+                        if (!editingOrder.placa?.trim()) errors.push('Placa Vehículo: Requerida (Ej: SWD-913).');
+                        if (!editingOrder.conductor?.trim()) errors.push('Nombre Conductor: Requerido.');
+                        if (!editingOrder.celular?.trim()) errors.push('Celular Conductor: Requerido.');
+                        if (!editingOrder.factura?.trim()) errors.push('Factura Venta Despacho: Requerida.');
+                        if (!editingOrder.fechaFactura?.trim()) errors.push('Fecha Factura Venta: Requerida.');
+                        if (!editingOrder.fechaSalida?.trim()) errors.push('Fecha de Salida (Despacho): Requerida.');
+                        if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) errors.push('Cajas Facturadas: Requerido (> 0 cj).');
+                        if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) errors.push('Peso Facturado: Requerido (> 0 kg).');
+                        if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) errors.push('Valor Final Facturado: Requerido (> $0).');
+                        if (editingOrder.flete === undefined || editingOrder.flete === null || Number(editingOrder.flete) < 0) errors.push('Costo Flete Despacho: Requerido.');
+                      }
 
                       if (errors.length > 0) {
                         setOrderFormErrors(errors);
@@ -5796,13 +6042,13 @@ export default function App() {
                 <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] font-mono">
                   <div>
                     <span className="text-slate-500 block text-[9.5px]">Transportadora:</span>
-                    <strong className="text-white block truncate">{editingOrder.transportadora || 'NO ASIGNADA'}</strong>
-                    <span className="text-slate-400 text-[9px]">Placa: {editingOrder.placa || 'N/A'}</span>
+                    <strong className="text-white block truncate">{editingOrder.tipoPedido === 'EMPLEADO' ? 'ENTREGA DIRECTA (EMPLEADO)' : (editingOrder.transportadora || 'NO ASIGNADA')}</strong>
+                    <span className="text-slate-400 text-[9px]">Placa: {editingOrder.tipoPedido === 'EMPLEADO' ? 'N/A' : (editingOrder.placa || 'N/A')}</span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[9.5px]">Factura Venta:</span>
+                    <span className="text-slate-500 block text-[9.5px]">Factura / Vale:</span>
                     <strong className="text-[#00ffa3] block font-bold">{editingOrder.factura || 'PENDIENTE'}</strong>
-                    <span className="text-slate-400 text-[9px]">Salida: {editingOrder.fechaSalida || '---'}</span>
+                    <span className="text-slate-400 text-[9px]">Salida/Fact: {editingOrder.fechaSalida || editingOrder.fechaFactura || '---'}</span>
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[9.5px]">Despacho Real:</span>
@@ -5811,7 +6057,9 @@ export default function App() {
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[9.5px]">Costo Transporte Flete:</span>
-                    <strong className="text-[#ffab00] text-sm block font-bold">${(Number(editingOrder.flete) || 0).toLocaleString('es-CO')}</strong>
+                    <strong className="text-[#ffab00] text-sm block font-bold">
+                      {editingOrder.tipoPedido === 'EMPLEADO' ? '$0 COP (Exento)' : `$${(Number(editingOrder.flete) || 0).toLocaleString('es-CO')}`}
+                    </strong>
                   </div>
                 </div>
 
@@ -5844,18 +6092,27 @@ export default function App() {
                     <label className="text-[10px] text-rose-400 font-bold uppercase block">
                       Factura Provisión (FP Transportadora)
                     </label>
-                    <input 
-                      type="text" 
-                      value={editingOrder.provision || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, provision: e.target.value.toUpperCase() })}
-                      placeholder="Ej: FP-1092 o PRV-240"
-                      className="bg-slate-950 border border-rose-500/40 text-rose-300 font-bold rounded p-2.5 w-full outline-none focus:border-rose-400 font-mono"
-                    />
+                    {editingOrder.tipoPedido === 'EMPLEADO' ? (
+                      <input 
+                        type="text" 
+                        readOnly
+                        value="N/A - EXENTO DE PROVISIÓN"
+                        className="bg-slate-900 border border-slate-800 text-slate-400 font-bold rounded p-2.5 w-full outline-none font-mono text-xs cursor-not-allowed"
+                      />
+                    ) : (
+                      <input 
+                        type="text" 
+                        value={editingOrder.provision || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, provision: e.target.value.toUpperCase() })}
+                        placeholder="Ej: FP-1092 o PRV-240"
+                        className="bg-slate-950 border border-rose-500/40 text-rose-300 font-bold rounded p-2.5 w-full outline-none focus:border-rose-400 font-mono"
+                      />
+                    )}
                   </div>
 
                   {/* Fecha Entrega Real */}
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Fecha Entrega Real (Cumplido)</label>
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Fecha Entrega Real (Cumplido / Retiro)</label>
                     <input 
                       type="date" 
                       value={editingOrder.fechaEntrega || ''}
@@ -5869,9 +6126,16 @@ export default function App() {
                     <label className="text-[10px] text-[#ffab00] font-bold uppercase block">Flete Pactado Final ($)</label>
                     <input 
                       type="number" 
-                      value={editingOrder.flete || 0}
-                      onChange={e => setEditingOrder({ ...editingOrder, flete: Number(e.target.value) })}
-                      className="bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none"
+                      readOnly={editingOrder.tipoPedido === 'EMPLEADO'}
+                      value={editingOrder.tipoPedido === 'EMPLEADO' ? 0 : (editingOrder.flete || 0)}
+                      onChange={e => {
+                        if (editingOrder.tipoPedido !== 'EMPLEADO') {
+                          setEditingOrder({ ...editingOrder, flete: Number(e.target.value) });
+                        }
+                      }}
+                      className={`bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none ${
+                        editingOrder.tipoPedido === 'EMPLEADO' ? 'cursor-not-allowed opacity-75' : ''
+                      }`}
                     />
                   </div>
 
@@ -5971,49 +6235,71 @@ export default function App() {
                         errors.push('Valor Venta Comercial debe ser mayor a $0.');
                       }
 
-                      // Etapa 2 validaciones: Obligatorio todo en despacho excepto horaCita (opcional)
+                      // Etapa 2 validaciones:
                       const isDispatchedState = ['Despachado', 'En Sitio / Bodega', 'Entregado'].includes(editingOrder.estado);
                       const isDespachoOrBeyond = orderFormActiveStep === 'despacho' || orderFormActiveStep === 'entrega' || isDispatchedState || Boolean(editingOrder.factura?.trim());
 
+                      const isEmp = editingOrder.tipoPedido === 'EMPLEADO' || (editingOrder.transportadora && editingOrder.transportadora.toUpperCase().includes('EMPLEADO'));
+
                       if (isDespachoOrBeyond) {
-                        if (!editingOrder.transportadora?.trim()) {
-                          errors.push('Operador Transportador: Selección requerida.');
-                        }
-                        if (!editingOrder.placa?.trim()) {
-                          errors.push('Placa Vehículo: Requerida (Ej: SWD-913).');
-                        }
-                        if (!editingOrder.conductor?.trim()) {
-                          errors.push('Nombre Conductor: Requerido.');
-                        }
-                        if (!editingOrder.celular?.trim()) {
-                          errors.push('Celular Conductor: Requerido.');
-                        }
-                        if (!editingOrder.factura?.trim()) {
-                          errors.push('Factura Venta Despacho: Requerida.');
-                        }
-                        if (!editingOrder.fechaFactura?.trim()) {
-                          errors.push('Fecha Factura Venta: Requerida.');
-                        }
-                        if (!editingOrder.fechaSalida?.trim()) {
-                          errors.push('Fecha de Salida (Despacho): Requerida.');
-                        }
-                        if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) {
-                          errors.push('Cajas Facturadas: Requerido (mayor a 0 cj).');
-                        }
-                        if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) {
-                          errors.push('Peso Facturado: Requerido (mayor a 0 kg).');
-                        }
-                        if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) {
-                          errors.push('Valor Final Facturado: Requerido (mayor a $0).');
-                        }
-                        if (editingOrder.flete === undefined || editingOrder.flete === null || Number(editingOrder.flete) < 0) {
-                          errors.push('Costo Flete Despacho: Requerido.');
+                        if (isEmp) {
+                          // Pedido de Empleado: NO requiere transportadora, placa, conductor, celular, fecha de salida, hora cita, flete
+                          if (!editingOrder.factura?.trim()) {
+                            errors.push('Factura Venta / Vale de Entrega: Requerido.');
+                          }
+                          if (!editingOrder.fechaFactura?.trim()) {
+                            errors.push('Fecha Factura Venta: Requerida.');
+                          }
+                          if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) {
+                            errors.push('Cajas Facturadas: Requerido (mayor a 0 cj).');
+                          }
+                          if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) {
+                            errors.push('Peso Facturado: Requerido (mayor a 0 kg).');
+                          }
+                          if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) {
+                            errors.push('Valor Final Facturado: Requerido (mayor a $0).');
+                          }
+                        } else {
+                          // Pedido Comercial Normal: Todo obligatorio excepto horaCita (opcional)
+                          if (!editingOrder.transportadora?.trim()) {
+                            errors.push('Operador Transportador: Selección requerida.');
+                          }
+                          if (!editingOrder.placa?.trim()) {
+                            errors.push('Placa Vehículo: Requerida (Ej: SWD-913).');
+                          }
+                          if (!editingOrder.conductor?.trim()) {
+                            errors.push('Nombre Conductor: Requerido.');
+                          }
+                          if (!editingOrder.celular?.trim()) {
+                            errors.push('Celular Conductor: Requerido.');
+                          }
+                          if (!editingOrder.factura?.trim()) {
+                            errors.push('Factura Venta Despacho: Requerida.');
+                          }
+                          if (!editingOrder.fechaFactura?.trim()) {
+                            errors.push('Fecha Factura Venta: Requerida.');
+                          }
+                          if (!editingOrder.fechaSalida?.trim()) {
+                            errors.push('Fecha de Salida (Despacho): Requerida.');
+                          }
+                          if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) {
+                            errors.push('Cajas Facturadas: Requerido (mayor a 0 cj).');
+                          }
+                          if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) {
+                            errors.push('Peso Facturado: Requerido (mayor a 0 kg).');
+                          }
+                          if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) {
+                            errors.push('Valor Final Facturado: Requerido (mayor a $0).');
+                          }
+                          if (editingOrder.flete === undefined || editingOrder.flete === null || Number(editingOrder.flete) < 0) {
+                            errors.push('Costo Flete Despacho: Requerido.');
+                          }
                         }
                       }
 
                       if (errors.length > 0) {
                         setOrderFormErrors(errors);
-                        if (errors.some(e => e.includes('PV') || e.includes('Cliente') || e.includes('Ciudad') || e.includes('Solicitadas') || e.includes('Solicitado') || e.includes('Comercial')) && orderFormActiveStep === 'registro') {
+                        if (errors.some(e => e.includes('PV') || e.includes('Beneficiario') || e.includes('Cliente') || e.includes('Ciudad') || e.includes('Solicitadas') || e.includes('Solicitado') || e.includes('Comercial')) && orderFormActiveStep === 'registro') {
                           setOrderFormActiveStep('registro');
                         } else {
                           setOrderFormActiveStep('despacho');
@@ -6021,9 +6307,21 @@ export default function App() {
                         return;
                       }
 
-                      const isNew = !orders.some(o => o.id === editingOrder.id);
-                      if (isNew) handleAddOrder(editingOrder);
-                      else handleUpdateOrder(editingOrder);
+                      let orderToSave: Order = { ...editingOrder };
+                      if (isEmp) {
+                        orderToSave.flete = 0;
+                        orderToSave.provision = '';
+                        orderToSave.transportadora = orderToSave.transportadora || 'ENTREGA DIRECTA (EMPLEADO)';
+                        orderToSave.placa = orderToSave.placa || 'N/A';
+                        orderToSave.conductor = orderToSave.conductor || orderToSave.cliente || 'EMPLEADO';
+                        if (!orderToSave.fechaSalida && orderToSave.fechaFactura) {
+                          orderToSave.fechaSalida = orderToSave.fechaFactura;
+                        }
+                      }
+
+                      const isNew = !orders.some(o => o.id === orderToSave.id);
+                      if (isNew) handleAddOrder(orderToSave);
+                      else handleUpdateOrder(orderToSave);
                       setIsOrderFormOpen(false);
                     }}
                     className="bg-hud-accent text-slate-950 font-black tracking-widest px-6 py-2.5 rounded-lg hover:bg-hud-accent/80 transition-all font-display uppercase cursor-pointer"

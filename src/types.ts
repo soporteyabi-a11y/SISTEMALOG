@@ -33,6 +33,7 @@ export interface Order {
   anuladoMotivo?: string;
   isSplit?: boolean;
   direccion?: string;
+  tipoPedido?: 'CLIENTE' | 'EMPLEADO';
   creadoPor?: string;
   creadoEn?: string;
   modificadoPor?: string;
