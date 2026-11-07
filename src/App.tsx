@@ -558,6 +558,8 @@ export default function App() {
   // Modals management
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
   const [isOrderFormOpen, setIsOrderFormOpen] = useState(false);
+  const [orderFormActiveStep, setOrderFormActiveStep] = useState<'registro' | 'despacho' | 'entrega'>('registro');
+  const [orderFormErrors, setOrderFormErrors] = useState<string[]>([]);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editingCarrierId, setEditingCarrierId] = useState<string | null>(null);
 
@@ -1001,28 +1003,31 @@ export default function App() {
   // Order CRUD
   const fillBillingDefaults = (o: Order): Order => {
     const oUpper: Order = { ...o };
-    Object.keys(oUpper).forEach((k) => {
+    ['pv', 'oc', 'cliente', 'ciudad', 'origen', 'factura', 'provision', 'transportadora', 'placa', 'conductor'].forEach((k) => {
       const key = k as keyof Order;
-      if (typeof oUpper[key] === 'string' && key !== 'id' && key !== 'estado') {
-        (oUpper as any)[key] = (oUpper[key] as string).toUpperCase();
+      if (typeof oUpper[key] === 'string' && oUpper[key]) {
+        (oUpper as any)[key] = (oUpper[key] as string).toUpperCase().trim();
       }
     });
 
-    const requiresBilling = ['Despachado', 'En Sitio / Bodega', 'Entregado', 'Finalizado'].includes(oUpper.estado);
-    if (requiresBilling) {
-      let finalFacturado = oUpper.facturado;
-      const numFactura = Number(String(oUpper.factura).replace(/[^0-9]/g, ''));
-      if (
-        !finalFacturado ||
-        finalFacturado === numFactura ||
-        (finalFacturado > 0 && finalFacturado < 100000 && oUpper.venta > 100000)
-      ) {
-        finalFacturado = oUpper.venta;
-      }
+    const isDispatched = ['Despachado', 'En Sitio / Bodega', 'Entregado', 'Finalizado'].includes(oUpper.estado);
+    if (isDispatched) {
+      const finalFacturado = (oUpper.facturado !== undefined && oUpper.facturado !== null && Number(oUpper.facturado) > 0)
+        ? Number(oUpper.facturado)
+        : (Number(oUpper.venta) || 0);
+
+      const finalCajasFact = (oUpper.cajasFact !== undefined && oUpper.cajasFact !== null && Number(oUpper.cajasFact) > 0)
+        ? Number(oUpper.cajasFact)
+        : (Number(oUpper.cajas) || 0);
+
+      const finalPesoFact = (oUpper.pesoFact !== undefined && oUpper.pesoFact !== null && Number(oUpper.pesoFact) > 0)
+        ? Number(oUpper.pesoFact)
+        : (Number(oUpper.peso) || 0);
+
       return {
         ...oUpper,
-        cajasFact: oUpper.cajasFact && oUpper.cajasFact > 0 ? oUpper.cajasFact : oUpper.cajas,
-        pesoFact: oUpper.pesoFact && oUpper.pesoFact > 0 ? oUpper.pesoFact : oUpper.peso,
+        cajasFact: finalCajasFact,
+        pesoFact: finalPesoFact,
         facturado: finalFacturado,
       };
     }
@@ -2504,6 +2509,7 @@ export default function App() {
 
   const handleOpenOrderForm = (order?: Order, isSplitAction?: boolean) => {
     setOrderFormClientSearch('');
+    setOrderFormErrors([]);
     if (order) {
       if (isSplitAction) {
         // Setup blank pre-filled order but copy details from existing order for split shipment
@@ -2548,23 +2554,32 @@ export default function App() {
           isSplit: true
         });
       } else {
-        let initFacturado = order.facturado;
-        const numFactura = Number(String(order.factura).replace(/[^0-9]/g, ''));
-        if (
-          !initFacturado ||
-          initFacturado === numFactura ||
-          (initFacturado > 0 && initFacturado < 100000 && order.venta > 100000)
-        ) {
-          initFacturado = order.venta;
-        }
+        // Deep preserve: keep all existing values exactly as saved without destructive overwriting
         const matchedCarrier = carriers.find(c => c.nombre.trim().toUpperCase() === (order.transportadora || '').trim().toUpperCase());
         setEditingOrder({
           ...order,
           transportadora: matchedCarrier ? matchedCarrier.nombre : (order.transportadora || ''),
-          facturado: initFacturado,
-          cajasFact: order.cajasFact || 0,
-          pesoFact: order.pesoFact || 0,
+          facturado: order.facturado !== undefined && order.facturado !== null && order.facturado > 0 ? order.facturado : (order.venta || 0),
+          cajasFact: order.cajasFact !== undefined && order.cajasFact !== null && order.cajasFact > 0 ? order.cajasFact : (order.cajas || 0),
+          pesoFact: order.pesoFact !== undefined && order.pesoFact !== null && order.pesoFact > 0 ? order.pesoFact : (order.peso || 0),
+          provision: order.provision || '',
+          fechaSalida: order.fechaSalida || '',
+          fechaEntrega: order.fechaEntrega || '',
+          fechaFactura: order.fechaFactura || '',
         });
+
+        // Determine default active step based on order status or current user role
+        if (currentUser?.email?.toLowerCase().includes('auxlogistico') || currentUser?.rol === 'AUXILIAR_LOGISTICO') {
+          setOrderFormActiveStep('registro');
+        } else if (currentUser?.email?.toLowerCase().includes('logistica') || currentUser?.rol === 'LOGISTICA') {
+          setOrderFormActiveStep('despacho');
+        } else if (order.estado === 'Despachado' || order.estado === 'Entregado' || order.provision) {
+          setOrderFormActiveStep('entrega');
+        } else if (order.factura || order.fechaSalida) {
+          setOrderFormActiveStep('despacho');
+        } else {
+          setOrderFormActiveStep('registro');
+        }
       }
     } else {
       // Setup blank pre-filled order with safe ID generation checking both active and deleted orders
@@ -2607,6 +2622,7 @@ export default function App() {
         estado: "Pendiente",
         obs: ""
       });
+      setOrderFormActiveStep('registro');
     }
     setIsOrderFormOpen(true);
   };
@@ -5246,347 +5262,600 @@ export default function App() {
               <button onClick={() => setIsOrderFormOpen(false)} className="text-slate-400 hover:text-white text-lg">✕</button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* ALERTA / REGISTRO MULTIPLES FACTURAS PARA EL MISMO PV */}
-              {editingOrder.pv && orders.some(o => 
-                o.pv && 
-                o.pv.toString().trim().toLowerCase() === editingOrder.pv.toString().trim().toLowerCase() && 
-                o.id !== editingOrder.id && 
-                o.estado !== 'Anulado'
-              ) && (
-                <div className="col-span-1 md:col-span-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div className="space-y-1">
-                    <div className="text-yellow-400 font-bold flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
-                      <span className="w-2 h-2 rounded-full bg-yellow-500 animate-ping inline-block"></span>
-                      ⚠️ Alerta: Ya existe un registro activo con el PV {editingOrder.pv}
+            {/* Banner de Validación de Campos Obligatorios */}
+            {orderFormErrors.length > 0 && (
+              <div className="bg-rose-950/70 border-2 border-rose-500/80 p-3 rounded-xl text-xs font-mono space-y-1.5 shadow-xl animate-fade-in">
+                <div className="flex items-center justify-between font-bold text-rose-300">
+                  <span className="flex items-center gap-2 text-rose-400">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    CAMPOS OBLIGATORIOS REQUERIDOS (HORA DE ENTREGA ES LA ÚNICA OPCIONAL)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setOrderFormErrors([])}
+                    className="text-slate-400 hover:text-white text-[11px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 cursor-pointer"
+                  >
+                    Entendido ✕
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-[11px] text-rose-200/90 pt-1">
+                  {orderFormErrors.map((err, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5">
+                      <span className="text-rose-400 font-bold">•</span>
+                      <span>{err}</span>
                     </div>
-                    <p className="text-[10px] text-slate-400 leading-normal font-sans">
-                      Este PV ya cuenta con despachos en el sistema. Para ingresar una <strong>factura o transportadora adicional</strong> en fecha diferente, active la opción de la derecha para crearlo como un despacho independiente.
-                    </p>
-                  </div>
-                  <label className="flex items-center gap-2 bg-yellow-500/5 hover:bg-yellow-500/10 border border-yellow-500/20 px-3 py-2 rounded cursor-pointer select-none whitespace-nowrap transition-all self-start sm:self-center">
-                    <input 
-                      type="checkbox"
-                      checked={!!editingOrder.isSplit}
-                      onChange={e => setEditingOrder({ ...editingOrder, isSplit: e.target.checked })}
-                      className="w-4 h-4 rounded border-slate-800 bg-slate-950 text-yellow-500 accent-yellow-500 focus:ring-0 cursor-pointer"
-                    />
-                    <span className="text-yellow-400 font-black text-[9px] tracking-widest uppercase">REGISTRAR FACTURA/DESPACHO ADICIONAL</span>
-                  </label>
+                  ))}
                 </div>
-              )}
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-hud-accent font-bold uppercase block">Flete ID</label>
-                <input 
-                  type="text" 
-                  readOnly
-                  value={editingOrder.id}
-                  className="bg-black border border-hud-accent/20 p-2.5 rounded text-hud-accent font-bold w-full text-center"
-                />
               </div>
+            )}
 
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Pedido de Venta (PV)</label>
-                <input 
-                  type="text" 
-                  value={editingOrder.pv}
-                  onChange={e => setEditingOrder({ ...editingOrder, pv: e.target.value })}
-                  placeholder="E.g., 4500308925"
-                  className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none font-bold focus:border-hud-accent"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Orden Compra (OC)</label>
-                <input 
-                  type="text" 
-                  value={editingOrder.oc}
-                  onChange={e => setEditingOrder({ ...editingOrder, oc: e.target.value })}
-                  className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
-                />
-              </div>
-
-              {/* Selection row elements */}
-              <div className="space-y-1 col-span-2 relative" ref={customerDropdownRef}>
-                <label className="text-[10px] text-slate-400 uppercase block">Cliente Destinatario</label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Escribe para buscar o ingresar cliente..."
-                    value={
-                      isCustomerDropdownOpen 
-                        ? orderFormClientSearch 
-                        : (editingOrder.cliente ? `${editingOrder.cliente} (${editingOrder.ciudad})` : '')
-                    }
-                    onFocus={() => {
-                      setIsCustomerDropdownOpen(true);
-                      setOrderFormClientSearch(editingOrder.cliente || '');
-                    }}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setOrderFormClientSearch(val);
-                      // Update cliente directly so custom entries still work
-                      setEditingOrder({
-                        ...editingOrder,
-                        cliente: val
-                      });
-                    }}
-                    className="bg-slate-950 border border-slate-800 text-xs text-white rounded p-2.5 w-full outline-none focus:border-hud-accent font-bold pr-10"
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
-                    <ChevronDown className="w-4 h-4" />
-                  </div>
-                </div>
-
-                {isCustomerDropdownOpen && (
-                  <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-[#0a1224] border-2 border-hud-accent/40 rounded-lg shadow-2xl divide-y divide-slate-900 scrollbar-thin">
-                    {(() => {
-                      const q = orderFormClientSearch.toLowerCase().trim();
-                      const filtered = customers.filter(c => {
-                        if (!q) return true;
-                        return c.nombre.toLowerCase().includes(q) ||
-                               (c.nit && c.nit.toLowerCase().includes(q)) ||
-                               (c.dir && c.dir.toLowerCase().includes(q)) ||
-                               (c.ciudad && c.ciudad.toLowerCase().includes(q));
-                      });
-
-                      if (filtered.length === 0) {
-                        return (
-                          <div className="p-3 text-xs text-slate-500 italic">
-                            No se encontraron coincidencias. Puedes seguir escribiendo para un cliente nuevo.
-                          </div>
-                        );
-                      }
-
-                      return filtered.map(c => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setEditingOrder({
-                              ...editingOrder,
-                              cliente: c.nombre,
-                              ciudad: c.ciudad,
-                              direccion: c.dir
-                            });
-                            setOrderFormClientSearch('');
-                            setIsCustomerDropdownOpen(false);
-                          }}
-                          className="w-full text-left p-3 hover:bg-slate-900/80 transition-colors flex flex-col gap-1 cursor-pointer"
-                        >
-                          <div className="flex justify-between items-center gap-2">
-                            <span className="font-bold text-white text-xs truncate">{c.nombre}</span>
-                            <span className="text-[10px] bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-hud-accent font-mono shrink-0">{c.ciudad}</span>
-                          </div>
-                          {c.dir && (
-                            <span className="text-[10px] text-slate-400 font-mono block truncate">
-                              📍 {c.dir}
-                            </span>
-                          )}
-                        </button>
-                      ));
-                    })()}
-                  </div>
-                )}
-
-                {/* Mostrar detalles completos de la sede del cliente seleccionado para validación rápida de sucursal */}
-                {(() => {
-                  let selectedCust = null;
-                  if (editingOrder.direccion) {
-                    selectedCust = customers.find(c => 
-                      c.nombre.trim().toUpperCase() === editingOrder.cliente.trim().toUpperCase() && 
-                      c.ciudad.trim().toUpperCase() === editingOrder.ciudad.trim().toUpperCase() &&
-                      c.dir.trim().toUpperCase() === editingOrder.direccion.trim().toUpperCase()
-                    );
-                  }
-                  if (!selectedCust) {
-                    selectedCust = customers.find(c => 
-                      c.nombre.trim().toUpperCase() === editingOrder.cliente.trim().toUpperCase() && 
-                      c.ciudad.trim().toUpperCase() === editingOrder.ciudad.trim().toUpperCase()
-                    );
-                  }
-                  if (selectedCust) {
-                    return (
-                      <div className="mt-2 bg-slate-950/60 border border-slate-800/80 p-3 rounded-lg text-[11px] font-mono space-y-1">
-                        <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          📍 SEDE REGISTRADA COINCIDENTE (SUCURSAL SELECCIONADA):
-                        </div>
-                        <div className="grid grid-cols-1 gap-y-1 mt-1.5 text-slate-350">
-                          <div><span className="text-slate-500">Razón Social:</span> <strong className="text-white">{selectedCust.nombre}</strong></div>
-                          <div><span className="text-slate-550">Dirección de Despacho:</span> <strong className="text-[#00ffa3]">{selectedCust.dir || "Sin Dirección Registrada"}</strong></div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Ciudad Sede Destino</label>
-                <input 
-                  type="text" 
-                  value={editingOrder.ciudad}
-                  onChange={e => setEditingOrder({ ...editingOrder, ciudad: e.target.value })}
-                  className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none font-bold"
-                />
-              </div>
-
-              {/* cargo metrics */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Peso Neto (Kg)</label>
-                <input 
-                  type="number" 
-                  value={editingOrder.peso}
-                  onChange={e => handleUpdateEditingOrderField('peso', Number(e.target.value))}
-                  className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Total Cajas (Cj)</label>
-                <input 
-                  type="number" 
-                  value={editingOrder.cajas}
-                  onChange={e => handleUpdateEditingOrderField('cajas', Number(e.target.value))}
-                  className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Valor Venta comercial</label>
-                <input 
-                  type="number" 
-                  value={editingOrder.venta}
-                  onChange={e => handleUpdateEditingOrderField('venta', Number(e.target.value))}
-                  className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
-                />
-              </div>
-
-              {/* Transit Operators */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Operador seleccionado</label>
-                <select 
-                  value={editingOrder.transportadora}
-                  onChange={e => handleUpdateEditingOrderField('transportadora', e.target.value)}
-                  className="bg-slate-950 border border-slate-800 text-xs text-white rounded p-2.5 w-full outline-none font-bold"
+            {/* Step Navigation Bar for Operational Role Separation */}
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/80 p-2 rounded-xl border border-slate-800">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setOrderFormActiveStep('registro')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+                    orderFormActiveStep === 'registro'
+                      ? 'bg-[#38bdf8] text-slate-950 shadow-md font-black'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
                 >
-                  <option value="">SIN ASIGNAR (PENDIENTE DE PROGRAMACIÓN)</option>
-                  {editingOrder.transportadora && !carriers.some(c => c.nombre.trim().toUpperCase() === editingOrder.transportadora.trim().toUpperCase()) && (
-                    <option value={editingOrder.transportadora}>{editingOrder.transportadora}</option>
-                  )}
-                  {carriers.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                </select>
+                  <span>1. Registro / Ingreso</span>
+                  <span className="text-[9px] bg-slate-950/30 px-1 rounded font-normal">Deyci</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrderFormActiveStep('despacho')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+                    orderFormActiveStep === 'despacho'
+                      ? 'bg-[#00c9a7] text-slate-950 shadow-md font-black'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <span>2. Despacho / Muelle</span>
+                  <span className="text-[9px] bg-slate-950/30 px-1 rounded font-normal">Julián</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setOrderFormActiveStep('entrega')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+                    orderFormActiveStep === 'entrega'
+                      ? 'bg-[#ffab00] text-slate-950 shadow-md font-black'
+                      : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                  }`}
+                >
+                  <span>3. Entrega & Provisión</span>
+                  <span className="text-[9px] bg-slate-950/30 px-1 rounded font-normal">Washington</span>
+                </button>
               </div>
 
-              <div className="space-y-1 text-slate-400">
-                <label className="text-[10px] uppercase block">Placa</label>
-                <input 
-                  type="text" 
-                  value={editingOrder.placa}
-                  onChange={e => setEditingOrder({ ...editingOrder, placa: e.target.value })}
-                  placeholder="E.g., SWD-913"
-                  className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
-                />
+              {/* Order quick overview chip */}
+              <div className="text-[10px] text-slate-400 font-mono hidden md:flex items-center gap-2">
+                <span>Orden: <strong className="text-white">{editingOrder.id}</strong></span>
+                <span>•</span>
+                <span>PV: <strong className="text-yellow-400">{editingOrder.pv || 'S/N'}</strong></span>
+                <span>•</span>
+                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                  editingOrder.estado === 'Entregado' ? 'bg-emerald-500/20 text-emerald-400' :
+                  editingOrder.estado === 'Despachado' ? 'bg-sky-500/20 text-sky-400' :
+                  editingOrder.estado === 'En Cargue' ? 'bg-orange-500/20 text-orange-400' :
+                  'bg-yellow-500/20 text-yellow-400'
+                }`}>
+                  {editingOrder.estado}
+                </span>
               </div>
+            </div>
 
-              <div className="space-y-1 text-slate-400">
-                <label className="text-[10px] uppercase block">Conductor</label>
-                <input 
-                  type="text" 
-                  value={editingOrder.conductor}
-                  onChange={e => setEditingOrder({ ...editingOrder, conductor: e.target.value })}
-                  className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
-                />
-              </div>
+            {/* ETAPA 1: REGISTRO / INGRESO (DEYCI ANACONA) */}
+            {orderFormActiveStep === 'registro' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="bg-[#38bdf8]/5 border border-[#38bdf8]/20 p-2.5 rounded-lg text-[10px] font-mono text-[#38bdf8] flex items-center justify-between">
+                  <span>📌 <strong>ETAPA 1: DATOS BÁSICOS Y SOLICITUD COMERCIAL</strong> — Responsable: Deyci Anacona / Auxiliar Logístico</span>
+                  <span className="text-slate-400">Paso 1 de 3</span>
+                </div>
 
-              {/* billing realities */}
-              <div className="col-span-3 bg-hud-green/5 border border-hud-green/10 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] text-hud-green font-bold uppercase block">Factura venta de despacho</label>
-                  <input 
-                    type="text" 
-                    value={editingOrder.factura}
-                    onChange={e => handleUpdateEditingOrderField('factura', e.target.value)}
-                    className="bg-slate-950 border border-hud-green/20 text-[#00ffa3] font-bold rounded p-2 w-full outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase block">Valor Final Facturado ($)</label>
-                  <input 
-                    type="number" 
-                    value={editingOrder.facturado || ''}
-                    onChange={e => handleUpdateEditingOrderField('facturado', e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-white rounded p-2 w-full outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase block">Cajas Facturadas (cj)</label>
-                  <input 
-                    type="number" 
-                    value={editingOrder.cajasFact || ''}
-                    onChange={e => handleUpdateEditingOrderField('cajasFact', e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-white rounded p-2 w-full outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase block font-bold tracking-wider text-hud-green">Peso Facturado (kg)</label>
-                  <input 
-                    type="number" 
-                    value={editingOrder.pesoFact || ''}
-                    onChange={e => handleUpdateEditingOrderField('pesoFact', e.target.value === '' ? 0 : Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-white rounded p-2 w-full outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-rose-450 font-bold uppercase block">Factura Provisión (Tr.)</label>
-                  <input 
-                    type="text" 
-                    value={editingOrder.provision || ''}
-                    onChange={e => handleUpdateEditingOrderField('provision', e.target.value)}
-                    placeholder="E.g., PRV-901"
-                    className="bg-slate-950 border border-rose-500/20 text-rose-300 font-bold rounded p-2 w-full outline-none"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] text-slate-400 uppercase block">Costo Transporte Flete ($)</label>
-                  <input 
-                    type="number" 
-                    value={editingOrder.flete || 0}
-                    onChange={e => handleUpdateEditingOrderField('flete', Number(e.target.value))}
-                    className="bg-slate-950 border border-slate-800 text-[#ffab00] font-bold rounded p-2 w-full outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* 📅 PROGRAMACIÓN Y FECHAS */}
-              <div className="col-span-3 border-t border-slate-800/60 pt-4 mt-2">
-                <h4 className="text-[11px] font-bold text-[#ffaa00] uppercase tracking-wider flex items-center gap-1.5 mb-3">
-                  📅 PROGRAMACIÓN Y FECHAS
-                </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] text-hud-accent font-bold uppercase block">Fecha de Ingreso</label>
+                    <label className="text-[10px] text-[#38bdf8] font-bold uppercase block">Flete ID (Código Sistema)</label>
+                    <input 
+                      type="text" 
+                      readOnly
+                      value={editingOrder.id}
+                      className="bg-black border border-[#38bdf8]/30 p-2.5 rounded text-[#38bdf8] font-bold w-full text-center"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Pedido de Venta (PV) *</label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.pv}
+                      onChange={e => setEditingOrder({ ...editingOrder, pv: e.target.value })}
+                      placeholder="E.g., 4500308925"
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none font-bold focus:border-[#38bdf8]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase block">Orden Compra (OC)</label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.oc}
+                      onChange={e => setEditingOrder({ ...editingOrder, oc: e.target.value })}
+                      placeholder="OC-00123"
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#38bdf8] font-bold uppercase block">Fecha de Ingreso *</label>
                     <input 
                       type="date" 
                       value={editingOrder.fechaIngreso || ''}
                       onChange={e => setEditingOrder({ ...editingOrder, fechaIngreso: e.target.value })}
-                      className="bg-slate-950 border border-hud-accent/20 text-hud-accent font-bold rounded p-2.5 w-full outline-none focus:border-hud-accent text-xs"
+                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none focus:border-[#38bdf8] text-xs"
                     />
                   </div>
+
+                  {/* Cliente Destinatario con dropdown */}
+                  <div className="space-y-1 col-span-2 relative" ref={customerDropdownRef}>
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Cliente Destinatario *</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Escribe para buscar o ingresar cliente..."
+                        value={
+                          isCustomerDropdownOpen 
+                            ? orderFormClientSearch 
+                            : (editingOrder.cliente ? `${editingOrder.cliente} (${editingOrder.ciudad})` : '')
+                        }
+                        onFocus={() => {
+                          setIsCustomerDropdownOpen(true);
+                          setOrderFormClientSearch(editingOrder.cliente || '');
+                        }}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setOrderFormClientSearch(val);
+                          setEditingOrder({
+                            ...editingOrder,
+                            cliente: val
+                          });
+                        }}
+                        className="bg-slate-950 border border-slate-800 text-xs text-white rounded p-2.5 w-full outline-none focus:border-[#38bdf8] font-bold pr-10"
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
+
+                    {isCustomerDropdownOpen && (
+                      <div className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-[#0a1224] border-2 border-hud-accent/40 rounded-lg shadow-2xl divide-y divide-slate-900 scrollbar-thin">
+                        {(() => {
+                          const q = orderFormClientSearch.toLowerCase().trim();
+                          const filtered = customers.filter(c => {
+                            if (!q) return true;
+                            return c.nombre.toLowerCase().includes(q) ||
+                                   (c.nit && c.nit.toLowerCase().includes(q)) ||
+                                   (c.dir && c.dir.toLowerCase().includes(q)) ||
+                                   (c.ciudad && c.ciudad.toLowerCase().includes(q));
+                          });
+
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="p-3 text-xs text-slate-500 italic">
+                                No se encontraron coincidencias. Puedes seguir escribiendo para un cliente nuevo.
+                              </div>
+                            );
+                          }
+
+                          return filtered.map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setEditingOrder({
+                                  ...editingOrder,
+                                  cliente: c.nombre,
+                                  ciudad: c.ciudad,
+                                  direccion: c.dir
+                                });
+                                setOrderFormClientSearch('');
+                                setIsCustomerDropdownOpen(false);
+                              }}
+                              className="w-full text-left p-3 hover:bg-slate-900/80 transition-colors flex flex-col gap-1 cursor-pointer"
+                            >
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="font-bold text-white text-xs truncate">{c.nombre}</span>
+                                <span className="text-[10px] bg-slate-900 border border-slate-800 px-1.5 py-0.5 rounded text-hud-accent font-mono shrink-0">{c.ciudad}</span>
+                              </div>
+                              {c.dir && (
+                                <span className="text-[10px] text-slate-400 font-mono block truncate">
+                                  📍 {c.dir}
+                                </span>
+                              )}
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase block">Salida</label>
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Ciudad Sede Destino *</label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.ciudad}
+                      onChange={e => setEditingOrder({ ...editingOrder, ciudad: e.target.value })}
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none font-bold focus:border-[#38bdf8]"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase block">Total Cajas Solicitadas (Cj) *</label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.cajas}
+                      onChange={e => handleUpdateEditingOrderField('cajas', Number(e.target.value))}
+                      className="bg-slate-950 border border-slate-800 text-[#38bdf8] font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase block">Peso Solicitado (Kg) *</label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.peso}
+                      onChange={e => handleUpdateEditingOrderField('peso', Number(e.target.value))}
+                      className="bg-slate-950 border border-slate-800 text-[#38bdf8] font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase block">Valor Venta Comercial ($) *</label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.venta}
+                      onChange={e => handleUpdateEditingOrderField('venta', Number(e.target.value))}
+                      className="bg-slate-950 border border-slate-800 text-[#38bdf8] font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase block">Hora Cita (Opcional)</label>
+                    <input 
+                      type="text" 
+                      placeholder="E.g., 08:00 o 14:30"
+                      value={editingOrder.horaCita || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, horaCita: e.target.value })}
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none text-xs"
+                    />
+                  </div>
+
+                  <div className="space-y-1 col-span-3">
+                    <label className="text-[10px] text-slate-400 uppercase block">Observaciones Iniciales de Despacho</label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.obs || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, obs: e.target.value })}
+                      placeholder="Observaciones de ingreso..."
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderFormActiveStep('despacho')}
+                    className="bg-[#00c9a7] hover:bg-[#00c9a7]/80 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs font-mono uppercase flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <span>Continuar a Despacho / Muelle ➔</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ETAPA 2: DESPACHO / MUELLE (JULIÁN BARRIOS) */}
+            {orderFormActiveStep === 'despacho' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="bg-[#00c9a7]/5 border border-[#00c9a7]/20 p-2.5 rounded-lg text-[10px] font-mono text-[#00c9a7] flex items-center justify-between">
+                  <span>🚛 <strong>ETAPA 2: OPERACIÓN DE CARGUE Y DESPACHO EN MUELLE</strong> — Responsable: Julián Barrios / Logística</span>
+                  <span className="text-amber-400 font-bold">* Campos obligatorios de despacho (Hora entrega opcional)</span>
+                </div>
+
+                {/* Resumen fijo de Etapa 1 */}
+                <div className="bg-slate-950/60 border border-slate-800 p-2.5 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-2 text-[10.5px] font-mono">
+                  <div><span className="text-slate-500 block">PV / Orden:</span> <strong className="text-white">{editingOrder.pv || 'S/N'} ({editingOrder.id})</strong></div>
+                  <div><span className="text-slate-500 block">Cliente:</span> <strong className="text-white truncate block">{editingOrder.cliente}</strong></div>
+                  <div><span className="text-slate-500 block">Ciudad:</span> <strong className="text-hud-accent">{editingOrder.ciudad}</strong></div>
+                  <div><span className="text-slate-500 block">Solicitado:</span> <strong className="text-slate-300">{editingOrder.cajas} cj / {editingOrder.peso} kg</strong></div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Transportadora */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                      Operador Transportador <span className="text-rose-400">*</span>
+                    </label>
+                    <select 
+                      value={editingOrder.transportadora}
+                      onChange={e => handleUpdateEditingOrderField('transportadora', e.target.value)}
+                      className="bg-slate-950 border border-[#00c9a7]/40 text-xs text-white rounded p-2.5 w-full outline-none font-bold"
+                    >
+                      <option value="">-- SELECCIONAR TRANSPORTADORA OBLIGATORIA --</option>
+                      {editingOrder.transportadora && !carriers.some(c => c.nombre.trim().toUpperCase() === editingOrder.transportadora.trim().toUpperCase()) && (
+                        <option value={editingOrder.transportadora}>{editingOrder.transportadora}</option>
+                      )}
+                      {carriers.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Placa */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                      Placa Vehículo <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.placa || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, placa: e.target.value.toUpperCase() })}
+                      placeholder="Ej: SWD-913"
+                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                    />
+                  </div>
+
+                  {/* Conductor */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                      Nombre Conductor <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.conductor || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, conductor: e.target.value.toUpperCase() })}
+                      placeholder="Nombre del conductor"
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                    />
+                  </div>
+
+                  {/* Celular */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                      Celular Conductor <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.celular || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, celular: e.target.value })}
+                      placeholder="Teléfono móvil de contacto"
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                    />
+                  </div>
+
+                  {/* Factura Venta */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-hud-green font-bold uppercase block">
+                      Factura Venta Despacho <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.factura || ''}
+                      onChange={e => handleUpdateEditingOrderField('factura', e.target.value)}
+                      placeholder="Ej: 2650"
+                      className="bg-slate-950 border border-hud-green/40 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none focus:border-hud-green"
+                    />
+                  </div>
+
+                  {/* Fecha Factura */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-hud-green font-bold uppercase block">
+                      Fecha Factura Venta <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="date" 
+                      value={editingOrder.fechaFactura || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, fechaFactura: e.target.value })}
+                      className="bg-slate-950 border border-hud-green/30 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none text-xs"
+                    />
+                  </div>
+
+                  {/* Fecha Salida */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                      Fecha de Salida (Despacho) <span className="text-rose-400">*</span>
+                    </label>
                     <input 
                       type="date" 
                       value={editingOrder.fechaSalida || ''}
                       onChange={e => setEditingOrder({ ...editingOrder, fechaSalida: e.target.value })}
-                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-hud-accent text-xs"
+                      className="bg-slate-950 border border-[#00c9a7]/30 text-white font-bold rounded p-2.5 w-full outline-none text-xs"
                     />
                   </div>
+
+                  {/* Cajas Facturadas */}
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase block">Entrega Estimada</label>
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                      Cajas Facturadas (cj) <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.cajasFact || ''}
+                      onChange={e => handleUpdateEditingOrderField('cajasFact', e.target.value === '' ? 0 : Number(e.target.value))}
+                      placeholder={String(editingOrder.cajas || 0)}
+                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  {/* Peso Facturado */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                      Peso Facturado (kg) <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.pesoFact || ''}
+                      onChange={e => handleUpdateEditingOrderField('pesoFact', e.target.value === '' ? 0 : Number(e.target.value))}
+                      placeholder={String(editingOrder.peso || 0)}
+                      className="bg-slate-950 border border-slate-800 text-white font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  {/* Valor Facturado */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">
+                      Valor Final Facturado ($) <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.facturado || ''}
+                      onChange={e => handleUpdateEditingOrderField('facturado', e.target.value === '' ? 0 : Number(e.target.value))}
+                      placeholder={String(editingOrder.venta || 0)}
+                      className="bg-slate-950 border border-slate-800 text-hud-green font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  {/* Costo Flete */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#ffab00] font-bold uppercase block">
+                      Costo Flete Despacho ($) <span className="text-rose-400">*</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      value={editingOrder.flete || 0}
+                      onChange={e => handleUpdateEditingOrderField('flete', Number(e.target.value))}
+                      className="bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none"
+                    />
+                  </div>
+
+                  {/* Hora Entrega Cita (OPCIONAL) */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-400 uppercase block">
+                      Hora Entrega / Cita <span className="text-slate-500 font-normal">(Opcional)</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="Ej: 10:30 AM (Opcional)"
+                      value={editingOrder.horaCita || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, horaCita: e.target.value })}
+                      className="bg-slate-950 border border-slate-850 text-slate-300 rounded p-2.5 w-full outline-none text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-between pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderFormActiveStep('registro')}
+                    className="bg-slate-900 hover:bg-slate-850 text-slate-400 px-3 py-2 rounded-lg text-xs font-mono uppercase cursor-pointer"
+                  >
+                    ⬅ Volver a Registro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const errors: string[] = [];
+                      if (!editingOrder.transportadora?.trim()) errors.push('Operador Transportador: Selección requerida.');
+                      if (!editingOrder.placa?.trim()) errors.push('Placa Vehículo: Requerida (Ej: SWD-913).');
+                      if (!editingOrder.conductor?.trim()) errors.push('Nombre Conductor: Requerido.');
+                      if (!editingOrder.celular?.trim()) errors.push('Celular Conductor: Requerido.');
+                      if (!editingOrder.factura?.trim()) errors.push('Factura Venta Despacho: Requerida.');
+                      if (!editingOrder.fechaFactura?.trim()) errors.push('Fecha Factura Venta: Requerida.');
+                      if (!editingOrder.fechaSalida?.trim()) errors.push('Fecha de Salida (Despacho): Requerida.');
+                      if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) errors.push('Cajas Facturadas: Requerido (> 0 cj).');
+                      if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) errors.push('Peso Facturado: Requerido (> 0 kg).');
+                      if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) errors.push('Valor Final Facturado: Requerido (> $0).');
+                      if (editingOrder.flete === undefined || editingOrder.flete === null || Number(editingOrder.flete) < 0) errors.push('Costo Flete Despacho: Requerido.');
+
+                      if (errors.length > 0) {
+                        setOrderFormErrors(errors);
+                        return;
+                      }
+                      setOrderFormErrors([]);
+                      setOrderFormActiveStep('entrega');
+                    }}
+                    className="bg-[#ffab00] hover:bg-[#ffab00]/80 text-slate-950 font-bold px-4 py-2 rounded-lg text-xs font-mono uppercase flex items-center gap-1.5 cursor-pointer shadow-md"
+                  >
+                    <span>Ir a Entrega & Provisión ➔</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ETAPA 3: ENTREGA & FACTURA PROVISIÓN (WASHINGTON QUIÑONES) */}
+            {orderFormActiveStep === 'entrega' && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="bg-[#ffab00]/5 border border-[#ffab00]/20 p-2.5 rounded-lg text-[10px] font-mono text-[#ffab00] flex items-center justify-between">
+                  <span>📦 <strong>ETAPA 3: ENTREGA Y LIQUIDACIÓN CONTABLE DE PROVISIÓN</strong> — Responsable: Washington Quiñones / Mesa Contable</span>
+                  <span className="text-slate-400">Paso 3 de 3</span>
+                </div>
+
+                {/* Resumen fijo de Etapa 1 y 2 */}
+                <div className="bg-slate-950/60 border border-slate-800 p-3 rounded-lg grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px] font-mono">
+                  <div>
+                    <span className="text-slate-500 block text-[9.5px]">Transportadora:</span>
+                    <strong className="text-white block truncate">{editingOrder.transportadora || 'NO ASIGNADA'}</strong>
+                    <span className="text-slate-400 text-[9px]">Placa: {editingOrder.placa || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[9.5px]">Factura Venta:</span>
+                    <strong className="text-[#00ffa3] block font-bold">{editingOrder.factura || 'PENDIENTE'}</strong>
+                    <span className="text-slate-400 text-[9px]">Salida: {editingOrder.fechaSalida || '---'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[9.5px]">Despacho Real:</span>
+                    <strong className="text-white block">{editingOrder.cajasFact || editingOrder.cajas} cj / {editingOrder.pesoFact || editingOrder.peso} kg</strong>
+                    <span className="text-hud-green text-[9px]">${((editingOrder.facturado || editingOrder.venta) || 0).toLocaleString('es-CO')}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[9.5px]">Costo Transporte Flete:</span>
+                    <strong className="text-[#ffab00] text-sm block font-bold">${(Number(editingOrder.flete) || 0).toLocaleString('es-CO')}</strong>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Estado de la Orden */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Estado del Despacho</label>
+                    <select 
+                      value={editingOrder.estado}
+                      onChange={e => {
+                        const newEstado = e.target.value as any;
+                        let nextOrder = { ...editingOrder, estado: newEstado };
+                        if (newEstado === 'Entregado' && !nextOrder.fechaEntrega) {
+                          nextOrder.fechaEntrega = new Date().toISOString().split('T')[0];
+                        }
+                        setEditingOrder(nextOrder);
+                      }}
+                      className="bg-slate-950 border border-slate-800 text-xs text-white rounded p-2.5 w-full outline-none font-bold"
+                    >
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="En Cargue">En Cargue</option>
+                      <option value="Despachado">Despachado</option>
+                      <option value="En Sitio / Bodega">En Sitio / Bodega</option>
+                      <option value="Entregado">Entregado</option>
+                    </select>
+                  </div>
+
+                  {/* Factura Provisión (FP) - Blindada contra borrado */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-rose-400 font-bold uppercase block">
+                      Factura Provisión (FP Transportadora)
+                    </label>
+                    <input 
+                      type="text" 
+                      value={editingOrder.provision || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, provision: e.target.value.toUpperCase() })}
+                      placeholder="Ej: FP-1092 o PRV-240"
+                      className="bg-slate-950 border border-rose-500/40 text-rose-300 font-bold rounded p-2.5 w-full outline-none focus:border-rose-400 font-mono"
+                    />
+                  </div>
+
+                  {/* Fecha Entrega Real */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Fecha Entrega Real (Cumplido)</label>
                     <input 
                       type="date" 
                       value={editingOrder.fechaEntrega || ''}
@@ -5594,72 +5863,49 @@ export default function App() {
                       className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-hud-accent text-xs"
                     />
                   </div>
+
+                  {/* Costo Flete Definitivo */}
                   <div className="space-y-1">
-                    <label className="text-[10px] text-slate-400 uppercase block">Hora Cita</label>
+                    <label className="text-[10px] text-[#ffab00] font-bold uppercase block">Flete Pactado Final ($)</label>
                     <input 
-                      type="text" 
-                      placeholder="E.g., 08:00 o 14:30"
-                      value={editingOrder.horaCita || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, horaCita: e.target.value })}
-                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none focus:border-hud-accent text-xs"
+                      type="number" 
+                      value={editingOrder.flete || 0}
+                      onChange={e => setEditingOrder({ ...editingOrder, flete: Number(e.target.value) })}
+                      className="bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none"
                     />
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-hud-green font-bold uppercase block">Fecha Facturación</label>
+
+                  {/* Observaciones de Entrega */}
+                  <div className="space-y-1 col-span-2">
+                    <label className="text-[10px] text-slate-400 uppercase block">Observaciones de Liquidación / Novedad</label>
                     <input 
-                      type="date" 
-                      value={editingOrder.fechaFactura || ''}
-                      onChange={e => setEditingOrder({ ...editingOrder, fechaFactura: e.target.value })}
-                      className="bg-slate-950 border border-hud-green/20 text-[#00ffa3] font-bold rounded p-2.5 w-full outline-none focus:border-hud-green text-xs"
+                      type="text" 
+                      value={editingOrder.obs || ''}
+                      onChange={e => setEditingOrder({ ...editingOrder, obs: e.target.value })}
+                      placeholder="Detalles de liquidación, cumplidos o retenciones..."
+                      className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* State control */}
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-400 uppercase block">Estado de Lote</label>
-                <select 
-                  value={editingOrder.estado}
-                  onChange={e => {
-                    const newEstado = e.target.value as any;
-                    let nextOrder = { ...editingOrder, estado: newEstado };
-                    if (newEstado !== 'Pendiente' && !nextOrder.transportadora) {
-                      nextOrder.transportadora = carriers[0]?.nombre || '';
-                      // Recalculate flete for the new carrier
-                      const vFact = Number(nextOrder.facturado) > 0 ? Number(nextOrder.facturado) : Number(nextOrder.venta || 0);
-                      const cFact = Number(nextOrder.cajasFact) > 0 ? Number(nextOrder.cajasFact) : Number(nextOrder.cajas || 0);
-                      nextOrder.flete = calculateCarrierFlete(nextOrder.transportadora, vFact, cFact, carriers, nextOrder.cliente);
-                    }
-                    setEditingOrder(nextOrder);
-                  }}
-                  className="bg-slate-950 border border-slate-800 text-xs text-white rounded p-2.5 w-full outline-none font-bold"
-                >
-                  <option value="Pendiente">Pendiente</option>
-                  <option value="En Cargue">En Cargue</option>
-                  <option value="Despachado">Despachado</option>
-                  <option value="En Sitio / Bodega">En Sitio / Bodega</option>
-                  <option value="Entregado">Entregado</option>
-                </select>
+                <div className="flex justify-start pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderFormActiveStep('despacho')}
+                    className="bg-slate-900 hover:bg-slate-850 text-slate-400 px-3 py-2 rounded-lg text-xs font-mono uppercase cursor-pointer"
+                  >
+                    ⬅ Volver a Despacho / Muelle
+                  </button>
+                </div>
               </div>
-
-              <div className="space-y-1 col-span-2">
-                <label className="text-[10px] text-slate-400 uppercase block">Observaciones Generales</label>
-                <input 
-                  type="text" 
-                  value={editingOrder.obs}
-                  onChange={e => setEditingOrder({ ...editingOrder, obs: e.target.value })}
-                  className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none"
-                />
-              </div>
-            </div>
+            )}
 
             {/* Sello de Auditoría & Autoría en la Orden */}
             <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-[10.5px] font-mono">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#00c5d8] animate-pulse"></span>
                 <span className="text-slate-400">Registrado por:</span>
-                <strong className="text-[#00c5d8]">{editingOrder.creadoPor || 'Washington Quiñones (soporteyabi@gmail.com)'}</strong>
+                <strong className="text-[#00c5d8]">{editingOrder.creadoPor || 'Deyci Anacona (auxlogistico@latinproducts.com.co)'}</strong>
                 {editingOrder.creadoEn && (
                   <span className="text-slate-500">· {editingOrder.creadoEn.split('T')[0]}</span>
                 )}
@@ -5688,29 +5934,102 @@ export default function App() {
                 <button 
                   type="button" 
                   onClick={() => setIsOrderFormOpen(false)}
-                  className="bg-slate-900 hover:bg-slate-850 text-slate-350 px-5 py-2.5 rounded-lg"
+                  className="bg-slate-900 hover:bg-slate-850 text-slate-350 px-5 py-2.5 rounded-lg cursor-pointer"
                 >
                   Cerrar
                 </button>
                 <button 
                   type="button" 
                   onClick={() => printSingleOrder(editingOrder, carriers, customers)}
-                  className="bg-[#00ffa3]/10 border border-[#00ffa3]/40 hover:bg-[#00ffa3]/20 text-[#00ffa3] font-bold px-5 py-2.5 rounded-lg flex items-center gap-1.5 uppercase transition-all"
+                  className="bg-[#00ffa3]/10 border border-[#00ffa3]/40 hover:bg-[#00ffa3]/20 text-[#00ffa3] font-bold px-5 py-2.5 rounded-lg flex items-center gap-1.5 uppercase transition-all cursor-pointer"
                 >
                   <Printer className="w-4 h-4" /> IMPRIMIR SOLICITUD
                 </button>
-                <button 
-                  type="button" 
-                  onClick={() => {
-                    const isNew = !orders.some(o => o.id === editingOrder.id);
-                    if (isNew) handleAddOrder(editingOrder);
-                    else handleUpdateOrder(editingOrder);
-                    setIsOrderFormOpen(false);
-                  }}
-                  className="bg-hud-accent text-slate-950 font-black tracking-widest px-6 py-2.5 rounded-lg hover:bg-hud-accent/80 transition-all font-display uppercase"
-                >
-                  GUARDAR PEDIDO ✔️
-                </button>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setOrderFormErrors([]);
+                      const errors: string[] = [];
+
+                      // Etapa 1 validaciones básicas
+                      if (!editingOrder.pv?.trim()) {
+                        errors.push('Pedido de Venta (PV) es obligatorio.');
+                      }
+                      if (!editingOrder.cliente?.trim()) {
+                        errors.push('Cliente Destinatario es obligatorio.');
+                      }
+                      if (!editingOrder.ciudad?.trim()) {
+                        errors.push('Ciudad Sede Destino es obligatoria.');
+                      }
+                      if (!editingOrder.cajas || Number(editingOrder.cajas) <= 0) {
+                        errors.push('Total Cajas Solicitadas debe ser mayor a 0.');
+                      }
+                      if (!editingOrder.peso || Number(editingOrder.peso) <= 0) {
+                        errors.push('Peso Solicitado debe ser mayor a 0 kg.');
+                      }
+                      if (!editingOrder.venta || Number(editingOrder.venta) <= 0) {
+                        errors.push('Valor Venta Comercial debe ser mayor a $0.');
+                      }
+
+                      // Etapa 2 validaciones: Obligatorio todo en despacho excepto horaCita (opcional)
+                      const isDispatchedState = ['Despachado', 'En Sitio / Bodega', 'Entregado'].includes(editingOrder.estado);
+                      const isDespachoOrBeyond = orderFormActiveStep === 'despacho' || orderFormActiveStep === 'entrega' || isDispatchedState || Boolean(editingOrder.factura?.trim());
+
+                      if (isDespachoOrBeyond) {
+                        if (!editingOrder.transportadora?.trim()) {
+                          errors.push('Operador Transportador: Selección requerida.');
+                        }
+                        if (!editingOrder.placa?.trim()) {
+                          errors.push('Placa Vehículo: Requerida (Ej: SWD-913).');
+                        }
+                        if (!editingOrder.conductor?.trim()) {
+                          errors.push('Nombre Conductor: Requerido.');
+                        }
+                        if (!editingOrder.celular?.trim()) {
+                          errors.push('Celular Conductor: Requerido.');
+                        }
+                        if (!editingOrder.factura?.trim()) {
+                          errors.push('Factura Venta Despacho: Requerida.');
+                        }
+                        if (!editingOrder.fechaFactura?.trim()) {
+                          errors.push('Fecha Factura Venta: Requerida.');
+                        }
+                        if (!editingOrder.fechaSalida?.trim()) {
+                          errors.push('Fecha de Salida (Despacho): Requerida.');
+                        }
+                        if (editingOrder.cajasFact === undefined || editingOrder.cajasFact === null || Number(editingOrder.cajasFact) <= 0) {
+                          errors.push('Cajas Facturadas: Requerido (mayor a 0 cj).');
+                        }
+                        if (editingOrder.pesoFact === undefined || editingOrder.pesoFact === null || Number(editingOrder.pesoFact) <= 0) {
+                          errors.push('Peso Facturado: Requerido (mayor a 0 kg).');
+                        }
+                        if (editingOrder.facturado === undefined || editingOrder.facturado === null || Number(editingOrder.facturado) <= 0) {
+                          errors.push('Valor Final Facturado: Requerido (mayor a $0).');
+                        }
+                        if (editingOrder.flete === undefined || editingOrder.flete === null || Number(editingOrder.flete) < 0) {
+                          errors.push('Costo Flete Despacho: Requerido.');
+                        }
+                      }
+
+                      if (errors.length > 0) {
+                        setOrderFormErrors(errors);
+                        if (errors.some(e => e.includes('PV') || e.includes('Cliente') || e.includes('Ciudad') || e.includes('Solicitadas') || e.includes('Solicitado') || e.includes('Comercial')) && orderFormActiveStep === 'registro') {
+                          setOrderFormActiveStep('registro');
+                        } else {
+                          setOrderFormActiveStep('despacho');
+                        }
+                        return;
+                      }
+
+                      const isNew = !orders.some(o => o.id === editingOrder.id);
+                      if (isNew) handleAddOrder(editingOrder);
+                      else handleUpdateOrder(editingOrder);
+                      setIsOrderFormOpen(false);
+                    }}
+                    className="bg-hud-accent text-slate-950 font-black tracking-widest px-6 py-2.5 rounded-lg hover:bg-hud-accent/80 transition-all font-display uppercase cursor-pointer"
+                  >
+                    GUARDAR PEDIDO ✔️
+                  </button>
               </div>
             </div>
           </div>
