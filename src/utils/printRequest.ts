@@ -496,3 +496,343 @@ export function printSingleOrder(order: Order, carriers: Carrier[], customers: C
   printWindow.document.write(html);
   printWindow.document.close();
 }
+
+export interface ManifestPrintData {
+  manifiestoId: string;
+  tipo: 'CONSOLIDADO' | 'INDIVIDUAL';
+  fechaSalida: string;
+  transportadora: string;
+  placa: string;
+  conductor: string;
+  celular?: string;
+  fleteTotal: number;
+  orders: Order[];
+  porcentajeFijado?: number;
+  observaciones?: string;
+}
+
+export function printManifestDocument(data: ManifestPrintData) {
+  const {
+    manifiestoId,
+    tipo,
+    fechaSalida,
+    transportadora,
+    placa,
+    conductor,
+    celular,
+    fleteTotal,
+    orders,
+    porcentajeFijado,
+    observaciones
+  } = data;
+
+  const totalFacturado = orders.reduce((sum, o) => sum + (Number(o.facturado || o.venta) || 0), 0);
+  const totalCajas = orders.reduce((sum, o) => sum + (Number(o.cajasFact || o.cajas) || 0), 0);
+  const totalPeso = orders.reduce((sum, o) => sum + (Number(o.pesoFact || o.peso) || 0), 0);
+  const totalFleteCalculado = orders.reduce((sum, o) => sum + (Number(o.flete) || 0), 0);
+  const fleteEfectivo = fleteTotal > 0 ? fleteTotal : totalFleteCalculado;
+  const pctGlobal = totalFacturado > 0 ? (fleteEfectivo / totalFacturado) * 100 : 0;
+  const todayStr = new Date().toLocaleDateString('es-CO');
+
+  const rowsHtml = orders.map((o, idx) => {
+    const vFact = Number(o.facturado || o.venta) || 0;
+    const partPct = totalFacturado > 0 ? (vFact / totalFacturado) * 100 : 0;
+    const oFlete = Number(o.flete) || 0;
+    const fleteFactPct = vFact > 0 ? (oFlete / vFact) * 100 : 0;
+
+    return `
+      <tr>
+        <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
+        <td><strong>${o.id}</strong><br><span style="font-size: 8.5px; color: #475569;">PV: ${o.pv || 'S/N'}</span></td>
+        <td style="font-weight: bold; color: #0f172a;">${o.factura || 'PENDIENTE'}</td>
+        <td><strong>${o.cliente}</strong></td>
+        <td>${o.ciudad || '---'}</td>
+        <td style="text-align: center; font-weight: bold;">${o.cajasFact || o.cajas}</td>
+        <td style="text-align: right;">${(Number(o.pesoFact || o.peso) || 0).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
+        <td style="text-align: right; font-weight: bold;">$ ${(Number(vFact) || 0).toLocaleString('es-CO')}</td>
+        <td style="text-align: center; font-size: 9px; color: #334155;">${partPct.toFixed(2)}%</td>
+        <td style="text-align: right; font-weight: bold;">$ ${(Number(oFlete) || 0).toLocaleString('es-CO')}</td>
+        <td style="text-align: center; font-weight: bold; color: #047857;">${fleteFactPct.toFixed(2)}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Manifiesto de Carga - ${manifiestoId}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 18px;
+      color: #0f172a;
+      background: #ffffff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      font-size: 10px;
+    }
+    .sheet {
+      max-width: 900px;
+      margin: 0 auto;
+      border: 1.5px solid #0f172a;
+      padding: 14px;
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 8px;
+    }
+    .logo-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      margin: 0;
+      color: #0f172a;
+    }
+    .logo-sub {
+      font-size: 10px;
+      font-weight: 700;
+      color: #475569;
+      margin: 2px 0 0 0;
+    }
+    .badge-modalidad {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #0f172a;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 10px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .trip-card {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      background: #f8fafc;
+    }
+    .trip-card td {
+      padding: 6px 10px;
+      border: 1px solid #cbd5e1;
+      font-size: 10px;
+    }
+    .trip-card strong {
+      color: #0f172a;
+    }
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    table.data-table th {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 6px 6px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: 1px solid #0f172a;
+    }
+    table.data-table td {
+      padding: 5px 6px;
+      border: 1px solid #cbd5e1;
+      font-size: 9.5px;
+    }
+    table.data-table tr:nth-child(even) {
+      background: #f8fafc;
+    }
+    .totals-row td {
+      background: #e2e8f0 !important;
+      font-weight: 800;
+      border-top: 2px solid #0f172a;
+      font-size: 10px;
+    }
+    .signatures {
+      margin-top: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+    .sig-box {
+      border-top: 1.5px solid #0f172a;
+      padding-top: 6px;
+      text-align: center;
+      font-size: 9.5px;
+    }
+    .sig-title {
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+      font-size: 10px;
+    }
+    @media print {
+      body { padding: 0; }
+      .sheet { border: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <table class="header-table">
+      <tr>
+        <td style="width: 55%;">
+          <h1 class="logo-title">SISTEMALOG SAS</h1>
+          <p class="logo-sub">LATIN PRODUCTS S.A.S | CENTRO DE CONTROL LOGÍSTICO Y DESPACHO</p>
+          <span style="font-size: 9px; color: #64748b;">ACOPI - YUMBO | NIT 900.852.147-3</span>
+        </td>
+        <td style="width: 45%; text-align: right;">
+          <div class="badge-modalidad">
+            ${tipo === 'CONSOLIDADO' ? '🚛 MANIFIESTO DE DESPACHO CONSOLIDADO' : '🚚 MANIFIESTO DE DESPACHO INDIVIDUAL'}
+          </div>
+          <div style="font-size: 16px; font-weight: 800; color: #0f172a; margin-top: 4px;">
+            N° ${manifiestoId}
+          </div>
+          <div style="font-size: 9px; color: #475569; margin-top: 2px;">
+            Fecha Salida: <strong>${fechaSalida || todayStr}</strong> | Emisión: ${todayStr}
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Ficha del Vehículo & Transportadora -->
+    <table class="trip-card">
+      <tr>
+        <td style="width: 35%;">
+          <span style="color: #64748b; display: block; font-size: 8.5px;">EMPRESA TRANSPORTADORA:</span>
+          <strong>${transportadora || 'NO ASIGNADA'}</strong>
+        </td>
+        <td style="width: 20%;">
+          <span style="color: #64748b; display: block; font-size: 8.5px;">PLACA VEHÍCULO:</span>
+          <strong style="font-size: 12px; letter-spacing: 1px;">${placa || 'N/A'}</strong>
+        </td>
+        <td style="width: 45%;">
+          <span style="color: #64748b; display: block; font-size: 8.5px;">CONDUCTOR & CELULAR:</span>
+          <strong>${conductor || 'N/A'}</strong> ${celular ? `(Tel: ${celular})` : ''}
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <span style="color: #64748b; display: block; font-size: 8.5px;">FLETE TOTAL DEL VIAJE PACTADO:</span>
+          <strong style="color: #0f172a; font-size: 12px;">$ ${Number(fleteEfectivo).toLocaleString('es-CO')} COP</strong>
+        </td>
+        <td>
+          <span style="color: #64748b; display: block; font-size: 8.5px;">% FLETE S/ FACTURA GLOBAL:</span>
+          <strong style="color: #047857; font-size: 11px;">${pctGlobal.toFixed(2)}%</strong>
+          ${porcentajeFijado ? `<span style="font-size: 8.5px; color: #64748b;">(Fijado: ${porcentajeFijado.toFixed(2)}%)</span>` : ''}
+        </td>
+        <td>
+          <span style="color: #64748b; display: block; font-size: 8.5px;">TOTAL ENTREGAS CONSOLIDADAS:</span>
+          <strong>${orders.length} ${orders.length === 1 ? 'Pedido / Factura' : 'Pedidos / Facturas'}</strong>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Tabla Detallada de Mercancía y Fletes Prorrateados -->
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width: 25px;">#</th>
+          <th>ID / PV</th>
+          <th>Factura</th>
+          <th>Cliente Destinatario</th>
+          <th>Destino</th>
+          <th style="text-align: center;">Cajas</th>
+          <th style="text-align: right;">Peso (kg)</th>
+          <th style="text-align: right;">Facturado ($)</th>
+          <th style="text-align: center;">% Part.</th>
+          <th style="text-align: right;">Flete ($)</th>
+          <th style="text-align: center;">% Fl/Fact</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rowsHtml}
+        <tr class="totals-row">
+          <td colspan="5" style="text-align: right; padding-right: 8px;">TOTALES DEL VIAJE CONSOLIDADO:</td>
+          <td style="text-align: center;">${totalCajas} cj</td>
+          <td style="text-align: right;">${totalPeso.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}</td>
+          <td style="text-align: right;">$ ${totalFacturado.toLocaleString('es-CO')}</td>
+          <td style="text-align: center;">100.0%</td>
+          <td style="text-align: right;">$ ${fleteEfectivo.toLocaleString('es-CO')}</td>
+          <td style="text-align: center; color: #047857;">${pctGlobal.toFixed(2)}%</td>
+        </tr>
+      </tbody>
+    </table>
+
+    ${observaciones ? `
+      <div style="border: 1px dashed #cbd5e1; padding: 6px 10px; margin-bottom: 12px; font-size: 9px;">
+        <strong>Observaciones Generales de Ruta / Novedad:</strong> ${observaciones}
+      </div>
+    ` : ''}
+
+    <!-- Firmas Legales de Responsabilidad -->
+    <div class="signatures">
+      <div class="sig-box">
+        <div style="height: 38px;"></div>
+        <div class="sig-title">DESPACHADO EN MUELLE</div>
+        <div>Julián Barrios / Auxiliar de Despacho</div>
+        <div style="font-size: 8px; color: #64748b;">SISTEMALOG SAS</div>
+      </div>
+      <div class="sig-box">
+        <div style="height: 38px;"></div>
+        <div class="sig-title">TRANSPORTADOR / CONDUCTOR</div>
+        <div>${conductor || 'Firma Conductor'}</div>
+        <div style="font-size: 8px; color: #64748b;">Placa: ${placa || '---'}</div>
+      </div>
+      <div class="sig-box">
+        <div style="height: 38px;"></div>
+        <div class="sig-title">COORDINACIÓN LOGÍSTICA</div>
+        <div>Diana M. Agudelo / Washington Quiñones</div>
+        <div style="font-size: 8px; color: #64748b;">Aprobación y Control</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 400);
+    }
+  </script>
+</body>
+</html>
+  `;
+
+  // Use invisible iframe to print without triggering popup blocker or window.open errors
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow?.document || iframe.contentDocument;
+  if (doc) {
+    doc.open();
+    doc.write(html);
+    doc.close();
+    iframe.contentWindow?.focus();
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.print();
+      } catch (e) {
+        console.error('Error invoking print on iframe', e);
+      }
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 3000);
+    }, 450);
+  }
+}

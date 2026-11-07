@@ -17,7 +17,7 @@ import { USERS_ROSTER, findUserByEmail, canUserAccessTab } from './data/usersRos
 import { matchOrderSearch, normalizeText, sortOrdersBySearchRelevance, deduplicateOrders } from './utils/searchHelper';
 import { SEED_CARRIERS, SEED_CUSTOMERS, SEED_ORDERS, SEED_NOVEDADES, SEED_REMINDERS } from './data/seed';
 import * as XLSX from 'xlsx';
-import { printSingleOrder } from './utils/printRequest';
+import { printSingleOrder, printManifestDocument, ManifestPrintData } from './utils/printRequest';
 import { generateAppStructurePdf } from './utils/generateAppStructurePdf';
 
 import HomeModule from './components/HomeModule';
@@ -562,6 +562,37 @@ export default function App() {
   const [orderFormErrors, setOrderFormErrors] = useState<string[]>([]);
   const [editingCustomerId, setEditingCustomerId] = useState<string | null>(null);
   const [editingCarrierId, setEditingCarrierId] = useState<string | null>(null);
+
+  // Estados de Despacho Consolidado y Manifiesto de Carga Multi-Factura
+  const [selectedPendienteIds, setSelectedPendienteIds] = useState<string[]>([]);
+  const [isConsolidatedModalOpen, setIsConsolidatedModalOpen] = useState(false);
+  const [consolidatedErrors, setConsolidatedErrors] = useState<string[]>([]);
+  const [consolidatedTripData, setConsolidatedTripData] = useState({
+    manifiestoId: '',
+    transportadora: '',
+    placa: '',
+    conductor: '',
+    celular: '',
+    fechaSalida: new Date().toISOString().split('T')[0],
+    fleteTotalViaje: 0,
+    observaciones: ''
+  });
+  const [consolidatedItems, setConsolidatedItems] = useState<Array<{
+    orderId: string;
+    pv: string;
+    oc: string;
+    cliente: string;
+    ciudad: string;
+    factura: string;
+    fechaFactura: string;
+    cajasFact: number;
+    pesoFact: number;
+    facturado: number;
+    cajasSolic: number;
+    pesoSolic: number;
+    ventaSolic: number;
+    tipoPedido?: 'CLIENTE' | 'EMPLEADO';
+  }>>([]);
 
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const customerDropdownRef = useRef<HTMLDivElement>(null);
@@ -2633,6 +2664,312 @@ export default function App() {
     setIsOrderFormOpen(true);
   };
 
+  // =========================================================================
+  // 🚛 GESTIÓN DE DESPACHO CONSOLIDADO Y MANIFIESTO DE CARGA
+  // =========================================================================
+
+  const handleOpenConsolidatedModal = (presetIds?: string[]) => {
+    const targetIds = presetIds && presetIds.length > 0 ? presetIds : selectedPendienteIds;
+    if (targetIds.length === 0) return;
+
+    const targets = orders.filter(o => targetIds.includes(o.id));
+    if (targets.length === 0) return;
+
+    const mapped = targets.map(o => ({
+      orderId: o.id,
+      pv: o.pv || '',
+      oc: o.oc || '',
+      cliente: o.cliente || '',
+      ciudad: o.ciudad || '',
+      factura: o.factura || '',
+      fechaFactura: o.fechaFactura || new Date().toISOString().split('T')[0],
+      cajasFact: (o.cajasFact !== undefined && o.cajasFact !== null && Number(o.cajasFact) > 0) ? Number(o.cajasFact) : (Number(o.cajas) || 0),
+      pesoFact: (o.pesoFact !== undefined && o.pesoFact !== null && Number(o.pesoFact) > 0) ? Number(o.pesoFact) : (Number(o.peso) || 0),
+      facturado: (o.facturado !== undefined && o.facturado !== null && Number(o.facturado) > 0) ? Number(o.facturado) : (Number(o.venta) || 0),
+      cajasSolic: Number(o.cajas) || 0,
+      pesoSolic: Number(o.peso) || 0,
+      ventaSolic: Number(o.venta) || 0,
+      tipoPedido: o.tipoPedido
+    }));
+
+    const foundCarrier = targets.find(t => t.transportadora)?.transportadora || carriers[0]?.nombre || '';
+    const matchedCarrier = carriers.find(c => c.nombre.trim().toUpperCase() === foundCarrier.trim().toUpperCase());
+    const foundPlaca = targets.find(t => t.placa)?.placa || '';
+    const foundDriver = targets.find(t => t.conductor)?.conductor || '';
+    const foundPhone = targets.find(t => t.celular)?.celular || '';
+    const totalFact = mapped.reduce((sum, it) => sum + (Number(it.facturado) || 0), 0);
+
+    const autoManifiesto = 'MAN-' + new Date().getFullYear() + '-' + String(Math.floor(1000 + Math.random() * 9000));
+    
+    // Auto-calculate initial trip freight using carrier target % if available, else sum of current fletes
+    let initialTripFlete = 0;
+    if (matchedCarrier && matchedCarrier.porcentajeValor && matchedCarrier.porcentajeValor > 0) {
+      initialTripFlete = Math.round(totalFact * (matchedCarrier.porcentajeValor / 100));
+    } else {
+      initialTripFlete = targets.reduce((sum, t) => sum + (Number(t.flete) || 0), 0);
+    }
+
+    setConsolidatedTripData({
+      manifiestoId: autoManifiesto,
+      transportadora: foundCarrier,
+      placa: foundPlaca,
+      conductor: foundDriver,
+      celular: foundPhone,
+      fechaSalida: new Date().toISOString().split('T')[0],
+      fleteTotalViaje: initialTripFlete,
+      observaciones: ''
+    });
+
+    setConsolidatedItems(mapped);
+    setConsolidatedErrors([]);
+    setIsConsolidatedModalOpen(true);
+  };
+
+  const handlePrintIndividualManifest = (order: Order) => {
+    const matched = carriers.find(c => c.nombre.trim().toUpperCase() === (order.transportadora || '').trim().toUpperCase());
+    const cleanManifiesto = order.manifiesto || ('MAN-' + order.id.replace('SOL-', ''));
+    const data: ManifestPrintData = {
+      manifiestoId: cleanManifiesto,
+      tipo: 'INDIVIDUAL',
+      fechaSalida: order.fechaSalida || order.fechaFactura || new Date().toISOString().split('T')[0],
+      transportadora: order.transportadora || 'NO ASIGNADA',
+      placa: order.placa || 'N/A',
+      conductor: order.conductor || 'N/A',
+      celular: order.celular || '',
+      fleteTotal: Number(order.flete) || 0,
+      orders: [order],
+      porcentajeFijado: matched?.porcentajeValor,
+      observaciones: order.obs || ''
+    };
+    printManifestDocument(data);
+  };
+
+  const handlePrintCurrentOrderManifest = () => {
+    if (!editingOrder) return;
+    handlePrintIndividualManifest(editingOrder);
+  };
+
+  const handlePrintConsolidatedManifest = () => {
+    if (consolidatedItems.length === 0) return;
+    const totalFact = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+    const totalTripFlete = Number(consolidatedTripData.fleteTotalViaje) || 0;
+    let assignedSum = 0;
+
+    const mappedOrders: Order[] = consolidatedItems.map((it, idx) => {
+      const isLast = idx === consolidatedItems.length - 1;
+      const vFact = Number(it.facturado) || 0;
+      let fleteItem = 0;
+      if (isLast) {
+        fleteItem = Math.max(0, totalTripFlete - assignedSum);
+      } else {
+        fleteItem = totalFact > 0 ? Math.round(totalTripFlete * (vFact / totalFact)) : 0;
+        assignedSum += fleteItem;
+      }
+
+      const original = orders.find(o => o.id === it.orderId);
+      return {
+        ...(original || {
+          id: it.orderId,
+          pv: it.pv,
+          oc: it.oc,
+          fechaIngreso: '',
+          fechaSalida: consolidatedTripData.fechaSalida,
+          fechaEntrega: '',
+          fechaFactura: it.fechaFactura,
+          horaCita: '',
+          cliente: it.cliente,
+          ciudad: it.ciudad,
+          origen: 'ACOPI-YUMBO',
+          peso: it.pesoSolic,
+          cajas: it.cajasSolic,
+          venta: it.ventaSolic,
+          factura: it.factura,
+          facturado: it.facturado,
+          cajasFact: it.cajasFact,
+          pesoFact: it.pesoFact,
+          flete: fleteItem,
+          provision: '',
+          transportadora: consolidatedTripData.transportadora,
+          placa: consolidatedTripData.placa,
+          conductor: consolidatedTripData.conductor,
+          celular: consolidatedTripData.celular,
+          estado: 'Despachado',
+          obs: ''
+        }),
+        factura: it.factura,
+        fechaFactura: it.fechaFactura,
+        cajasFact: it.cajasFact,
+        pesoFact: it.pesoFact,
+        facturado: it.facturado,
+        flete: fleteItem,
+        transportadora: consolidatedTripData.transportadora,
+        placa: consolidatedTripData.placa,
+        conductor: consolidatedTripData.conductor,
+        celular: consolidatedTripData.celular,
+        fechaSalida: consolidatedTripData.fechaSalida,
+        manifiesto: consolidatedTripData.manifiestoId,
+        estado: 'Despachado'
+      };
+    });
+
+    const matched = carriers.find(c => c.nombre.trim().toUpperCase() === consolidatedTripData.transportadora.trim().toUpperCase());
+    printManifestDocument({
+      manifiestoId: consolidatedTripData.manifiestoId || 'MAN-CONSOL',
+      tipo: 'CONSOLIDADO',
+      fechaSalida: consolidatedTripData.fechaSalida,
+      transportadora: consolidatedTripData.transportadora,
+      placa: consolidatedTripData.placa,
+      conductor: consolidatedTripData.conductor,
+      celular: consolidatedTripData.celular,
+      fleteTotal: totalTripFlete,
+      orders: mappedOrders,
+      porcentajeFijado: matched?.porcentajeValor,
+      observaciones: consolidatedTripData.observaciones
+    });
+  };
+
+  const handleConfirmConsolidatedDispatch = () => {
+    const errors: string[] = [];
+    if (!consolidatedTripData.transportadora?.trim()) {
+      errors.push('Empresa Transportadora: Selección obligatoria.');
+    }
+    if (!consolidatedTripData.placa?.trim()) {
+      errors.push('Placa del Vehículo: Campo obligatorio.');
+    }
+    if (!consolidatedTripData.conductor?.trim()) {
+      errors.push('Nombre del Conductor: Campo obligatorio.');
+    }
+    if (!consolidatedTripData.celular?.trim()) {
+      errors.push('Celular del Conductor: Campo obligatorio.');
+    }
+    if (!consolidatedTripData.fechaSalida?.trim()) {
+      errors.push('Fecha de Salida: Campo obligatorio.');
+    }
+    if (consolidatedTripData.fleteTotalViaje === undefined || consolidatedTripData.fleteTotalViaje === null || Number(consolidatedTripData.fleteTotalViaje) < 0) {
+      errors.push('Flete Total del Viaje: Debe ser mayor o igual a $0.');
+    }
+
+    if (consolidatedItems.length === 0) {
+      errors.push('No hay órdenes agregadas al viaje consolidado.');
+    }
+
+    consolidatedItems.forEach((it, idx) => {
+      if (!it.factura?.trim()) {
+        errors.push(`Orden #${idx + 1} (${it.orderId}): Factura de Venta es obligatoria.`);
+      }
+      if (!it.fechaFactura?.trim()) {
+        errors.push(`Orden #${idx + 1} (${it.orderId}): Fecha de Factura es obligatoria.`);
+      }
+      if (!it.cajasFact || Number(it.cajasFact) <= 0) {
+        errors.push(`Orden #${idx + 1} (${it.orderId}): Cajas Facturadas requeridas (> 0).`);
+      }
+      if (!it.pesoFact || Number(it.pesoFact) <= 0) {
+        errors.push(`Orden #${idx + 1} (${it.orderId}): Peso Facturado requerido (> 0).`);
+      }
+      if (!it.facturado || Number(it.facturado) <= 0) {
+        errors.push(`Orden #${idx + 1} (${it.orderId}): Valor Facturado requerido (> $0).`);
+      }
+    });
+
+    if (errors.length > 0) {
+      setConsolidatedErrors(errors);
+      return;
+    }
+
+    const totalFact = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+    const totalTripFlete = Number(consolidatedTripData.fleteTotalViaje) || 0;
+    let assignedSum = 0;
+
+    const updatedOrdersList: Order[] = consolidatedItems.map((it, idx) => {
+      const isLast = idx === consolidatedItems.length - 1;
+      const vFact = Number(it.facturado) || 0;
+      let fleteItem = 0;
+      if (isLast) {
+        fleteItem = Math.max(0, totalTripFlete - assignedSum);
+      } else {
+        fleteItem = totalFact > 0 ? Math.round(totalTripFlete * (vFact / totalFact)) : 0;
+        assignedSum += fleteItem;
+      }
+
+      const original = orders.find(o => o.id === it.orderId);
+      const authorStamp = currentUser 
+        ? `${currentUser.nombre} (${currentUser.email})` 
+        : 'Julián Barrios (julianlogistica@latinproducts.com)';
+
+      return {
+        ...(original || {
+          id: it.orderId,
+          pv: it.pv,
+          oc: it.oc,
+          fechaIngreso: '',
+          fechaSalida: consolidatedTripData.fechaSalida,
+          fechaEntrega: '',
+          fechaFactura: it.fechaFactura,
+          horaCita: '',
+          cliente: it.cliente,
+          ciudad: it.ciudad,
+          origen: 'ACOPI-YUMBO',
+          peso: it.pesoSolic,
+          cajas: it.cajasSolic,
+          venta: it.ventaSolic,
+          factura: it.factura,
+          facturado: it.facturado,
+          cajasFact: it.cajasFact,
+          pesoFact: it.pesoFact,
+          flete: fleteItem,
+          provision: '',
+          transportadora: consolidatedTripData.transportadora,
+          placa: consolidatedTripData.placa,
+          conductor: consolidatedTripData.conductor,
+          celular: consolidatedTripData.celular,
+          estado: 'Despachado',
+          obs: ''
+        }),
+        factura: it.factura.toUpperCase().trim(),
+        fechaFactura: it.fechaFactura,
+        cajasFact: Number(it.cajasFact),
+        pesoFact: Number(it.pesoFact),
+        facturado: Number(it.facturado),
+        flete: fleteItem,
+        transportadora: consolidatedTripData.transportadora.toUpperCase().trim(),
+        placa: consolidatedTripData.placa.toUpperCase().trim(),
+        conductor: consolidatedTripData.conductor.toUpperCase().trim(),
+        celular: consolidatedTripData.celular.trim(),
+        fechaSalida: consolidatedTripData.fechaSalida,
+        manifiesto: consolidatedTripData.manifiestoId.toUpperCase().trim(),
+        estado: 'Despachado',
+        modificadoPor: authorStamp,
+        modificadoEn: new Date().toISOString()
+      };
+    });
+
+    handleUpdateOrders(updatedOrdersList);
+
+    // Auto-generate printable manifest document
+    const matched = carriers.find(c => c.nombre.trim().toUpperCase() === consolidatedTripData.transportadora.trim().toUpperCase());
+    printManifestDocument({
+      manifiestoId: consolidatedTripData.manifiestoId,
+      tipo: 'CONSOLIDADO',
+      fechaSalida: consolidatedTripData.fechaSalida,
+      transportadora: consolidatedTripData.transportadora,
+      placa: consolidatedTripData.placa,
+      conductor: consolidatedTripData.conductor,
+      celular: consolidatedTripData.celular,
+      fleteTotal: totalTripFlete,
+      orders: updatedOrdersList,
+      porcentajeFijado: matched?.porcentajeValor,
+      observaciones: consolidatedTripData.observaciones
+    });
+
+    setIsConsolidatedModalOpen(false);
+    setSelectedPendienteIds([]);
+    setPSuccessToast({
+      title: "DESPACHO CONSOLIDADO REGISTRADO",
+      message: `Se despacharon con éxito ${updatedOrdersList.length} pedidos bajo el Manifiesto N° ${consolidatedTripData.manifiestoId}.`
+    });
+    setTimeout(() => setPSuccessToast(null), 6000);
+  };
+
   // Carrier form state helper
   const [carrierName, setCarrierName] = useState('');
   const [carrierNit, setCarrierNit] = useState('');
@@ -4365,17 +4702,20 @@ export default function App() {
                         <th className="p-4 text-center">% Flete s/ Fact</th>
                         <th className="p-4 text-center">Flete Valor</th>
                         <th className="p-4 text-center">Estado</th>
+                        <th className="p-4 text-center">Manifiesto</th>
                        </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-950/65 text-slate-300">
                       {paginatedDespachados.length === 0 ? (
                         <tr>
-                          <td colSpan={11} className="p-8 text-center text-slate-500">No hay registros despachados en muelle.</td>
+                          <td colSpan={12} className="p-8 text-center text-slate-500">No hay registros despachados en muelle.</td>
                         </tr>
                       ) : (
                         paginatedDespachados.map(o => {
                           const actualVal = o.facturado && o.facturado > 0 ? o.facturado : o.venta;
                           const pct = actualVal > 0 ? (o.flete / actualVal) * 100 : 0;
+                          const matchedCarrier = carriers.find(c => c.nombre.trim().toUpperCase() === (o.transportadora || '').trim().toUpperCase());
+                          const pctFijado = matchedCarrier?.porcentajeValor;
                           
                           let colorClass = "text-[#00ffa3] font-extrabold";
                           if (pct > 15) colorClass = "text-rose-400 font-extrabold";
@@ -4404,13 +4744,41 @@ export default function App() {
                                 <span className="text-[9px] text-slate-500 block font-normal">Solicitado: ${(Number(o.venta) || 0).toLocaleString('es-CO')}</span>
                               </td>
                               <td className="p-4 text-center">
-                                <span className={`${colorClass} font-mono`}>{pct.toFixed(2)}%</span>
+                                <span className={`${colorClass} font-mono text-xs block`}>{pct.toFixed(2)}%</span>
+                                {pctFijado !== undefined && pctFijado > 0 ? (
+                                  <div className="mt-1 flex flex-col items-center text-[9px] font-mono leading-tight">
+                                    <span className="text-slate-400">Fijado: {pctFijado.toFixed(2)}%</span>
+                                    {Math.abs(pct - pctFijado) <= 0.15 ? (
+                                      <span className="text-emerald-400 font-bold">✓ En Rango</span>
+                                    ) : pct > pctFijado ? (
+                                      <span className="text-rose-400 font-bold">▲ +{(pct - pctFijado).toFixed(2)}%</span>
+                                    ) : (
+                                      <span className="text-cyan-400 font-bold">▼ {(pct - pctFijado).toFixed(2)}%</span>
+                                    )}
+                                  </div>
+                                ) : null}
                               </td>
                               <td className="p-4 text-center text-hud-green font-bold">${(Number(o.flete) || 0).toLocaleString('es-CO')}</td>
                               <td className="p-4 text-center">
                                 <span className="text-[9px] bg-hud-green/10 border border-hud-green text-hud-green px-2 py-0.5 rounded font-mono uppercase font-bold">
                                   {o.estado}
                                 </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  {o.manifiesto ? (
+                                    <span className="text-[8.5px] font-mono font-bold text-sky-400 bg-sky-950/60 border border-sky-800/60 px-1.5 py-0.5 rounded truncate max-w-[110px]" title={o.manifiesto}>
+                                      {o.manifiesto}
+                                    </span>
+                                  ) : null}
+                                  <button
+                                    onClick={() => handlePrintIndividualManifest(o)}
+                                    className="bg-slate-900 hover:bg-slate-800 border border-hud-accent/40 text-hud-accent px-2 py-1 rounded text-[10px] font-mono tracking-wider flex items-center gap-1 cursor-pointer font-bold transition-all shadow-sm"
+                                    title="Imprimir Manifiesto Oficial de Carga"
+                                  >
+                                    <Printer className="w-3 h-3 text-hud-accent" /> Manifiesto
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -4494,18 +4862,89 @@ export default function App() {
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-hud-orange" /> Exportar a Excel
                   </button>
+
+                  {/* Botón directo Despacho Consolidado cuando hay selección */}
+                  {selectedPendienteIds.length > 0 && (
+                    <button
+                      onClick={() => handleOpenConsolidatedModal()}
+                      className="bg-gradient-to-r from-emerald-500 to-[#00ffa3] hover:from-emerald-400 hover:to-[#00ffa3] text-slate-950 px-3.5 py-1 rounded text-[10.5px] font-mono tracking-wider flex items-center gap-1.5 cursor-pointer uppercase font-extrabold shadow-lg transition-all animate-pulse"
+                    >
+                      <Truck className="w-4 h-4" /> 🚛 DESPACHO CONSOLIDADO ({selectedPendienteIds.length})
+                    </button>
+                  )}
                 </div>
 
-                <div className="text-slate-400 text-xs">
-                  Mostrando <strong className="text-white">{filteredPendientes.length === 0 ? 0 : (pendientePage - 1) * 12 + 1}-{Math.min(filteredPendientes.length, pendientePage * 12)}</strong> de <strong className="text-[#ffab00]">{filteredPendientes.length}</strong> pendientes
+                <div className="text-slate-400 text-xs flex items-center gap-3">
+                  {selectedPendienteIds.length > 0 && (
+                    <button
+                      onClick={() => setSelectedPendienteIds([])}
+                      className="text-amber-400 hover:underline cursor-pointer text-[10.5px] font-mono"
+                    >
+                      ✕ Desmarcar ({selectedPendienteIds.length})
+                    </button>
+                  )}
+                  <span>
+                    Mostrando <strong className="text-white">{filteredPendientes.length === 0 ? 0 : (pendientePage - 1) * 12 + 1}-{Math.min(filteredPendientes.length, pendientePage * 12)}</strong> de <strong className="text-[#ffab00]">{filteredPendientes.length}</strong> pendientes
+                  </span>
                 </div>
               </div>
+
+              {/* Floating notification bar when items are selected */}
+              {selectedPendienteIds.length > 0 && (
+                <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-amber-950/80 border-2 border-[#00ffa3] p-3 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono shadow-2xl animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-[#00ffa3]/20 border border-[#00ffa3]/40 flex items-center justify-center text-[#00ffa3]">
+                      <Truck className="w-5 h-5 animate-bounce" />
+                    </div>
+                    <div>
+                      <span className="text-white font-bold text-sm block">
+                        {selectedPendienteIds.length} {selectedPendienteIds.length === 1 ? 'Pedido Seleccionado' : 'Pedidos Seleccionados'} para Despacho Consolidado
+                      </span>
+                      <span className="text-slate-400 text-[10.5px]">
+                        Asigna el camión/transportadora, flete total y el sistema prorrateará automáticamente por valor facturado.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleOpenConsolidatedModal()}
+                      className="bg-[#00ffa3] hover:bg-[#00ffa3]/90 text-slate-950 font-black px-4 py-2 rounded-lg cursor-pointer tracking-wider uppercase text-xs flex items-center gap-2 shadow-md transition-all font-display"
+                    >
+                      <Truck className="w-4 h-4 text-slate-950" /> 🚛 DESPACHAR CONSOLIDADO
+                    </button>
+                    <button
+                      onClick={() => setSelectedPendienteIds([])}
+                      className="bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 px-3 py-2 rounded-lg cursor-pointer text-xs"
+                    >
+                      ✕ Cancelar Selección
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Pendientes table list */}
               <div className="bg-hud-card border border-hud-border/70 rounded-lg overflow-hidden shadow-xl">
                 <table className="w-full text-left text-xs font-mono">
                   <thead className="bg-[#030610] text-[#476a8a] border-b border-hud-border/40 text-[10px] tracking-widest uppercase">
                     <tr>
+                      <th className="p-3 text-center w-9">
+                        <input
+                          type="checkbox"
+                          checked={paginatedPendientes.length > 0 && paginatedPendientes.every(o => selectedPendienteIds.includes(o.id))}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              const newIds = Array.from(new Set([...selectedPendienteIds, ...paginatedPendientes.map(o => o.id)]));
+                              setSelectedPendienteIds(newIds);
+                            } else {
+                              const pageIds = paginatedPendientes.map(o => o.id);
+                              setSelectedPendienteIds(selectedPendienteIds.filter(id => !pageIds.includes(id)));
+                            }
+                          }}
+                          className="w-4 h-4 rounded cursor-pointer accent-[#00ffa3]"
+                          title="Seleccionar / deseleccionar página actual"
+                        />
+                      </th>
                       <th className="p-3">Flete ID</th>
                       <th className="p-3">Pedido PV</th>
                       <th className="p-3">Orden OC</th>
@@ -4522,48 +4961,70 @@ export default function App() {
                   <tbody className="divide-y divide-slate-900/60 text-slate-300">
                     {paginatedPendientes.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="p-8 text-center text-slate-500">Muelle libre. No hay solicitudes pendientes de flete.</td>
+                        <td colSpan={12} className="p-8 text-center text-slate-500">Muelle libre. No hay solicitudes pendientes de flete.</td>
                       </tr>
                     ) : (
-                      paginatedPendientes.map(o => (
-                        <tr key={o.id} className="hover:bg-slate-900/10">
-                          <td className="p-3 font-bold text-white">{o.id}</td>
-                          <td className="p-3 font-mono text-yellow-400 font-bold">{o.pv || '-'}</td>
-                          <td className="p-3 font-mono text-slate-300">{o.oc || '-'}</td>
-                          <td className="p-3 font-sans font-medium text-white">{o.cliente}</td>
-                          <td className="p-3 font-sans text-slate-400">{o.ciudad}</td>
-                          <td className="p-3 text-center font-bold text-white">{o.cajas} cj</td>
-                          <td className="p-3 text-center text-hud-green">{o.peso} kg</td>
-                          <td className="p-3 text-center text-hud-green font-bold">${(Number(o.venta) || 0).toLocaleString('es-CO')}</td>
-                          <td className="p-3 text-center text-slate-400">{o.fechaIngreso || '-'}</td>
-                          <td className="p-3 text-center">
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${
-                              o.estado === 'En Cargue'
-                                ? 'bg-hud-orange/10 border border-hud-orange text-hud-orange'
-                                : 'bg-hud-accent/10 border border-hud-accent text-hud-accent'
-                            }`}>
-                              {o.estado}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => handleOpenOrderForm(o)} 
-                                className="text-[10px] font-mono border border-hud-accent/30 text-hud-accent px-2.5 py-1 rounded cursor-pointer hover:bg-hud-accent/15 transition-all uppercase font-bold"
-                              >
-                                Editar / Asignar
-                              </button>
-                              <button
-                                onClick={() => triggerAuditCancellation(o.id)}
-                                className="text-[10px] font-mono border border-rose-500/30 text-rose-400 px-2 py-1 rounded cursor-pointer hover:bg-rose-500/15 transition-all uppercase font-bold flex items-center gap-1"
-                                title="Eliminar o Anular Solicitud"
-                              >
-                                <Trash2 className="w-3 h-3 text-rose-400" /> Eliminar
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                      paginatedPendientes.map(o => {
+                        const isSelected = selectedPendienteIds.includes(o.id);
+                        return (
+                          <tr key={o.id} className={`hover:bg-slate-900/10 transition-colors ${isSelected ? 'bg-[#00ffa3]/5' : ''}`}>
+                            <td className="p-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  setSelectedPendienteIds(prev => 
+                                    prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id]
+                                  );
+                                }}
+                                className="w-4 h-4 rounded cursor-pointer accent-[#00ffa3]"
+                              />
+                            </td>
+                            <td className="p-3 font-bold text-white">{o.id}</td>
+                            <td className="p-3 font-mono text-yellow-400 font-bold">{o.pv || '-'}</td>
+                            <td className="p-3 font-mono text-slate-300">{o.oc || '-'}</td>
+                            <td className="p-3 font-sans font-medium text-white">{o.cliente}</td>
+                            <td className="p-3 font-sans text-slate-400">{o.ciudad}</td>
+                            <td className="p-3 text-center font-bold text-white">{o.cajas} cj</td>
+                            <td className="p-3 text-center text-hud-green">{o.peso} kg</td>
+                            <td className="p-3 text-center text-hud-green font-bold">${(Number(o.venta) || 0).toLocaleString('es-CO')}</td>
+                            <td className="p-3 text-center text-slate-400">{o.fechaIngreso || '-'}</td>
+                            <td className="p-3 text-center">
+                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${
+                                o.estado === 'En Cargue'
+                                  ? 'bg-hud-orange/10 border border-hud-orange text-hud-orange'
+                                  : 'bg-hud-accent/10 border border-hud-accent text-hud-accent'
+                              }`}>
+                                {o.estado}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => handleOpenOrderForm(o)} 
+                                  className="text-[10px] font-mono border border-hud-accent/30 text-hud-accent px-2.5 py-1 rounded cursor-pointer hover:bg-hud-accent/15 transition-all uppercase font-bold"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  onClick={() => handleOpenConsolidatedModal([o.id])} 
+                                  className="text-[10px] font-mono border border-[#00ffa3]/40 text-[#00ffa3] px-2 py-1 rounded cursor-pointer hover:bg-[#00ffa3]/15 transition-all uppercase font-bold flex items-center gap-1"
+                                  title="Despachar con Manifiesto Oficial"
+                                >
+                                  <Truck className="w-3 h-3 text-[#00ffa3]" /> Despachar
+                                </button>
+                                <button
+                                  onClick={() => triggerAuditCancellation(o.id)}
+                                  className="text-[10px] font-mono border border-rose-500/30 text-rose-400 px-2 py-1 rounded cursor-pointer hover:bg-rose-500/15 transition-all uppercase font-bold flex items-center gap-1"
+                                  title="Eliminar o Anular Solicitud"
+                                >
+                                  <Trash2 className="w-3 h-3 text-rose-400" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -5824,8 +6285,39 @@ export default function App() {
                         {editingOrder.transportadora && !carriers.some(c => c.nombre.trim().toUpperCase() === editingOrder.transportadora.trim().toUpperCase()) && (
                           <option value={editingOrder.transportadora}>{editingOrder.transportadora}</option>
                         )}
-                        {carriers.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                        {carriers.map(c => (
+                          <option key={c.id} value={c.nombre}>
+                            {c.nombre} {c.porcentajeValor ? `(${c.porcentajeValor}% fijado)` : ''}
+                          </option>
+                        ))}
                       </select>
+                    </div>
+
+                    {/* N° Manifiesto de Carga */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-[#00c9a7] font-bold uppercase block">
+                          N° Manifiesto de Carga
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const autoMan = 'MAN-' + new Date().getFullYear() + '-' + String(Math.floor(1000 + Math.random() * 9000));
+                            setEditingOrder({ ...editingOrder, manifiesto: autoMan });
+                          }}
+                          className="text-[9px] text-sky-400 hover:underline cursor-pointer font-mono font-bold"
+                          title="Generar correlativo de manifiesto"
+                        >
+                          ⚡ Auto Manifiesto
+                        </button>
+                      </div>
+                      <input 
+                        type="text" 
+                        value={editingOrder.manifiesto || ''}
+                        onChange={e => setEditingOrder({ ...editingOrder, manifiesto: e.target.value.toUpperCase() })}
+                        placeholder="Ej: MAN-2026-4418"
+                        className="bg-slate-950 border border-slate-800 text-sky-400 font-mono font-bold rounded p-2.5 w-full outline-none focus:border-[#00c9a7]"
+                      />
                     </div>
 
                     {/* Placa */}
@@ -5952,17 +6444,65 @@ export default function App() {
                       />
                     </div>
 
-                    {/* Costo Flete */}
+                    {/* Costo Flete y comparación contra % Fijado */}
                     <div className="space-y-1">
-                      <label className="text-[10px] text-[#ffab00] font-bold uppercase block">
-                        Costo Flete Despacho ($) <span className="text-rose-400">*</span>
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] text-[#ffab00] font-bold uppercase block">
+                          Costo Flete Despacho ($) <span className="text-rose-400">*</span>
+                        </label>
+                        {(() => {
+                          const matched = carriers.find(c => c.nombre.trim().toUpperCase() === (editingOrder.transportadora || '').trim().toUpperCase());
+                          const vFact = Number(editingOrder.facturado) || Number(editingOrder.venta) || 0;
+                          if (matched?.porcentajeValor && matched.porcentajeValor > 0 && vFact > 0) {
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const autoFlete = Math.round(vFact * (matched.porcentajeValor! / 100));
+                                  handleUpdateEditingOrderField('flete', autoFlete);
+                                }}
+                                className="text-[9px] text-[#ffab00] hover:underline cursor-pointer font-mono font-bold"
+                                title={`Aplicar tarifa fija del ${matched.porcentajeValor}%`}
+                              >
+                                ⚡ Fijar {matched.porcentajeValor}% ($ {Math.round(vFact * (matched.porcentajeValor! / 100)).toLocaleString('es-CO')})
+                              </button>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
                       <input 
                         type="number" 
                         value={editingOrder.flete || 0}
                         onChange={e => handleUpdateEditingOrderField('flete', Number(e.target.value))}
                         className="bg-slate-950 border border-[#ffab00]/40 text-[#ffab00] font-bold rounded p-2.5 w-full outline-none"
                       />
+                      {/* Live % Flete s/ Factura vs % Fijado */}
+                      {(() => {
+                        const vFact = Number(editingOrder.facturado) || Number(editingOrder.venta) || 0;
+                        const fVal = Number(editingOrder.flete) || 0;
+                        const pctFlete = vFact > 0 ? (fVal / vFact) * 100 : 0;
+                        const matched = carriers.find(c => c.nombre.trim().toUpperCase() === (editingOrder.transportadora || '').trim().toUpperCase());
+                        const pctFijado = matched?.porcentajeValor;
+
+                        return (
+                          <div className="flex flex-wrap items-center justify-between text-[9px] font-mono text-slate-400 px-1 pt-0.5">
+                            <span>% Flete s/ Fact: <strong className="text-emerald-400 font-bold">{pctFlete.toFixed(2)}%</strong></span>
+                            {pctFijado !== undefined && pctFijado > 0 ? (
+                              <span>
+                                Fijado: <strong className="text-slate-300 font-bold">{pctFijado.toFixed(2)}%</strong>{' '}
+                                {Math.abs(pctFlete - pctFijado) <= 0.15 ? (
+                                  <span className="text-emerald-400 font-bold">(✓ En Rango)</span>
+                                ) : pctFlete > pctFijado ? (
+                                  <span className="text-rose-400 font-bold">(▲ +{(pctFlete - pctFijado).toFixed(2)}%)</span>
+                                ) : (
+                                  <span className="text-cyan-400 font-bold">(▼ {(pctFlete - pctFijado).toFixed(2)}%)</span>
+                                )}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Hora Entrega Cita (OPCIONAL) */}
@@ -5981,7 +6521,7 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="flex justify-between pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900">
                   <button
                     type="button"
                     onClick={() => setOrderFormActiveStep('registro')}
@@ -5989,9 +6529,20 @@ export default function App() {
                   >
                     ⬅ Volver a Registro
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrintCurrentOrderManifest}
+                      className="bg-slate-900 hover:bg-slate-800 text-hud-accent border border-hud-accent/40 font-bold px-3 py-2 rounded-lg text-xs font-mono uppercase flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                      title="Imprimir Manifiesto Oficial de Despacho Individual"
+                    >
+                      <Printer className="w-3.5 h-3.5 text-hud-accent" /> Imprimir Manifiesto
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
                       const isEmp = editingOrder.tipoPedido === 'EMPLEADO' || (editingOrder.transportadora && editingOrder.transportadora.toUpperCase().includes('EMPLEADO'));
                       const errors: string[] = [];
 
@@ -6026,6 +6577,7 @@ export default function App() {
                   >
                     <span>Ir a Entrega & Provisión ➔</span>
                   </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -6330,6 +6882,496 @@ export default function App() {
                   </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 🚛 MODAL: DESPACHO CONSOLIDADO Y MANIFIESTO DE CARGA MULTI-FACTURA        */}
+      {/* ========================================================================= */}
+      {isConsolidatedModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[12500] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+          <div className="bg-[#070d19] border-2 border-[#00ffa3]/60 rounded-2xl max-w-6xl w-full p-5 sm:p-7 shadow-2xl relative space-y-5 my-auto max-h-[92vh] flex flex-col font-mono">
+            
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between border-b border-[#00ffa3]/30 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#00ffa3]/15 border border-[#00ffa3]/40 flex items-center justify-center text-[#00ffa3] shadow-md">
+                  <Truck className="w-6 h-6 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-display font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    DESPACHO CONSOLIDADO DE CARGA MULTI-PEDIDO
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Asignación de viaje, transportadora y prorrateo exacto de flete por valor facturado y participación porcentual
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setIsConsolidatedModalOpen(false)} 
+                className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-900 text-base cursor-pointer transition-colors"
+                title="Cerrar ventana"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Error alerts banner */}
+            {consolidatedErrors.length > 0 && (
+              <div className="bg-rose-950/60 border border-rose-500/50 p-3 rounded-lg text-xs space-y-1 text-rose-300">
+                <div className="flex items-center gap-2 font-bold text-rose-400">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>Por favor complete los siguientes campos obligatorios del despacho:</span>
+                </div>
+                <ul className="list-disc list-inside text-[11px] space-y-0.5 text-rose-200">
+                  {consolidatedErrors.map((err, i) => <li key={i}>{err}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <div className="overflow-y-auto space-y-5 pr-1 flex-1">
+              
+              {/* Sección 1: Datos Generales del Despacho y Vehículo */}
+              <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+                  <span className="text-xs font-bold text-[#00ffa3] uppercase tracking-wider flex items-center gap-2">
+                    📋 1. DATOS DEL VIAJE, VEHÍCULO Y OPERADOR LOGÍSTICO
+                  </span>
+                  <span className="text-[10px] text-slate-400">Responsable de Muelle: Julián Barrios</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  
+                  {/* N° Manifiesto */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-[#00ffa3] font-bold uppercase block">N° Manifiesto *</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const autoMan = 'MAN-' + new Date().getFullYear() + '-' + String(Math.floor(1000 + Math.random() * 9000));
+                          setConsolidatedTripData({ ...consolidatedTripData, manifiestoId: autoMan });
+                        }}
+                        className="text-[9px] text-sky-400 hover:underline cursor-pointer lowercase"
+                      >
+                        ⚡ auto
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={consolidatedTripData.manifiestoId}
+                      onChange={e => setConsolidatedTripData({ ...consolidatedTripData, manifiestoId: e.target.value.toUpperCase() })}
+                      placeholder="Ej: MAN-2026-0045"
+                      className="bg-slate-950 border border-slate-700 text-sky-400 font-bold rounded p-2 w-full outline-none focus:border-[#00ffa3]"
+                    />
+                  </div>
+
+                  {/* Transportadora */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00ffa3] font-bold uppercase block">Empresa Transportadora *</label>
+                    <select
+                      value={consolidatedTripData.transportadora}
+                      onChange={e => {
+                        const newCarrier = e.target.value;
+                        const match = carriers.find(c => c.nombre.trim().toUpperCase() === newCarrier.trim().toUpperCase());
+                        const totalFact = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+                        let autoFlete = consolidatedTripData.fleteTotalViaje;
+                        if (match && match.porcentajeValor && match.porcentajeValor > 0 && totalFact > 0) {
+                          autoFlete = Math.round(totalFact * (match.porcentajeValor / 100));
+                        }
+                        setConsolidatedTripData({
+                          ...consolidatedTripData,
+                          transportadora: newCarrier,
+                          fleteTotalViaje: autoFlete
+                        });
+                      }}
+                      className="bg-slate-950 border border-slate-700 text-white font-bold rounded p-2 w-full outline-none focus:border-[#00ffa3]"
+                    >
+                      <option value="">-- SELECCIONAR --</option>
+                      {carriers.map(c => (
+                        <option key={c.id} value={c.nombre}>
+                          {c.nombre} {c.porcentajeValor ? `(${c.porcentajeValor}% fijado)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Placa */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00ffa3] font-bold uppercase block">Placa Vehículo *</label>
+                    <input
+                      type="text"
+                      value={consolidatedTripData.placa}
+                      onChange={e => setConsolidatedTripData({ ...consolidatedTripData, placa: e.target.value.toUpperCase() })}
+                      placeholder="Ej: USC497"
+                      className="bg-slate-950 border border-slate-700 text-white font-bold rounded p-2 w-full outline-none focus:border-[#00ffa3]"
+                    />
+                  </div>
+
+                  {/* Fecha Salida */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-[#00ffa3] font-bold uppercase block">Fecha Salida Despacho *</label>
+                    <input
+                      type="date"
+                      value={consolidatedTripData.fechaSalida}
+                      onChange={e => setConsolidatedTripData({ ...consolidatedTripData, fechaSalida: e.target.value })}
+                      className="bg-slate-950 border border-slate-700 text-white font-bold rounded p-2 w-full outline-none focus:border-[#00ffa3]"
+                    />
+                  </div>
+
+                  {/* Conductor */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Nombre Conductor *</label>
+                    <input
+                      type="text"
+                      value={consolidatedTripData.conductor}
+                      onChange={e => setConsolidatedTripData({ ...consolidatedTripData, conductor: e.target.value.toUpperCase() })}
+                      placeholder="Nombre completo"
+                      className="bg-slate-950 border border-slate-700 text-white rounded p-2 w-full outline-none focus:border-[#00ffa3]"
+                    />
+                  </div>
+
+                  {/* Celular Conductor */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-300 font-bold uppercase block">Celular Conductor *</label>
+                    <input
+                      type="text"
+                      value={consolidatedTripData.celular}
+                      onChange={e => setConsolidatedTripData({ ...consolidatedTripData, celular: e.target.value })}
+                      placeholder="Número de contacto"
+                      className="bg-slate-950 border border-slate-700 text-white rounded p-2 w-full outline-none focus:border-[#00ffa3]"
+                    />
+                  </div>
+
+                  {/* Flete Total del Viaje ($ COP) */}
+                  <div className="space-y-1 sm:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] text-[#ffab00] font-bold uppercase block">
+                        Flete Total del Viaje ($ COP) *
+                      </label>
+                      {(() => {
+                        const matched = carriers.find(c => c.nombre.trim().toUpperCase() === consolidatedTripData.transportadora.trim().toUpperCase());
+                        const totalFact = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+                        if (matched?.porcentajeValor && matched.porcentajeValor > 0 && totalFact > 0) {
+                          const suggested = Math.round(totalFact * (matched.porcentajeValor / 100));
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setConsolidatedTripData({ ...consolidatedTripData, fleteTotalViaje: suggested })}
+                              className="text-[9.5px] text-[#ffab00] hover:underline cursor-pointer font-bold"
+                              title={`Calcular automáticamente con la tasa negociada del ${matched.porcentajeValor}%`}
+                            >
+                              ⚡ Fijar al {matched.porcentajeValor}% ($ {suggested.toLocaleString('es-CO')})
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+                      <input
+                        type="number"
+                        value={consolidatedTripData.fleteTotalViaje || ''}
+                        onChange={e => setConsolidatedTripData({ ...consolidatedTripData, fleteTotalViaje: e.target.value === '' ? 0 : Number(e.target.value) })}
+                        placeholder="0"
+                        className="bg-slate-950 border border-[#ffab00]/50 text-[#ffab00] font-bold rounded p-2 pl-7 w-full outline-none text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* KPIs & Resumen del Viaje Consolidado */}
+              {(() => {
+                const totalFacturadoViaje = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+                const totalCajasViaje = consolidatedItems.reduce((acc, it) => acc + (Number(it.cajasFact) || 0), 0);
+                const totalPesoViaje = consolidatedItems.reduce((acc, it) => acc + (Number(it.pesoFact) || 0), 0);
+                const fleteTotal = Number(consolidatedTripData.fleteTotalViaje) || 0;
+                const pctGlobal = totalFacturadoViaje > 0 ? (fleteTotal / totalFacturadoViaje) * 100 : 0;
+                const matchedCarrier = carriers.find(c => c.nombre.trim().toUpperCase() === consolidatedTripData.transportadora.trim().toUpperCase());
+                const pctFijado = matchedCarrier?.porcentajeValor;
+
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 text-center text-xs font-mono">
+                    <div className="bg-slate-950/70 border border-slate-800 p-2.5 rounded-lg">
+                      <span className="text-[9px] text-slate-400 block uppercase">Pedidos en Viaje</span>
+                      <strong className="text-white text-base font-bold">{consolidatedItems.length}</strong>
+                    </div>
+                    <div className="bg-slate-950/70 border border-slate-800 p-2.5 rounded-lg">
+                      <span className="text-[9px] text-slate-400 block uppercase">Cajas Totales</span>
+                      <strong className="text-white text-base font-bold">{totalCajasViaje} cj</strong>
+                    </div>
+                    <div className="bg-slate-950/70 border border-slate-800 p-2.5 rounded-lg">
+                      <span className="text-[9px] text-slate-400 block uppercase">Peso Total</span>
+                      <strong className="text-slate-300 text-base font-bold">{totalPesoViaje.toLocaleString('es-CO')} kg</strong>
+                    </div>
+                    <div className="bg-slate-950/70 border border-slate-800 p-2.5 rounded-lg">
+                      <span className="text-[9px] text-slate-400 block uppercase">Total Facturado</span>
+                      <strong className="text-hud-green text-base font-bold">$ {totalFacturadoViaje.toLocaleString('es-CO')}</strong>
+                    </div>
+                    <div className="bg-slate-950/70 border border-slate-800 p-2.5 rounded-lg">
+                      <span className="text-[9px] text-slate-400 block uppercase">Flete Total Viaje</span>
+                      <strong className="text-[#ffab00] text-base font-bold">$ {fleteTotal.toLocaleString('es-CO')}</strong>
+                    </div>
+                    <div className="bg-slate-950/70 border border-slate-800 p-2.5 rounded-lg">
+                      <span className="text-[9px] text-slate-400 block uppercase">% Flete Global s/ Fact</span>
+                      <strong className="text-emerald-400 text-base font-bold">{pctGlobal.toFixed(2)}%</strong>
+                      {pctFijado !== undefined && pctFijado > 0 ? (
+                        <span className="text-[8.5px] text-slate-400 block">
+                          Fijado: {pctFijado.toFixed(2)}%
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Sección 2: Tabla de Prorrateo de Flete Multi-Factura */}
+              <div className="bg-slate-950/90 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+                <div className="p-3 bg-slate-900/60 border-b border-slate-800 flex items-center justify-between text-xs">
+                  <span className="font-bold text-[#00ffa3] uppercase flex items-center gap-2">
+                    📦 2. DETALLE DE PEDIDOS, FACTURACIÓN Y PRORRATEO DE FLETE
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    * El flete asignado se distribuye proporcionalmente por el valor facturado de cada orden
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-mono">
+                    <thead className="bg-[#030610] text-[#476a8a] border-b border-hud-border/40 text-[9.5px] tracking-wider uppercase">
+                      <tr>
+                        <th className="p-2.5 text-center w-8">#</th>
+                        <th className="p-2.5">ID / PV</th>
+                        <th className="p-2.5">Cliente Destinatario</th>
+                        <th className="p-2.5">Factura N° *</th>
+                        <th className="p-2.5">Fecha Factura *</th>
+                        <th className="p-2.5 text-center">Cajas (cj) *</th>
+                        <th className="p-2.5 text-center">Peso (kg) *</th>
+                        <th className="p-2.5 text-right">Facturado ($) *</th>
+                        <th className="p-2.5 text-center">% Part. Viaje</th>
+                        <th className="p-2.5 text-right">Flete Asignado ($)</th>
+                        <th className="p-2.5 text-center">% Flete s/ Fact</th>
+                        <th className="p-2.5 text-center">Vs % Fijado</th>
+                        <th className="p-2.5 text-center w-10">Quitar</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-900 text-slate-300">
+                      {(() => {
+                        const totalFact = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+                        const totalTripFlete = Number(consolidatedTripData.fleteTotalViaje) || 0;
+                        const matchedCarrier = carriers.find(c => c.nombre.trim().toUpperCase() === consolidatedTripData.transportadora.trim().toUpperCase());
+                        const pctFijado = matchedCarrier?.porcentajeValor;
+                        let runningAssigned = 0;
+
+                        return consolidatedItems.map((it, idx) => {
+                          const isLast = idx === consolidatedItems.length - 1;
+                          const vFact = Number(it.facturado) || 0;
+                          const partPct = totalFact > 0 ? (vFact / totalFact) * 100 : 0;
+                          
+                          let assignedFlete = 0;
+                          if (isLast) {
+                            assignedFlete = Math.max(0, totalTripFlete - runningAssigned);
+                          } else {
+                            assignedFlete = totalFact > 0 ? Math.round(totalTripFlete * (vFact / totalFact)) : 0;
+                            runningAssigned += assignedFlete;
+                          }
+
+                          const fleteFactPct = vFact > 0 ? (assignedFlete / vFact) * 100 : 0;
+                          const diff = pctFijado !== undefined ? fleteFactPct - pctFijado : 0;
+
+                          return (
+                            <tr key={it.orderId} className="hover:bg-slate-900/30">
+                              <td className="p-2.5 text-center text-slate-500 font-bold">{idx + 1}</td>
+                              
+                              <td className="p-2.5">
+                                <span className="font-bold text-white block">{it.orderId}</span>
+                                <span className="text-[9px] text-yellow-400 font-mono">PV: {it.pv || 'S/N'}</span>
+                              </td>
+
+                              <td className="p-2.5">
+                                <span className="font-bold text-white block truncate max-w-[170px]" title={it.cliente}>
+                                  {it.cliente}
+                                </span>
+                                <span className="text-[9.5px] text-slate-400">{it.ciudad}</span>
+                              </td>
+
+                              <td className="p-2.5">
+                                <input
+                                  type="text"
+                                  value={it.factura}
+                                  onChange={e => {
+                                    const val = e.target.value.toUpperCase();
+                                    setConsolidatedItems(consolidatedItems.map((c, i) => i === idx ? { ...c, factura: val } : c));
+                                  }}
+                                  placeholder="Ej: 2713"
+                                  className="bg-slate-950 border border-hud-green/50 text-[#00ffa3] font-bold rounded px-2 py-1 w-24 outline-none text-xs"
+                                />
+                              </td>
+
+                              <td className="p-2.5">
+                                <input
+                                  type="date"
+                                  value={it.fechaFactura}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setConsolidatedItems(consolidatedItems.map((c, i) => i === idx ? { ...c, fechaFactura: val } : c));
+                                  }}
+                                  className="bg-slate-950 border border-slate-700 text-white rounded px-2 py-1 w-28 outline-none text-[11px]"
+                                />
+                              </td>
+
+                              <td className="p-2.5 text-center">
+                                <input
+                                  type="number"
+                                  value={it.cajasFact || ''}
+                                  onChange={e => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setConsolidatedItems(consolidatedItems.map((c, i) => i === idx ? { ...c, cajasFact: val } : c));
+                                  }}
+                                  className="bg-slate-950 border border-slate-700 text-white font-bold rounded px-2 py-1 w-16 text-center outline-none text-xs"
+                                />
+                              </td>
+
+                              <td className="p-2.5 text-center">
+                                <input
+                                  type="number"
+                                  value={it.pesoFact || ''}
+                                  onChange={e => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setConsolidatedItems(consolidatedItems.map((c, i) => i === idx ? { ...c, pesoFact: val } : c));
+                                  }}
+                                  className="bg-slate-950 border border-slate-700 text-slate-200 rounded px-2 py-1 w-20 text-center outline-none text-xs"
+                                />
+                              </td>
+
+                              <td className="p-2.5 text-right">
+                                <input
+                                  type="number"
+                                  value={it.facturado || ''}
+                                  onChange={e => {
+                                    const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                    setConsolidatedItems(consolidatedItems.map((c, i) => i === idx ? { ...c, facturado: val } : c));
+                                  }}
+                                  className="bg-slate-950 border border-hud-green/50 text-hud-green font-bold rounded px-2 py-1 w-28 text-right outline-none text-xs"
+                                />
+                              </td>
+
+                              <td className="p-2.5 text-center font-bold text-sky-400">
+                                {partPct.toFixed(2)}%
+                              </td>
+
+                              <td className="p-2.5 text-right font-bold text-[#ffab00]">
+                                $ {assignedFlete.toLocaleString('es-CO')}
+                              </td>
+
+                              <td className="p-2.5 text-center font-bold text-emerald-400">
+                                {fleteFactPct.toFixed(2)}%
+                              </td>
+
+                              <td className="p-2.5 text-center text-[10px]">
+                                {pctFijado !== undefined && pctFijado > 0 ? (
+                                  Math.abs(diff) <= 0.15 ? (
+                                    <span className="text-emerald-400 font-bold px-1.5 py-0.5 rounded bg-emerald-950/40 border border-emerald-800/40">
+                                      ✓ En Costo ({pctFijado.toFixed(1)}%)
+                                    </span>
+                                  ) : diff > 0 ? (
+                                    <span className="text-rose-400 font-bold px-1.5 py-0.5 rounded bg-rose-950/40 border border-rose-800/40">
+                                      ▲ +{diff.toFixed(2)}%
+                                    </span>
+                                  ) : (
+                                    <span className="text-cyan-400 font-bold px-1.5 py-0.5 rounded bg-cyan-950/40 border border-cyan-800/40">
+                                      ▼ {diff.toFixed(2)}%
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="text-slate-500 font-mono">--</span>
+                                )}
+                              </td>
+
+                              <td className="p-2.5 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setConsolidatedItems(consolidatedItems.filter((_, i) => i !== idx));
+                                  }}
+                                  className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-950/30 transition-colors"
+                                  title="Remover pedido de este despacho consolidado"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                    
+                    {/* Totales del Viaje Consolidado */}
+                    {(() => {
+                      const totalFact = consolidatedItems.reduce((acc, it) => acc + (Number(it.facturado) || 0), 0);
+                      const totalCajas = consolidatedItems.reduce((acc, it) => acc + (Number(it.cajasFact) || 0), 0);
+                      const totalPeso = consolidatedItems.reduce((acc, it) => acc + (Number(it.pesoFact) || 0), 0);
+                      const totalTripFlete = Number(consolidatedTripData.fleteTotalViaje) || 0;
+                      const globalPct = totalFact > 0 ? (totalTripFlete / totalFact) * 100 : 0;
+
+                      return (
+                        <tfoot className="bg-slate-900 text-white font-bold border-t-2 border-slate-700 text-xs">
+                          <tr>
+                            <td colSpan={5} className="p-3 text-right uppercase tracking-wider text-slate-300">
+                              TOTALES DEL VIAJE CONSOLIDADO:
+                            </td>
+                            <td className="p-3 text-center text-white">{totalCajas} cj</td>
+                            <td className="p-3 text-center text-slate-300">{totalPeso.toLocaleString('es-CO')} kg</td>
+                            <td className="p-3 text-right text-hud-green">$ {totalFact.toLocaleString('es-CO')}</td>
+                            <td className="p-3 text-center text-sky-400">100.00%</td>
+                            <td className="p-3 text-right text-[#ffab00]">$ {totalTripFlete.toLocaleString('es-CO')}</td>
+                            <td className="p-3 text-center text-emerald-400">{globalPct.toFixed(2)}%</td>
+                            <td colSpan={2} className="p-3 text-center text-slate-400 text-[10px]">
+                              Balance 100% Exacto
+                            </td>
+                          </tr>
+                        </tfoot>
+                      );
+                    })()}
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer con Acciones */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsConsolidatedModalOpen(false)}
+                className="bg-slate-900 hover:bg-slate-850 text-slate-400 px-4 py-2.5 rounded-lg text-xs font-mono uppercase cursor-pointer w-full sm:w-auto"
+              >
+                ✕ Cancelar
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={handlePrintConsolidatedManifest}
+                  className="bg-slate-900 hover:bg-slate-800 text-hud-accent border border-hud-accent/50 font-bold px-4 py-2.5 rounded-lg text-xs font-mono uppercase flex items-center gap-2 cursor-pointer shadow-md transition-all"
+                  title="Vista previa e impresión de Manifiesto Oficial"
+                >
+                  <Printer className="w-4 h-4 text-hud-accent" /> IMPRIMIR MANIFIESTO
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmConsolidatedDispatch}
+                  className="bg-gradient-to-r from-emerald-500 to-[#00ffa3] hover:from-emerald-400 hover:to-[#00ffa3] text-slate-950 font-black px-6 py-2.5 rounded-lg text-xs font-mono uppercase tracking-wider flex items-center gap-2 cursor-pointer shadow-xl transition-all font-display"
+                >
+                  <Truck className="w-4 h-4 text-slate-950" /> CONFIRMAR Y DESPACHAR CONSOLIDADO ✔️
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

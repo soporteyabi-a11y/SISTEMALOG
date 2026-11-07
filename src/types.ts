@@ -34,6 +34,7 @@ export interface Order {
   isSplit?: boolean;
   direccion?: string;
   tipoPedido?: 'CLIENTE' | 'EMPLEADO';
+  manifiesto?: string;
   creadoPor?: string;
   creadoEn?: string;
   modificadoPor?: string;
