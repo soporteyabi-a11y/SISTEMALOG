@@ -1292,7 +1292,7 @@ export default function PedidosModule({
                     <option value="">-- Elige tu nombre de la lista o escribe abajo --</option>
                     {KNOWN_COMPANY_EMPLOYEES.map(emp => (
                       <option key={emp.cedula} value={emp.cedula}>
-                        {emp.name} (CC: {emp.cedula}) - {emp.cargo}
+                        {emp.name} — C.C. {emp.cedula}
                       </option>
                     ))}
                   </select>
