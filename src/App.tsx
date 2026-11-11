@@ -5988,7 +5988,7 @@ export default function App() {
                                 onClick={() => {
                                   setEditingOrder({
                                     ...editingOrder,
-                                    cliente: `${emp.name} (CC ${emp.cedula})`,
+                                    cliente: `${emp.name} (EMPLEADO)`,
                                     ciudad: 'ACOPI-YUMBO (SEDE PLANTA)',
                                     conductor: emp.name,
                                     transportadora: 'ENTREGA DIRECTA (EMPLEADO)',
@@ -6003,7 +6003,7 @@ export default function App() {
                               >
                                 <div>
                                   <span className="font-bold text-white text-xs block">{emp.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono">CC: {emp.cedula} · {emp.cargo}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">Colaborador · {emp.cargo}</span>
                                 </div>
                                 <span className="text-[10px] bg-[#00c9a7]/20 text-[#00c9a7] border border-[#00c9a7]/30 px-2 py-0.5 rounded font-mono shrink-0 font-bold">
                                   EMPLEADO

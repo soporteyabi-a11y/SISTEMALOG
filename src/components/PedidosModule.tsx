@@ -10,7 +10,7 @@ import {
   Plus, CheckCircle2, FileSpreadsheet, Printer, Download, Sparkles, 
   Lock, Unlock, LogIn, LogOut, ArrowLeft, RefreshCw, Calendar, 
   User, CreditCard, ChevronRight, ChevronDown, ShoppingCart, Percent, Heart, AlertTriangle,
-  Copy, ExternalLink, Share2, Check, Cloud, Database
+  Copy, ExternalLink, Share2, Check, Cloud, Database, ShieldCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { saveToCloud, subscribeToCloud, forceRefreshFromCloud, loadFromCloud, getCloudStatus } from '../firebaseService';
@@ -343,9 +343,6 @@ export default function PedidosModule({
   const [cart, setCart] = useState<CartItem[]>([]);
   const [employeeName, setEmployeeName] = useState('');
   const [employeeCedula, setEmployeeCedula] = useState('');
-  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
-  const [isEmployeeDropdownOpen, setIsEmployeeDropdownOpen] = useState(false);
-  const employeeDropdownRef = useRef<HTMLDivElement>(null);
 
   // Search & Filtering
   const [searchTerm, setSearchTerm] = useState('');
@@ -597,31 +594,6 @@ export default function PedidosModule({
   const cartCount = useMemo(() => {
     return cart.reduce((acc, item) => acc + item.qty, 0);
   }, [cart]);
-
-  // Click outside listener for searchable employee dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (employeeDropdownRef.current && !employeeDropdownRef.current.contains(event.target as Node)) {
-        setIsEmployeeDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Filtered employees list based on search term (searches in name or cédula)
-  const filteredEmployees = useMemo(() => {
-    if (!employeeSearchTerm.trim()) {
-      return KNOWN_COMPANY_EMPLOYEES;
-    }
-    const cleanNorm = (str: string) => (str || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-    const query = cleanNorm(employeeSearchTerm);
-    return KNOWN_COMPANY_EMPLOYEES.filter(emp => {
-      const nameNorm = cleanNorm(emp.name);
-      const ccNorm = cleanNorm(emp.cedula);
-      return nameNorm.includes(query) || ccNorm.includes(query);
-    });
-  }, [employeeSearchTerm]);
 
   // Access validation and navigation entries
   const handleEnterCatalog = () => {
@@ -1295,126 +1267,64 @@ export default function PedidosModule({
                 </div>
               )}
 
-              {/* Fast Employee Quick-Selector con Búsqueda en Vivo por Cédula o Nombre */}
-              {isAccessAllowedByConfig() && (
-                <div ref={employeeDropdownRef} className="text-left space-y-1.5 bg-slate-950/70 p-3 rounded-xl border border-orange-500/25 relative">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] text-orange-400 font-mono uppercase tracking-wider flex items-center gap-1.5 font-bold">
-                      <span>⚡</span>
-                      <span>Búsqueda Rápida de Empleado</span>
-                    </label>
-                    <span className="text-[9px] text-slate-500 font-mono">Sin Contraseña</span>
-                  </div>
-
-                  {/* Search Input Box with icon & dropdown trigger */}
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder="Escribe tu cédula o nombre..."
-                      value={employeeSearchTerm}
-                      onFocus={() => setIsEmployeeDropdownOpen(true)}
-                      onChange={(e) => {
-                        setEmployeeSearchTerm(e.target.value);
-                        setIsEmployeeDropdownOpen(true);
-                      }}
-                      className="w-full bg-slate-900 border border-slate-750 focus:border-orange-500 text-white pl-8 pr-8 py-2.5 rounded-lg text-xs font-mono outline-none placeholder:text-slate-500 transition-all"
-                    />
-                    <Search className="w-3.5 h-3.5 text-orange-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    
-                    {employeeSearchTerm ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEmployeeSearchTerm('');
-                          setIsEmployeeDropdownOpen(true);
-                        }}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs font-mono"
-                        title="Limpiar búsqueda"
-                      >
-                        ✕
-                      </button>
-                    ) : (
-                      <ChevronDown 
-                        onClick={() => setIsEmployeeDropdownOpen(!isEmployeeDropdownOpen)}
-                        className={`w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 cursor-pointer transition-transform duration-200 ${isEmployeeDropdownOpen ? 'rotate-180' : ''}`} 
-                      />
-                    )}
-                  </div>
-
-                  {/* Dropdown Results List */}
-                  {isEmployeeDropdownOpen && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-[#030914] border border-orange-500/40 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto font-mono divide-y divide-slate-850/60 animate-fade-in">
-                      <div className="p-2 bg-slate-950/90 text-[10px] text-slate-400 flex items-center justify-between border-b border-slate-800 sticky top-0 z-10">
-                        <span>{filteredEmployees.length} colaboradores encontrados</span>
-                        <span className="text-orange-400 text-[9px]">1-clic autocompleta</span>
-                      </div>
-
-                      {filteredEmployees.length === 0 ? (
-                        <div className="p-4 text-center text-xs text-slate-500">
-                          No se encontró nadie con "<span className="text-orange-400 font-bold">{employeeSearchTerm}</span>".
-                          <div className="text-[10px] text-slate-400 mt-1">
-                            Puedes ingresar tus datos directamente en los campos de abajo.
-                          </div>
-                        </div>
-                      ) : (
-                        filteredEmployees.map(emp => (
-                          <button
-                            key={emp.cedula}
-                            type="button"
-                            onClick={() => {
-                              setEmployeeCedula(emp.cedula);
-                              setEmployeeName(emp.name);
-                              setEmployeeSearchTerm(`${emp.name} — C.C. ${emp.cedula}`);
-                              setIsEmployeeDropdownOpen(false);
-                              triggerToast(`¡Seleccionado: ${emp.name}!`, 'info');
-                            }}
-                            className={`w-full text-left px-3 py-2.5 hover:bg-orange-500/15 flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer group ${
-                              employeeCedula === emp.cedula ? 'bg-orange-500/20 text-orange-300 font-bold' : 'text-slate-200'
-                            }`}
-                          >
-                            <span className="font-semibold group-hover:text-orange-300 truncate">
-                              {emp.name}
-                            </span>
-                            <span className="text-[10px] bg-slate-900 border border-slate-750 px-2 py-0.5 rounded text-orange-400 font-bold shrink-0">
-                              C.C. {emp.cedula}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Input forms */}
+              {/* Formulario de Acceso Individual por Privacidad y Protección de Datos (Habeas Data) */}
               <div className="space-y-4 pt-1">
-                <div className="text-left space-y-1.5">
-                  <label className="text-[11px] text-slate-400 font-mono uppercase tracking-wider flex items-center gap-1">
-                    <CreditCard className="w-3 h-3 text-orange-400" />
-                    Número de Cédula
-                  </label>
-                  <input
-                    type="number"
-                    placeholder="Ingrese su CC sin puntos o comas *"
-                    value={employeeCedula}
-                    onChange={(e) => setEmployeeCedula(e.target.value)}
-                    disabled={!isAccessAllowedByConfig()}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500/50 text-white p-3 rounded-lg text-sm outline-none transition-all font-mono"
-                  />
+                <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-left space-y-1">
+                  <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-300">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Acceso Individual y Privado</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-mono leading-relaxed">
+                    Por privacidad y tratamiento de datos personales (Habeas Data), ingrese individualmente su cédula y nombre para registrar su pedido.
+                  </p>
                 </div>
 
+                {/* Número de Cédula */}
                 <div className="text-left space-y-1.5">
-                  <label className="text-[11px] text-slate-400 font-mono uppercase tracking-wider flex items-center gap-1">
-                    <User className="w-3 h-3 text-orange-400" />
-                    Nombre Completo
+                  <label className="text-[11px] text-slate-300 font-mono uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <CreditCard className="w-3.5 h-3.5 text-orange-400" />
+                      Número de Cédula de Ciudadanía
+                    </span>
+                    <span className="text-[9.5px] text-orange-400 font-mono font-bold">* Obligatorio</span>
                   </label>
                   <input
                     type="text"
-                    placeholder="Nombres y Apellidos *"
+                    inputMode="numeric"
+                    placeholder="Escriba su número de cédula (sin puntos ni comas) *"
+                    value={employeeCedula}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, '');
+                      setEmployeeCedula(val);
+                      // Autocompletar el nombre únicamente para su propia cédula si coincide en la lista, sin exponer ningún directorio a terceros
+                      if (val.length >= 6) {
+                        const matched = KNOWN_COMPANY_EMPLOYEES.find(emp => emp.cedula === val);
+                        if (matched && (!employeeName || KNOWN_COMPANY_EMPLOYEES.some(x => x.name === employeeName))) {
+                          setEmployeeName(matched.name);
+                        }
+                      }
+                    }}
+                    disabled={!isAccessAllowedByConfig()}
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 text-white p-3 rounded-lg text-sm outline-none transition-all font-mono"
+                  />
+                </div>
+
+                {/* Nombre Completo */}
+                <div className="text-left space-y-1.5">
+                  <label className="text-[11px] text-slate-300 font-mono uppercase tracking-wider flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <User className="w-3.5 h-3.5 text-orange-400" />
+                      Nombre Completo
+                    </span>
+                    <span className="text-[9.5px] text-orange-400 font-mono font-bold">* Obligatorio</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Escriba sus Nombres y Apellidos completos *"
                     value={employeeName}
                     onChange={(e) => setEmployeeName(e.target.value)}
                     disabled={!isAccessAllowedByConfig()}
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500/50 text-white p-3 rounded-lg text-sm outline-none transition-all"
+                    className="w-full bg-slate-950 border border-slate-800 focus:border-orange-500 text-white p-3 rounded-lg text-sm outline-none transition-all"
                   />
                 </div>
               </div>

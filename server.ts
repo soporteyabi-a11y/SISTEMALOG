@@ -21,6 +21,16 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: "50mb" }));
 
+// Health check endpoints for Render and external pingers (UptimeRobot, BetterStack, Cron-Job)
+app.get(["/api/health", "/healthz"], (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    service: "sistemalog",
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Lazy initializer for Gemini to prevent crashes on startup if GEMINI_API_KEY is not configured
 let aiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -1165,18 +1175,22 @@ async function main() {
     });
     app.use(vite.middlewares);
   } else {
-    // Serve build static assets on production
+    // Serve build static assets on production with smart caching
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath, {
+      maxAge: "1d",
       setHeaders: (res, filePath) => {
         if (filePath.endsWith(".html")) {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
           res.setHeader("Pragma", "no-cache");
           res.setHeader("Expires", "0");
+        } else if (filePath.includes("assets/") || filePath.includes(".js") || filePath.includes(".css")) {
+          // Cache immutable built static assets for ultra-fast subsequent loads
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         }
       }
     }));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.setHeader("Pragma", "no-cache");
       res.setHeader("Expires", "0");
@@ -1186,6 +1200,24 @@ async function main() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running in ${process.env.NODE_ENV || "development"} mode on http://0.0.0.0:${PORT}`);
+
+    // Self-ping Keep-Alive to prevent Render Free Tier from going to sleep (idle spin-down)
+    const externalUrl = process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_APP_URL;
+    if (externalUrl) {
+      const PING_INTERVAL_MS = 13 * 60 * 1000; // 13 minutes (Render sleeps after 15m)
+      console.log(`[Render KeepAlive] Active. Pinging ${externalUrl}/api/health every 13 minutes to eliminate cold starts.`);
+      setInterval(async () => {
+        try {
+          const pingTarget = `${externalUrl.replace(/\/$/, '')}/api/health`;
+          const res = await fetch(pingTarget);
+          if (res.ok) {
+            console.log(`[Render KeepAlive] Warmup ping OK (${res.status}) at ${new Date().toISOString()}`);
+          }
+        } catch (err: any) {
+          console.warn(`[Render KeepAlive] Ping error:`, err?.message || err);
+        }
+      }, PING_INTERVAL_MS);
+    }
   });
 }
 
