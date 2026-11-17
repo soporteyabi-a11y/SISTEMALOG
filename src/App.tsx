@@ -6293,7 +6293,7 @@ export default function App() {
                         )}
                         {carriers.map(c => (
                           <option key={c.id} value={c.nombre}>
-                            {c.nombre} {c.porcentajeValor ? `(${c.porcentajeValor}% fijado)` : ''}
+                            {c.nombre}
                           </option>
                         ))}
                       </select>
@@ -6998,7 +6998,7 @@ export default function App() {
                       <option value="">-- SELECCIONAR --</option>
                       {carriers.map(c => (
                         <option key={c.id} value={c.nombre}>
-                          {c.nombre} {c.porcentajeValor ? `(${c.porcentajeValor}% fijado)` : ''}
+                          {c.nombre}
                         </option>
                       ))}
                     </select>
