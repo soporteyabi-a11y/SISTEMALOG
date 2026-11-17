@@ -99,6 +99,10 @@ CREATE TABLE IF NOT EXISTS public.clientes (
   telefono VARCHAR(64),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS ciudad VARCHAR(128);
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS nit VARCHAR(64);
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS contacto VARCHAR(255);
+ALTER TABLE public.clientes ADD COLUMN IF NOT EXISTS telefono VARCHAR(64);
 
 /* 3. TRANSPORTADORAS */
 CREATE TABLE IF NOT EXISTS public.transportadoras (
@@ -109,6 +113,9 @@ CREATE TABLE IF NOT EXISTS public.transportadoras (
   tarifa_base NUMERIC(12, 2) DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.transportadoras ADD COLUMN IF NOT EXISTS contacto VARCHAR(255);
+ALTER TABLE public.transportadoras ADD COLUMN IF NOT EXISTS telefono VARCHAR(64);
+ALTER TABLE public.transportadoras ADD COLUMN IF NOT EXISTS tarifa_base NUMERIC(12, 2) DEFAULT 0;
 
 /* 4. NOVEDADES OPERATIVAS */
 CREATE TABLE IF NOT EXISTS public.novedades (
@@ -123,6 +130,12 @@ CREATE TABLE IF NOT EXISTS public.novedades (
   data JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS order_id VARCHAR(64);
+ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS pv VARCHAR(64);
+ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS tipo VARCHAR(64);
+ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS descripcion TEXT;
+ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS estado VARCHAR(32) DEFAULT 'Abierta';
+ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS solucion TEXT;
 ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS data JSONB;
 
 /* 5. PROVISIONES Y COMPROBANTES */
@@ -130,19 +143,33 @@ CREATE TABLE IF NOT EXISTS public.provisiones_vouchers (
   id VARCHAR(128) PRIMARY KEY,
   order_id VARCHAR(64),
   pv VARCHAR(64),
-  soporte_num VARCHAR(64),
+  soporte_num TEXT,
   transportadora VARCHAR(255),
-  mes_gestion VARCHAR(32),
-  quincena VARCHAR(32),
+  mes_gestion TEXT,
+  quincena TEXT,
   flete_total NUMERIC(14, 2) DEFAULT 0,
   otros_gastos NUMERIC(14, 2) DEFAULT 0,
   otros_gastos_concepto TEXT,
-  estado VARCHAR(32) DEFAULT 'Procesado',
+  estado VARCHAR(64) DEFAULT 'Procesado',
   fecha_guardado TIMESTAMPTZ,
   data JSONB,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS order_id VARCHAR(64);
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS pv VARCHAR(64);
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS soporte_num TEXT;
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS transportadora VARCHAR(255);
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS mes_gestion TEXT;
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS quincena TEXT;
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS flete_total NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS otros_gastos NUMERIC(14, 2) DEFAULT 0;
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS otros_gastos_concepto TEXT;
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS estado VARCHAR(64) DEFAULT 'Procesado';
+ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS fecha_guardado TIMESTAMPTZ;
 ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS data JSONB;
+ALTER TABLE public.provisiones_vouchers ALTER COLUMN quincena TYPE TEXT;
+ALTER TABLE public.provisiones_vouchers ALTER COLUMN mes_gestion TYPE TEXT;
+ALTER TABLE public.provisiones_vouchers ALTER COLUMN soporte_num TYPE TEXT;
 
 /* 6. ESTADO SINCRONIZADO EN TIEMPO REAL */
 CREATE TABLE IF NOT EXISTS public.app_sync_state (
@@ -152,6 +179,7 @@ CREATE TABLE IF NOT EXISTS public.app_sync_state (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE public.app_sync_state ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255);
+ALTER TABLE public.app_sync_state ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 /* 7. HORAS EXTRAS */
 CREATE TABLE IF NOT EXISTS public.horas_extras_records (
@@ -723,26 +751,38 @@ export async function migrateProvisionesToSupabase(
   vouchers: any[],
   provSyncDocs?: Record<string, any>
 ): Promise<{ count: number; ok: boolean; error?: string }> {
+  const safeCount = Array.isArray(vouchers) ? vouchers.length : 0;
   try {
     const syncOk = await syncCloudKeyToSupabase('provisiones_state', 'saved_vouchers', vouchers || []);
     if (!syncOk) throw new Error('No se pudo escribir en app_sync_state (revisa SQL v2.0 / RLS)');
+
+    if (provSyncDocs && Object.keys(provSyncDocs).length > 0) {
+      await syncCloudKeyToSupabase('provisiones_state', 'sync_docs_archive', provSyncDocs);
+    }
+
     if (Array.isArray(vouchers) && vouchers.length > 0) {
+      const toSafeIso = (raw: any): string => {
+        if (!raw) return new Date().toISOString();
+        const ts = Date.parse(String(raw));
+        return Number.isFinite(ts) ? new Date(ts).toISOString() : new Date().toISOString();
+      };
+
       const mapped = vouchers.map((v: any) => {
         const ordersArr = Array.isArray(v.orders) ? v.orders : [];
         const sumFlete = ordersArr.reduce((acc: number, o: any) => acc + (Number(o.flete) || 0), 0);
         return {
-          id: String(v.id || `PROV-${Date.now()}`),
-          order_id: ordersArr[0]?.id || null,
-          pv: ordersArr[0]?.pv || null,
+          id: String(v.id || `PROV-${Date.now()}`).slice(0, 128),
+          order_id: ordersArr[0]?.id ? String(ordersArr[0].id).slice(0, 64) : null,
+          pv: ordersArr[0]?.pv ? String(ordersArr[0].pv).slice(0, 64) : null,
           soporte_num: v.soporteNum || v.numeroSoporte || null,
-          transportadora: v.transportadora || null,
+          transportadora: v.transportadora ? String(v.transportadora).slice(0, 255) : null,
           mes_gestion: v.mesGestion || null,
-          quincena: v.quincena ? String(v.quincena) : null,
-          flete_total: Number(v.fleteTotal || sumFlete) || 0,
-          otros_gastos: Number(v.otrosGastos) || 0,
+          quincena: v.quincenaLabel || (v.quincena ? String(v.quincena) : null),
+          flete_total: Number(v.fleteTotal || v.montoTotal || sumFlete) || 0,
+          otros_gastos: Number(v.otrosGastosMonto ?? v.otrosGastos) || 0,
           otros_gastos_concepto: v.otrosGastosConcepto || null,
-          estado: v.estado || 'Procesado',
-          fecha_guardado: v.fechaGuardado || v.createdAt || new Date().toISOString(),
+          estado: v.estado ? String(v.estado).slice(0, 32) : 'Procesado',
+          fecha_guardado: toSafeIso(v.fechaGuardado || v.createdAt),
           data: v
         };
       });
@@ -751,12 +791,9 @@ export async function migrateProvisionesToSupabase(
         if (error) throw new Error(error.message);
       }
     }
-    if (provSyncDocs && Object.keys(provSyncDocs).length > 0) {
-      await syncCloudKeyToSupabase('provisiones_state', 'sync_docs_archive', provSyncDocs);
-    }
-    return { count: Array.isArray(vouchers) ? vouchers.length : 0, ok: true };
+    return { count: safeCount, ok: true };
   } catch (err: any) {
-    return { count: 0, ok: false, error: err?.message || String(err) };
+    return { count: safeCount, ok: false, error: err?.message || String(err) };
   }
 }
 

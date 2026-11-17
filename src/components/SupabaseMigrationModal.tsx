@@ -262,9 +262,18 @@ export default function SupabaseMigrationModal({
       setMigrationProgress({ current: 4, total: 7, phase: 'Migrando Provisiones y Estados de Conciliación...' });
       updateStep('provisiones', { status: 'running' });
 
-      const localVouchers = safeParseJson<any[]>(localStorage.getItem('prov_saved_vouchers'), []);
-      const fsProvAll = await listFirestoreCollectionDocs('provisiones_state', 500);
-      const vouchers = pickLongerArray(fsProvAll.saved_vouchers, localVouchers);
+      const localVouchersRaw =
+        localStorage.getItem('prov_saved_vouchers') ||
+        localStorage.getItem('provisiones_saved_vouchers');
+      const localVouchers = safeParseJson<any[]>(localVouchersRaw, []);
+      const [fsSavedVouchers, fsProvAll] = await Promise.all([
+        fetchFirestoreDocRaw('provisiones_state', 'saved_vouchers'),
+        listFirestoreCollectionDocs('provisiones_state', 500)
+      ]);
+      const vouchers = pickLongerArray(
+        pickLongerArray(fsSavedVouchers, fsProvAll.saved_vouchers),
+        localVouchers
+      );
       const provSyncDocs: Record<string, any> = {};
       for (const [k, v] of Object.entries(fsProvAll)) {
         if (k !== 'saved_vouchers' && v) {
@@ -275,7 +284,9 @@ export default function SupabaseMigrationModal({
       const provRes = await migrateProvisionesToSupabase(vouchers, provSyncDocs);
       updateStep('provisiones', {
         status: provRes.ok ? 'done' : 'error',
-        detail: `${provRes.count} comprobantes, ${Object.keys(provSyncDocs).length} docs conciliación`
+        detail: provRes.ok
+          ? `${provRes.count} comprobantes, ${Object.keys(provSyncDocs).length} docs conciliación`
+          : `Error (${provRes.count} comp.): ${provRes.error || 'revisa esquema SQL v2.0'}`
       });
 
       // 5. CITAS Y AGENDAMIENTO
@@ -367,10 +378,25 @@ export default function SupabaseMigrationModal({
         detail: `${Object.keys(mergedDeleted).length} anul., ${mergedReminders.length} recordat., ${cierresList.length} cierres, ${auxRes.queueCount} cola, ${auxRes.logsCount} logs`
       });
 
-      setMigrationResult({
-        success: true,
-        message: '¡Migración total completada! Todos los módulos de SISTEMALOG (Fletes, Horas Extras, Pedidos de Empleados, Provisiones, Citas, Liquidador y Auxiliares/Logs) quedaron respaldados en Supabase PostgreSQL.'
-      });
+      const failedModules: string[] = [];
+      if (!horasRes.ok) failedModules.push(`Horas Extras (${horasRes.error || 'error'})`);
+      if (!pedRes.ok) failedModules.push(`Pedidos (${pedRes.error || 'error'})`);
+      if (!provRes.ok) failedModules.push(`Provisiones (${provRes.error || 'error'})`);
+      if (!citasRes.ok) failedModules.push(`Citas (${citasRes.error || 'error'})`);
+      if (!liqRes.ok) failedModules.push(`Liquidador (${liqRes.error || 'error'})`);
+      if (!auxRes.auxOk) failedModules.push(`Auxiliares (${auxRes.error || 'error'})`);
+
+      if (failedModules.length > 0) {
+        setMigrationResult({
+          success: false,
+          message: `Se migraron casi todos los módulos, pero hubo fallo en: ${failedModules.join(' | ')}. Ejecuta el Script SQL v2.0 actualizado en Supabase (+ New query -> Run) y vuelve a presionar "Iniciar Migración Total".`
+        });
+      } else {
+        setMigrationResult({
+          success: true,
+          message: '¡Migración total completada! Todos los módulos de SISTEMALOG (Fletes, Horas Extras, Pedidos de Empleados, Provisiones, Citas, Liquidador y Auxiliares/Logs) quedaron respaldados en Supabase PostgreSQL.'
+        });
+      }
     } catch (e: any) {
       setModuleSteps(prev => prev.map(s => (s.status === 'running' ? { ...s, status: 'error' } : s)));
       const rawMsg = e?.message || String(e);
