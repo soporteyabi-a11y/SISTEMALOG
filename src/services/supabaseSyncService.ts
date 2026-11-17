@@ -29,13 +29,32 @@ export const SUPABASE_TABLES = [
   'sync_audit_logs'
 ] as const;
 
-export const SUPABASE_SCHEMA_SQL = `-- =========================================================================
--- SCRIPT SQL COMPLETO v2.0 - MIGRACIÓN TOTAL SISTEMALOG A SUPABASE (POSTGRESQL)
--- Ejecuta este script en: Supabase Dashboard -> SQL Editor -> New Query -> Run
--- Es 100% idempotente: puedes ejecutarlo aunque ya hayas ejecutado la versión v1.
--- =========================================================================
+export const SUPABASE_RLS_UNLOCK_SQL = `ALTER TABLE IF EXISTS public.fletes_solicitudes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.clientes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.transportadoras DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.novedades DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.provisiones_vouchers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.app_sync_state DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.horas_extras_records DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.horas_extras_workers DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.horas_extras_cortes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.pedidos_empleados_orders DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.pedidos_empleados_products DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.citas_appointments DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.citas_clients DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.liq_catalog DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.liq_clientes DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.liq_historial DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.sync_queue_events DISABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.sync_audit_logs DISABLE ROW LEVEL SECURITY;
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+NOTIFY pgrst, 'reload schema';`;
 
--- 1. FLETES Y DESPACHOS
+export const SUPABASE_SCHEMA_SQL = `/* SCRIPT SQL COMPLETO v2.0 - MIGRACION TOTAL SISTEMALOG A SUPABASE */
+
+/* 1. FLETES Y DESPACHOS */
 CREATE TABLE IF NOT EXISTS public.fletes_solicitudes (
   id VARCHAR(64) PRIMARY KEY,
   pv VARCHAR(64) NOT NULL,
@@ -70,7 +89,7 @@ ALTER TABLE public.fletes_solicitudes ADD COLUMN IF NOT EXISTS anulado_motivo TE
 ALTER TABLE public.fletes_solicitudes ADD COLUMN IF NOT EXISTS sync_version INTEGER DEFAULT 1;
 ALTER TABLE public.fletes_solicitudes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- 2. CLIENTES MAESTROS
+/* 2. CLIENTES MAESTROS */
 CREATE TABLE IF NOT EXISTS public.clientes (
   id VARCHAR(64) PRIMARY KEY,
   nombre VARCHAR(255) NOT NULL,
@@ -81,7 +100,7 @@ CREATE TABLE IF NOT EXISTS public.clientes (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. TRANSPORTADORAS
+/* 3. TRANSPORTADORAS */
 CREATE TABLE IF NOT EXISTS public.transportadoras (
   id VARCHAR(64) PRIMARY KEY,
   nombre VARCHAR(255) NOT NULL,
@@ -91,7 +110,7 @@ CREATE TABLE IF NOT EXISTS public.transportadoras (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. NOVEDADES OPERATIVAS
+/* 4. NOVEDADES OPERATIVAS */
 CREATE TABLE IF NOT EXISTS public.novedades (
   id VARCHAR(64) PRIMARY KEY,
   order_id VARCHAR(64),
@@ -106,7 +125,7 @@ CREATE TABLE IF NOT EXISTS public.novedades (
 );
 ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS data JSONB;
 
--- 5. PROVISIONES Y COMPROBANTES
+/* 5. PROVISIONES Y COMPROBANTES */
 CREATE TABLE IF NOT EXISTS public.provisiones_vouchers (
   id VARCHAR(128) PRIMARY KEY,
   order_id VARCHAR(64),
@@ -125,7 +144,7 @@ CREATE TABLE IF NOT EXISTS public.provisiones_vouchers (
 );
 ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS data JSONB;
 
--- 6. ESTADO SINCRONIZADO EN TIEMPO REAL (NÚCLEO UNIFICADO DE TODOS LOS MÓDULOS)
+/* 6. ESTADO SINCRONIZADO EN TIEMPO REAL */
 CREATE TABLE IF NOT EXISTS public.app_sync_state (
   key VARCHAR(128) PRIMARY KEY,
   data JSONB NOT NULL,
@@ -134,7 +153,7 @@ CREATE TABLE IF NOT EXISTS public.app_sync_state (
 );
 ALTER TABLE public.app_sync_state ADD COLUMN IF NOT EXISTS updated_by VARCHAR(255);
 
--- 7. HORAS EXTRAS (REGISTROS, TRABAJADORES Y CORTES QUINCENALES)
+/* 7. HORAS EXTRAS */
 CREATE TABLE IF NOT EXISTS public.horas_extras_records (
   id BIGINT PRIMARY KEY,
   nom VARCHAR(255),
@@ -180,7 +199,7 @@ CREATE TABLE IF NOT EXISTS public.horas_extras_cortes (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. PORTAL PEDIDOS DE EMPLEADOS
+/* 8. PORTAL PEDIDOS DE EMPLEADOS */
 CREATE TABLE IF NOT EXISTS public.pedidos_empleados_orders (
   id VARCHAR(128) PRIMARY KEY,
   employee VARCHAR(255),
@@ -205,7 +224,7 @@ CREATE TABLE IF NOT EXISTS public.pedidos_empleados_products (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. CITAS Y AGENDAMIENTO
+/* 9. CITAS Y AGENDAMIENTO */
 CREATE TABLE IF NOT EXISTS public.citas_appointments (
   id VARCHAR(128) PRIMARY KEY,
   cliente VARCHAR(255),
@@ -224,7 +243,7 @@ CREATE TABLE IF NOT EXISTS public.citas_clients (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 10. LIQUIDADOR DE TARIFAS Y PRODUCTOS
+/* 10. LIQUIDADOR */
 CREATE TABLE IF NOT EXISTS public.liq_catalog (
   id VARCHAR(128) PRIMARY KEY,
   codigo VARCHAR(64),
@@ -246,7 +265,7 @@ CREATE TABLE IF NOT EXISTS public.liq_historial (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 11. COLAS DE SINCRONIZACIÓN Y LOGS DE AUDITORÍA
+/* 11. COLAS Y LOGS DE AUDITORIA */
 CREATE TABLE IF NOT EXISTS public.sync_queue_events (
   id VARCHAR(128) PRIMARY KEY,
   idempotency_key VARCHAR(255),
@@ -274,7 +293,7 @@ CREATE TABLE IF NOT EXISTS public.sync_audit_logs (
   timestamp_iso TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 12. DESACTIVAR RLS EN TODAS LAS TABLAS PARA ACCESO DIRECTO DEL ERP
+/* 12. DESACTIVAR RLS EN TODAS LAS TABLAS */
 ALTER TABLE public.fletes_solicitudes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clientes DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transportadoras DISABLE ROW LEVEL SECURITY;
@@ -294,7 +313,7 @@ ALTER TABLE public.liq_historial DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sync_queue_events DISABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sync_audit_logs DISABLE ROW LEVEL SECURITY;
 
--- 13. ACTIVAR REALTIME MULTI-PC EN SUPABASE (POSTGRES CHANGES)
+/* 13. ACTIVAR REALTIME MULTI-PC */
 ALTER TABLE public.app_sync_state REPLICA IDENTITY FULL;
 DO $$
 BEGIN
@@ -308,7 +327,7 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- 14. PERMISOS COMPLETOS PARA CLIENTE API Y RECARGA DE ESQUEMA
+/* 14. PERMISOS COMPLETOS API Y RECARGA */
 GRANT USAGE ON SCHEMA public TO anon, authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;

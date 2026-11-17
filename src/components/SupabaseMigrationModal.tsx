@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Database, CheckCircle2, AlertTriangle, Copy, Check,
-  RefreshCw, ShieldCheck, Play, ExternalLink, X, Power, Layers, Server
+  RefreshCw, ShieldCheck, Play, ExternalLink, X, Power, Layers, Server, Download
 } from 'lucide-react';
 import { Order, Customer, Carrier, Novedad, Reminder } from '../types';
 import {
   SUPABASE_TABLES,
   SUPABASE_SCHEMA_SQL,
+  SUPABASE_RLS_UNLOCK_SQL,
   testSupabaseConnection,
   migrateAllOrdersToSupabase,
   migrateCustomersToSupabase,
@@ -68,6 +69,8 @@ export default function SupabaseMigrationModal({
   reminders
 }: SupabaseMigrationModalProps) {
   const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedRls, setCopiedRls] = useState(false);
+  const sqlTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [engineMode, setEngineModeState] = useState<CloudEngineMode>(getCloudEngineMode());
   const [status, setStatus] = useState<{
@@ -115,10 +118,63 @@ export default function SupabaseMigrationModal({
 
   if (!isOpen) return null;
 
-  const handleCopySql = () => {
-    navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 3000);
+  const copyTextReliable = async (text: string, refEl?: HTMLTextAreaElement | null): Promise<boolean> => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {}
+    try {
+      const target = refEl || document.createElement('textarea');
+      if (!refEl) {
+        target.value = text;
+        target.style.position = 'fixed';
+        target.style.opacity = '0';
+        document.body.appendChild(target);
+      }
+      target.focus();
+      target.select();
+      target.setSelectionRange(0, text.length);
+      const ok = document.execCommand('copy');
+      if (!refEl) document.body.removeChild(target);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCopySql = async () => {
+    const ok = await copyTextReliable(SUPABASE_SCHEMA_SQL, sqlTextareaRef.current);
+    if (ok) {
+      setCopiedSql(true);
+      setTimeout(() => setCopiedSql(false), 3000);
+    } else if (sqlTextareaRef.current) {
+      sqlTextareaRef.current.focus();
+      sqlTextareaRef.current.select();
+    }
+  };
+
+  const handleCopyRlsUnlock = async () => {
+    const ok = await copyTextReliable(SUPABASE_RLS_UNLOCK_SQL);
+    if (ok) {
+      setCopiedRls(true);
+      setTimeout(() => setCopiedRls(false), 3000);
+    }
+  };
+
+  const handleDownloadSql = () => {
+    try {
+      const blob = new Blob([SUPABASE_SCHEMA_SQL], { type: 'text/sql;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'sistemalog_supabase_v2.sql';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {}
   };
 
   const handleToggleEngine = (targetMode: CloudEngineMode) => {
@@ -438,7 +494,7 @@ export default function SupabaseMigrationModal({
 
         {/* Step 1: SQL Schema Creation v2.0 */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-hud-accent/20 text-hud-accent flex items-center justify-center font-bold text-xs">
                 1
@@ -447,23 +503,39 @@ export default function SupabaseMigrationModal({
                 Ejecutar Script SQL v2.0 (18 Tablas + Realtime)
               </h4>
             </div>
-            <button
-              type="button"
-              onClick={handleCopySql}
-              className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
-                copiedSql
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
-              }`}
-            >
-              {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedSql ? '¡SQL v2.0 Copiado!' : 'Copiar Script SQL v2.0'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadSql}
+                className="px-2.5 py-1 rounded text-xs font-bold bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 flex items-center gap-1.5"
+                title="Descargar archivo .sql por si el navegador bloquea el portapapeles"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Descargar .sql</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCopySql}
+                className={`px-3 py-1 rounded text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  copiedSql
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
+                }`}
+              >
+                {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copiedSql ? '¡SQL v2.0 Copiado!' : 'Copiar Script SQL v2.0'}</span>
+              </button>
+            </div>
           </div>
 
-          <div className="bg-slate-900 p-2.5 rounded border border-slate-800 text-[10px] font-mono max-h-24 overflow-y-auto select-all text-slate-400">
-            {SUPABASE_SCHEMA_SQL}
-          </div>
+          <textarea
+            ref={sqlTextareaRef}
+            readOnly
+            value={SUPABASE_SCHEMA_SQL}
+            onClick={(e) => e.currentTarget.select()}
+            rows={5}
+            className="w-full bg-slate-900 p-2.5 rounded border border-slate-800 text-[10px] font-mono text-slate-300 resize-y focus:outline-none focus:border-emerald-500/50"
+          />
         </div>
 
         {/* Step 2: Migrate All 7 Modules */}
@@ -546,9 +618,21 @@ export default function SupabaseMigrationModal({
                 ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
-              <div className="font-bold flex items-center gap-1.5">
-                {migrationResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
-                {migrationResult.success ? 'Migración Integral Finalizada' : 'Error en la Migración'}
+              <div className="font-bold flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5">
+                  {migrationResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
+                  {migrationResult.success ? 'Migración Integral Finalizada' : 'Error en la Migración'}
+                </span>
+                {!migrationResult.success && migrationResult.message.toLowerCase().includes('rls') && (
+                  <button
+                    type="button"
+                    onClick={handleCopyRlsUnlock}
+                    className="px-2.5 py-1 rounded bg-rose-600/30 hover:bg-rose-600/50 border border-rose-400/40 text-white text-[10px] font-mono flex items-center gap-1 shrink-0"
+                  >
+                    {copiedRls ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedRls ? '¡Copiado!' : 'Copiar SQL Desbloqueo RLS'}</span>
+                  </button>
+                )}
               </div>
               <p className="mt-1 leading-relaxed text-[11px]">{migrationResult.message}</p>
             </div>
