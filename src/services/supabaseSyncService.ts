@@ -137,6 +137,7 @@ ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS descripcion TEXT;
 ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS estado VARCHAR(32) DEFAULT 'Abierta';
 ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS solucion TEXT;
 ALTER TABLE public.novedades ADD COLUMN IF NOT EXISTS data JSONB;
+ALTER TABLE public.novedades DROP CONSTRAINT IF EXISTS novedades_order_id_fkey;
 
 /* 5. PROVISIONES Y COMPROBANTES */
 CREATE TABLE IF NOT EXISTS public.provisiones_vouchers (
@@ -170,6 +171,7 @@ ALTER TABLE public.provisiones_vouchers ADD COLUMN IF NOT EXISTS data JSONB;
 ALTER TABLE public.provisiones_vouchers ALTER COLUMN quincena TYPE TEXT;
 ALTER TABLE public.provisiones_vouchers ALTER COLUMN mes_gestion TYPE TEXT;
 ALTER TABLE public.provisiones_vouchers ALTER COLUMN soporte_num TYPE TEXT;
+ALTER TABLE public.provisiones_vouchers DROP CONSTRAINT IF EXISTS provisiones_vouchers_order_id_fkey;
 
 /* 6. ESTADO SINCRONIZADO EN TIEMPO REAL */
 CREATE TABLE IF NOT EXISTS public.app_sync_state (
@@ -737,7 +739,15 @@ export async function migrateNovedadesToSupabase(novedades: Novedad[]): Promise<
       data: n
     }));
     const { error } = await supabase.from('novedades').upsert(mapped, { onConflict: 'id' });
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.message?.includes('foreign key constraint')) {
+        const retryMapped = mapped.map(item => ({ ...item, order_id: null }));
+        const retry = await supabase.from('novedades').upsert(retryMapped, { onConflict: 'id' });
+        if (retry.error) throw new Error(retry.error.message);
+        return true;
+      }
+      throw new Error(error.message);
+    }
     return true;
   } catch {
     return false;
@@ -786,9 +796,20 @@ export async function migrateProvisionesToSupabase(
           data: v
         };
       });
+
       for (let i = 0; i < mapped.length; i += 50) {
-        const { error } = await supabase.from('provisiones_vouchers').upsert(mapped.slice(i, i + 50), { onConflict: 'id' });
-        if (error) throw new Error(error.message);
+        const chunk = mapped.slice(i, i + 50);
+        const { error } = await supabase.from('provisiones_vouchers').upsert(chunk, { onConflict: 'id' });
+        if (error) {
+          // If legacy FK constraint rejects historical/archived order_id, keep full orders inside JSONB `data` and clear relational `order_id`
+          if (error.message?.includes('foreign key constraint') || error.message?.includes('provisiones_vouchers_order_id_fkey')) {
+            const safeChunk = chunk.map(row => ({ ...row, order_id: null }));
+            const retry = await supabase.from('provisiones_vouchers').upsert(safeChunk, { onConflict: 'id' });
+            if (retry.error) throw new Error(retry.error.message);
+          } else {
+            throw new Error(error.message);
+          }
+        }
       }
     }
     return { count: safeCount, ok: true };

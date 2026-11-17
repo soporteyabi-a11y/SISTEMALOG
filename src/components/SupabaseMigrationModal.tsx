@@ -622,7 +622,7 @@ export default function SupabaseMigrationModal({
             {moduleSteps.map(step => (
               <div
                 key={step.id}
-                className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-slate-900/70 border border-slate-800/80"
+                className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-slate-900/70 border border-slate-800/80"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   {step.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
@@ -632,7 +632,11 @@ export default function SupabaseMigrationModal({
                   <span className="text-slate-200 truncate">{step.label}</span>
                 </div>
                 {step.detail && (
-                  <span className="text-[10px] font-mono text-emerald-300 shrink-0">{step.detail}</span>
+                  <span className={`text-[10px] font-mono break-words max-w-full ${
+                    step.status === 'error' ? 'text-rose-300' : 'text-emerald-300'
+                  }`}>
+                    {step.detail}
+                  </span>
                 )}
               </div>
             ))}
