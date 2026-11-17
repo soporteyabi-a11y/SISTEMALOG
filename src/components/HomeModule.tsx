@@ -37,7 +37,7 @@ interface ModuleDefinition {
 }
 
 const MODULES_DIRECTORY: ModuleDefinition[] = [
-  // 1. Operativos (6)
+  // 1. Operativos (7)
   {
     id: 'mod_inicio',
     name: 'Inicio & Tablero',
@@ -54,6 +54,14 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     description: 'Registro, importación y escaneo OCR de órdenes...',
     tabTarget: 'orders',
     icon: FileText
+  },
+  {
+    id: 'mod_liquidador',
+    name: 'Liquidador de Despachos',
+    category: 'operativos',
+    description: 'Liquidación operativa de cajas, pesos, cubicaje y precios por PV',
+    tabTarget: 'liquidador',
+    icon: Receipt
   },
   {
     id: 'mod_despachados',
@@ -106,7 +114,7 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     icon: Briefcase
   },
 
-  // 3. Contabilidad & Nómina (7)
+  // 3. Contabilidad & Nómina (6)
   {
     id: 'mod_provisiones',
     name: 'Provisiones de Fletes',
@@ -130,14 +138,6 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     description: 'Auditoría automática entre fletes estimados vs facturas radicadas',
     tabTarget: 'diferencias',
     icon: FileSpreadsheet
-  },
-  {
-    id: 'mod_liquidador',
-    name: 'Liquidador de Despachos',
-    category: 'contabilidad',
-    description: 'Matriz de rentabilidad y desglose porcentual flete vs venta',
-    tabTarget: 'liquidador',
-    icon: Receipt
   },
   {
     id: 'mod_horas',

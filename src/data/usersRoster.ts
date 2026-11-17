@@ -18,6 +18,7 @@ export const SYSTEM_MODULES_LIST: SystemModuleInfo[] = [
   // Operativos
   { id: 'tablero', aliases: ['inicio', 'tablero'], nombre: 'Inicio & Tablero', categoria: 'Operativos', descripcion: 'Panel central de control y KPIs operativos' },
   { id: 'orders', aliases: ['orders', 'facturacion'], nombre: 'Solicitudes', categoria: 'Operativos', descripcion: 'Registro, importación y escaneo OCR de órdenes' },
+  { id: 'liquidador', aliases: ['liquidador'], nombre: 'Liquidador de Despachos', categoria: 'Operativos', descripcion: 'Liquidación operativa de cajas, pesos, cubicaje y precios por PV' },
   { id: 'despachados', aliases: ['despachados', 'despachado'], nombre: 'Despachados', categoria: 'Operativos', descripcion: 'Historial de fletes despachados con factura' },
   { id: 'pendientes', aliases: ['pendientes', 'pendiente'], nombre: 'Pendientes', categoria: 'Operativos', descripcion: 'Cola de solicitudes en cargue y por despachar' },
   { id: 'vehiculos', aliases: ['vehiculos'], nombre: 'Vehículos & Flota', categoria: 'Operativos', descripcion: 'Directorio de camiones, placas y conductores' },
@@ -31,7 +32,6 @@ export const SYSTEM_MODULES_LIST: SystemModuleInfo[] = [
   { id: 'provisiones', aliases: ['provisiones', 'provision'], nombre: 'Provisiones & Fletes', categoria: 'Contabilidad & Nómina', descripcion: 'Cálculo de provisiones, fletes y manifiestos de carga' },
   { id: 'comprobantes', aliases: ['comprobantes'], nombre: 'Comprobantes Contables', categoria: 'Contabilidad & Nómina', descripcion: 'Generación, registro y auditoría de comprobantes' },
   { id: 'horas', aliases: ['horas', 'horasExtras'], nombre: 'Horas Extras & Nómina', categoria: 'Contabilidad & Nómina', descripcion: 'Control de turnos, recargos Ley 2466 y cortes 12/27' },
-  { id: 'liquidador', aliases: ['liquidador'], nombre: 'Liquidación de Fletes', categoria: 'Contabilidad & Nómina', descripcion: 'Herramienta para liquidar costos reales vs cobro' },
   { id: 'diferencias', aliases: ['diferencias'], nombre: 'Auditoría Fletes', categoria: 'Contabilidad & Nómina', descripcion: 'Detección de diferencias entre flete cotizado y facturado' },
   { id: 'pedidos', aliases: ['pedidos', 'pedidoEmpleados'], nombre: 'Pedido Empleados', categoria: 'Contabilidad & Nómina', descripcion: 'Gestión y despacho de pedidos para el equipo interno' },
 

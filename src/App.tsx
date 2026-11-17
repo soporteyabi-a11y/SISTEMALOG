@@ -3841,6 +3841,14 @@ export default function App() {
                   </button>
 
                   <button 
+                    onClick={() => setActiveTab('liquidador')}
+                    className={`w-full text-left rounded-lg p-3 flex items-center gap-3 transition-colors ${activeTab === 'liquidador' ? 'bg-hud-accent/10 border-l-2 border-hud-accent text-hud-accent font-bold' : 'text-slate-200 hover:text-white hover:bg-slate-900/50 font-semibold'}`}
+                  >
+                    <Sliders className="w-4 h-4 text-hud-accent" />
+                    {sidebarOpen && <span>Liquidador de Despachos</span>}
+                  </button>
+
+                  <button 
                     onClick={() => setActiveTab('despachado')}
                     className={`w-full text-left rounded-lg p-3 flex items-center gap-3 transition-colors ${activeTab === 'despachado' ? 'bg-hud-accent/10 border-l-2 border-hud-accent text-hud-accent font-bold' : 'text-slate-200 hover:text-white hover:bg-slate-900/50 font-semibold'}`}
                   >
@@ -3944,14 +3952,6 @@ export default function App() {
                   >
                     <Bell className="w-4 h-4" />
                     {sidebarOpen && <span>Recordatorios</span>}
-                  </button>
-
-                  <button 
-                    onClick={() => setActiveTab('liquidador')}
-                    className={`w-full text-left rounded-lg p-3 flex items-center gap-3 transition-colors ${activeTab === 'liquidador' ? 'bg-hud-accent/10 border-l-2 border-hud-accent text-hud-accent font-bold' : 'text-slate-200 hover:text-white hover:bg-slate-900/50 font-semibold'}`}
-                  >
-                    <Sliders className="w-4 h-4 text-hud-accent" />
-                    {sidebarOpen && <span>Liquidador Carga</span>}
                   </button>
 
                   <button 
