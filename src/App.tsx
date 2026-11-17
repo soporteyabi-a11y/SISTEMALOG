@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 import { Order, Carrier, Customer, Novedad, Reminder, AppUser } from './types';
-import { USERS_ROSTER, findUserByEmail, canUserAccessTab } from './data/usersRoster';
+import { USERS_ROSTER, findUserByEmail, canUserAccessTab, loadUsersRoster, saveUsersRoster } from './data/usersRoster';
 import { matchOrderSearch, normalizeText, sortOrdersBySearchRelevance, deduplicateOrders } from './utils/searchHelper';
 import { SEED_CARRIERS, SEED_CUSTOMERS, SEED_ORDERS, SEED_NOVEDADES, SEED_REMINDERS } from './data/seed';
 import * as XLSX from 'xlsx';
@@ -51,6 +51,7 @@ import {
   subscribeToCloud, 
   subscribeCloudStatus, 
   getCloudStatus,
+  getCloudEngineMode,
   forceRefreshFromCloud,
   CloudStatusInfo,
   generateFullBackupObject, 
@@ -340,11 +341,19 @@ export default function App() {
     const raw = safeLocalStorage.getItem('erp_active_user');
     if (raw) {
       try {
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw) as AppUser;
+        if (parsed?.email) {
+          const fresh = findUserByEmail(parsed.email);
+          if (fresh) {
+            safeLocalStorage.setItem('erp_active_user', JSON.stringify(fresh));
+            return fresh;
+          }
+        }
+        return parsed;
       } catch (e) {}
     }
     const isAuth = safeLocalStorage.getItem('erp_authenticated') === 'true';
-    return isAuth ? USERS_ROSTER[0] : null;
+    return isAuth ? loadUsersRoster()[0] : null;
   });
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -425,8 +434,9 @@ export default function App() {
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleForceCloudSync = async () => {
+    const engineLabel = getCloudEngineMode() === 'supabase_primary' ? 'Supabase PostgreSQL' : 'Firestore';
     try {
-      setBackupRestoreMessage({ type: 'success', text: 'Conectando directamente al servidor de Firestore...' });
+      setBackupRestoreMessage({ type: 'success', text: `Conectando directamente al servidor de ${engineLabel}...` });
       const freshOrders = await forceRefreshFromCloud('app_state', 'orders');
       let orderCount = 0;
       if (Array.isArray(freshOrders)) {
@@ -458,13 +468,26 @@ export default function App() {
         setDeletedOrderIds(freshDeleted);
         safeLocalStorage.setItem('lp_deleted_orders', JSON.stringify(freshDeleted));
       }
-      const successMsg = `¡Sincronización completa con Firestore exitosa! ${orderCount} fletes activos cargados.`;
+      const freshUsersRoster = await forceRefreshFromCloud('app_state', 'users_roster');
+      if (Array.isArray(freshUsersRoster) && freshUsersRoster.length > 0) {
+        const syncedRoster = saveUsersRoster(freshUsersRoster, { skipCloud: true });
+        setCurrentUser(prev => {
+          if (!prev?.email) return prev;
+          const refreshedUser = syncedRoster.find(u => u.email.toLowerCase() === prev.email.toLowerCase());
+          if (refreshedUser) {
+            safeLocalStorage.setItem('erp_active_user', JSON.stringify(refreshedUser));
+            return refreshedUser;
+          }
+          return prev;
+        });
+      }
+      const successMsg = `¡Sincronización completa con ${engineLabel} exitosa! ${orderCount} fletes activos cargados.`;
       setBackupRestoreMessage({ 
         type: 'success', 
         text: successMsg 
       });
       setPSuccessToast({
-        title: 'Nube Firestore Sincronizada',
+        title: `Nube ${engineLabel} Sincronizada`,
         message: successMsg
       });
       setTimeout(() => setPSuccessToast(null), 4000);
@@ -477,17 +500,19 @@ export default function App() {
   };
 
   const handlePushLocalToCloud = async () => {
+    const engineLabel = getCloudEngineMode() === 'supabase_primary' ? 'Supabase PostgreSQL' : 'Firestore';
     try {
-      setBackupRestoreMessage({ type: 'success', text: 'Subiendo todos los fletes y catálogos locales a Firestore...' });
+      setBackupRestoreMessage({ type: 'success', text: `Subiendo todos los fletes y catálogos locales a ${engineLabel}...` });
       const compressed = orders.map(compressOrderForCloud);
       await saveToCloud('app_state', 'orders', compressed, 'soporteyabi@gmail.com', true);
       await saveToCloud('app_state', 'carriers', carriers, 'soporteyabi@gmail.com', true);
       await saveToCloud('app_state', 'customers', customers, 'soporteyabi@gmail.com', true);
       await saveToCloud('app_state', 'novedades', novedades, 'soporteyabi@gmail.com', true);
       await saveToCloud('app_state', 'reminders', reminders, 'soporteyabi@gmail.com', true);
+      await saveToCloud('app_state', 'users_roster', loadUsersRoster(), currentUser?.email || 'soporteyabi@gmail.com', true);
       setBackupRestoreMessage({
         type: 'success',
-        text: '¡Publicación exitosa! Todos los datos de este PC han sido subidos a la Nube Firestore. Los demás PCs se actualizarán de inmediato.'
+        text: `¡Publicación exitosa! Todos los datos de este PC han sido subidos a ${engineLabel}. Los demás PCs se actualizarán de inmediato.`
       });
     } catch (err: any) {
       setBackupRestoreMessage({
@@ -747,7 +772,26 @@ export default function App() {
       }
     }).catch(console.warn);
 
-    // 2. Subscribe to real-time updates from Firebase Firestore for multi-user collaboration
+    const syncActiveUserFromRoster = (roster: AppUser[]) => {
+      setCurrentUser(prev => {
+        if (!prev?.email) return prev;
+        const fresh = roster.find(u => u.email.toLowerCase() === prev.email.toLowerCase());
+        if (fresh && JSON.stringify(fresh) !== JSON.stringify(prev)) {
+          safeLocalStorage.setItem('erp_active_user', JSON.stringify(fresh));
+          return fresh;
+        }
+        return prev;
+      });
+    };
+
+    forceRefreshFromCloud('app_state', 'users_roster').then(fresh => {
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        const synced = saveUsersRoster(fresh, { skipCloud: true });
+        syncActiveUserFromRoster(synced);
+      }
+    }).catch(console.warn);
+
+    // 2. Subscribe to real-time updates from Cloud (Supabase / Firestore) for multi-user collaboration
     const unsubDeleted = subscribeToCloud('app_state', 'deleted_orders', (data) => {
       if (data && typeof data === 'object') {
         setDeletedOrderIds(data);
@@ -885,6 +929,13 @@ export default function App() {
       }
     });
 
+    const unsubUsersRoster = subscribeToCloud('app_state', 'users_roster', (data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        const synced = saveUsersRoster(data, { skipCloud: true });
+        syncActiveUserFromRoster(synced);
+      }
+    });
+
     return () => {
       unsubDeleted();
       unsubOrders();
@@ -892,6 +943,7 @@ export default function App() {
       unsubCustomers();
       unsubNovedades();
       unsubReminders();
+      unsubUsersRoster();
     };
   }, []);
 

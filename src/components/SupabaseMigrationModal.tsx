@@ -19,10 +19,12 @@ import {
   migrateCitasToSupabase,
   migrateLiquidadorToSupabase,
   migrateAuxiliaresAndLogsToSupabase,
+  syncCloudKeyToSupabase,
   fetchFirestoreDocRaw,
   listFirestoreCollectionDocs
 } from '../services/supabaseSyncService';
 import { getCloudEngineMode, setCloudEngineMode, CloudEngineMode } from '../firebaseService';
+import { loadUsersRoster } from '../data/usersRoster';
 import { SUPABASE_URL } from '../supabaseConfig';
 
 interface SupabaseMigrationModalProps {
@@ -373,6 +375,7 @@ export default function SupabaseMigrationModal({
         syncLogs: logsList,
         analisisSyncLogs: analisisList
       });
+      await syncCloudKeyToSupabase('app_state', 'users_roster', loadUsersRoster(), 'soporteyabi@gmail.com');
       updateStep('auxiliares', {
         status: auxRes.auxOk ? 'done' : 'error',
         detail: `${Object.keys(mergedDeleted).length} anul., ${mergedReminders.length} recordat., ${cierresList.length} cierres, ${auxRes.queueCount} cola, ${auxRes.logsCount} logs`

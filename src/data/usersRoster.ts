@@ -4,6 +4,7 @@
  */
 
 import { AppUser, UserRole } from '../types';
+import { saveToCloud } from '../firebaseService';
 
 export interface SystemModuleInfo {
   id: string;
@@ -82,7 +83,7 @@ export const USERS_ROSTER: AppUser[] = [
     color: '#38bdf8',
     departamento: 'Operaciones & Despacho',
     modulosPermitidos: [
-      'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',
+      'inicio', 'tablero', 'orders', 'facturacion', 'liquidador', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
       'carriers', 'horas', 'horasExtras', 'pedidos', 'pedidoEmpleados', 'novedades', 'recordatorios'
     ],
@@ -185,6 +186,36 @@ export const USERS_ROSTER: AppUser[] = [
   }
 ];
 
+export const USERS_ROSTER_EVENT = 'sistemalog:users_roster_updated';
+
+export const enrichUsersRoster = (rawList: AppUser[]): AppUser[] => {
+  const enriched = rawList.map((u: AppUser) => {
+    const updatedUser = { ...u };
+    if (updatedUser.email.toLowerCase() === 'soporteyabi@gmail.com') {
+      updatedUser.cargo = 'Aux coordinador logistico';
+      updatedUser.departamento = 'Logística & Despacho';
+    }
+    const currentMods = Array.isArray(updatedUser.modulosPermitidos) ? updatedUser.modulosPermitidos : [];
+    const nextMods = [...currentMods];
+    if (!nextMods.includes('horas')) {
+      nextMods.push('horas', 'horasExtras');
+    }
+    if (updatedUser.email.toLowerCase() === 'auxlogistico@latinproducts.com.co' && !nextMods.includes('liquidador')) {
+      nextMods.push('liquidador');
+    }
+    updatedUser.modulosPermitidos = nextMods;
+    return updatedUser;
+  });
+
+  USERS_ROSTER.forEach(defaultU => {
+    if (!enriched.some(existing => existing.email.toLowerCase() === defaultU.email.toLowerCase())) {
+      enriched.push(defaultU);
+    }
+  });
+
+  return enriched;
+};
+
 export const loadUsersRoster = (): AppUser[] => {
   if (typeof window === 'undefined') return USERS_ROSTER;
   try {
@@ -192,28 +223,7 @@ export const loadUsersRoster = (): AppUser[] => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Guarantee every user has horas module access so workers can register and update Washington cargo
-        const enriched = parsed.map((u: AppUser) => {
-          let updatedUser = { ...u };
-          if (updatedUser.email.toLowerCase() === 'soporteyabi@gmail.com') {
-            updatedUser.cargo = 'Aux coordinador logistico';
-            updatedUser.departamento = 'Logística & Despacho';
-          }
-          const currentMods = updatedUser.modulosPermitidos || [];
-          if (!currentMods.includes('horas')) {
-            updatedUser.modulosPermitidos = [...currentMods, 'horas', 'horasExtras'];
-          }
-          return updatedUser;
-        });
-
-        // Ensure Juan Carlos and Antonio Calderon exist in roster
-        USERS_ROSTER.forEach(defaultU => {
-          if (!enriched.some(existing => existing.email.toLowerCase() === defaultU.email.toLowerCase())) {
-            enriched.push(defaultU);
-          }
-        });
-
-        return enriched;
+        return enrichUsersRoster(parsed);
       }
     }
   } catch (e) {
@@ -222,13 +232,22 @@ export const loadUsersRoster = (): AppUser[] => {
   return USERS_ROSTER;
 };
 
-export const saveUsersRoster = (users: AppUser[]): void => {
-  if (typeof window === 'undefined') return;
+export const saveUsersRoster = (
+  users: AppUser[],
+  options?: { skipCloud?: boolean; actorEmail?: string }
+): AppUser[] => {
+  const cleanUsers = enrichUsersRoster(users);
+  if (typeof window === 'undefined') return cleanUsers;
   try {
-    localStorage.setItem('erp_users_roster', JSON.stringify(users));
+    localStorage.setItem('erp_users_roster', JSON.stringify(cleanUsers));
+    window.dispatchEvent(new CustomEvent(USERS_ROSTER_EVENT, { detail: cleanUsers }));
   } catch (e) {
     console.error('Error saving users roster', e);
   }
+  if (!options?.skipCloud) {
+    saveToCloud('app_state', 'users_roster', cleanUsers, options?.actorEmail || 'admin@sistemalog', true).catch(() => {});
+  }
+  return cleanUsers;
 };
 
 export const findUserByEmail = (email: string, users?: AppUser[]): AppUser | undefined => {

@@ -14,6 +14,7 @@ import {
 import { AppUser, Order, UserRole } from '../types';
 import { 
   USERS_ROSTER, 
+  USERS_ROSTER_EVENT,
   loadUsersRoster, 
   saveUsersRoster, 
   SYSTEM_MODULES_LIST, 
@@ -77,12 +78,25 @@ export default function UsuariosModule({
     return usersList.find(u => u.email.toLowerCase() === selectedUserEmail.toLowerCase()) || usersList[0];
   }, [usersList, selectedUserEmail]);
 
-  // Persist whenever usersList changes
+  useEffect(() => {
+    const handleRosterEvent = (evt: Event) => {
+      const detail = (evt as CustomEvent).detail;
+      if (Array.isArray(detail) && detail.length > 0) {
+        setUsersList(detail);
+      } else {
+        setUsersList(loadUsersRoster());
+      }
+    };
+    window.addEventListener(USERS_ROSTER_EVENT, handleRosterEvent);
+    return () => window.removeEventListener(USERS_ROSTER_EVENT, handleRosterEvent);
+  }, []);
+
+  // Persist whenever usersList changes (synced to Supabase + localStorage)
   const updateUsers = (newUsers: AppUser[], toastNotice?: string) => {
-    setUsersList(newUsers);
-    saveUsersRoster(newUsers);
+    const syncedUsers = saveUsersRoster(newUsers, { actorEmail: currentUser?.email });
+    setUsersList(syncedUsers);
     if (onUpdateUsersRoster) {
-      onUpdateUsersRoster(newUsers);
+      onUpdateUsersRoster(syncedUsers);
     }
     if (toastNotice) {
       triggerToast(toastNotice, 'success');
@@ -125,17 +139,20 @@ export default function UsuariosModule({
     setIsEditModalOpen(true);
   };
 
-  // Toggle Module in the editing modal
-  const handleToggleModuleInEdit = (moduleAlias: string) => {
+  // Toggle Module in the editing modal (handles all aliases for each module)
+  const handleToggleModuleInEdit = (mod: SystemModuleInfo) => {
     if (!editingUser) return;
     const current = editingUser.modulosPermitidos || [];
-    const exists = current.some(m => m.toLowerCase() === moduleAlias.toLowerCase());
-    
+    const aliasesLower = mod.aliases.map(a => a.toLowerCase());
+    const exists = aliasesLower.some(a => current.some(m => m.toLowerCase() === a));
+
     let nextList: string[];
     if (exists) {
-      nextList = current.filter(m => m.toLowerCase() !== moduleAlias.toLowerCase());
+      nextList = current.filter(m => !aliasesLower.includes(m.toLowerCase()));
     } else {
-      nextList = [...current, moduleAlias];
+      const existingLower = new Set(current.map(m => m.toLowerCase()));
+      const additions = mod.aliases.filter(a => !existingLower.has(a.toLowerCase()));
+      nextList = [...current, ...additions];
     }
 
     setEditingUser({
@@ -1106,7 +1123,7 @@ export default function UsuariosModule({
                               <input
                                 type="checkbox"
                                 checked={isAssigned}
-                                onChange={() => handleToggleModuleInEdit(mod.id)}
+                                onChange={() => handleToggleModuleInEdit(mod)}
                                 className="w-4 h-4 accent-[#00c5d8] rounded mt-0.5 cursor-pointer shrink-0"
                               />
                               <div className="text-left">

@@ -530,7 +530,8 @@ export function generateFullBackupObject(): Record<string, any> {
     'horas_extras_records',
     'horas_extras_workers',
     'horas_extras_config',
-    'provisiones_saved_vouchers'
+    'provisiones_saved_vouchers',
+    'erp_users_roster'
   ];
 
   const backupData: Record<string, any> = {
@@ -599,7 +600,8 @@ export async function restoreFullBackupObject(backupJson: any): Promise<{ succes
       liq_historial: { col: 'liq_state', doc: 'historial' },
       horas_extras_records: { col: 'horas_extras_state', doc: 'records' },
       horas_extras_workers: { col: 'horas_extras_state', doc: 'workers' },
-      provisiones_saved_vouchers: { col: 'provisiones_state', doc: 'saved_vouchers' }
+      provisiones_saved_vouchers: { col: 'provisiones_state', doc: 'saved_vouchers' },
+      erp_users_roster: { col: 'app_state', doc: 'users_roster' }
     };
 
     // Best-effort write to cloud
