@@ -14,16 +14,22 @@ const CLOUD_ENGINE_STORAGE_KEY = 'sistemalog_cloud_engine';
 
 export function getCloudEngineMode(): CloudEngineMode {
   try {
-    const envPrimary = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PRIMARY_CLOUD_DB) || '';
-    if (String(envPrimary).toLowerCase() === 'supabase') {
+    const envPrimary = String(
+      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PRIMARY_CLOUD_DB) || ''
+    ).trim().toLowerCase();
+    if (envPrimary === 'firestore') {
+      return 'firestore_primary';
+    }
+    if (envPrimary === 'supabase') {
       return 'supabase_primary';
     }
     if (typeof window !== 'undefined') {
       const localMode = localStorage.getItem(CLOUD_ENGINE_STORAGE_KEY);
+      if (localMode === 'firestore_primary') return 'firestore_primary';
       if (localMode === 'supabase_primary') return 'supabase_primary';
     }
   } catch {}
-  return 'firestore_primary';
+  return 'supabase_primary';
 }
 
 export function setCloudEngineMode(mode: CloudEngineMode) {

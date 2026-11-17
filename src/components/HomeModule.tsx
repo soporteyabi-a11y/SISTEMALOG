@@ -7,6 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { Order, AppUser } from '../types';
 import { canUserAccessTab } from '../data/usersRoster';
 import { matchOrderSearch } from '../utils/searchHelper';
+import { getCloudEngineMode } from '../firebaseService';
 import { 
   FileText, Users, Truck, CheckCircle2, Search,
   Terminal as TerminalIcon, Calendar, Clock, MapPin, Package, ArrowRight,
@@ -252,14 +253,16 @@ export default function HomeModule({
     return orders.filter(o => o.estado === 'Entregado').length;
   }, [orders]);
 
-  // Terminal log status messages matching screenshot
+  const isSupabasePrimary = getCloudEngineMode() === 'supabase_primary';
+
+  // Terminal log status messages
   const logs = useMemo(() => [
     `> Protocolos de transmisión listos... OK`,
-    `> Conectando a Base de Datos Central en la nube... OK (Firebase Firestore)`,
+    `> Conectando a Base de Datos Central en la nube... OK (${isSupabasePrimary ? 'Supabase PostgreSQL' : 'Firebase Firestore'})`,
     `> Canal seguro de encriptación TLS 1.3... Conectado`,
     `> Sincronizando registros de fletes de Yumbo... Sincronizado (${totalOrders} registros cargados)`,
     `> Motor Ley 2466 / Cortes 12 y 27... Operativo`
-  ], [totalOrders]);
+  ], [totalOrders, isSupabasePrimary]);
 
   // Pending activity filter for Tablero view
   const pendingOrders = useMemo(() => {
@@ -539,7 +542,7 @@ export default function HomeModule({
           <div className="flex items-center gap-2 mb-2 pb-2 border-b border-teal-500/20">
             <TerminalIcon className="w-4 h-4 text-emerald-400 pulse-led" />
             <span className="text-xs font-mono font-bold text-teal-200 uppercase tracking-widest">
-              Monitor de red y sincronización (Firebase Real-time)
+              Monitor de red y sincronización ({isSupabasePrimary ? 'Supabase Real-time' : 'Firebase Real-time'})
             </span>
           </div>
           <div className="font-mono text-xs text-emerald-400/90 leading-relaxed bg-[#011114]/90 p-3 rounded-xl border border-teal-900/50 max-h-36 overflow-y-auto">
@@ -923,7 +926,7 @@ export default function HomeModule({
         <div className="flex items-center gap-2 mb-2 pb-2 border-b border-teal-500/20">
           <TerminalIcon className="w-4 h-4 text-emerald-400 pulse-led" />
           <span className="text-xs font-mono font-bold text-teal-200 uppercase tracking-widest">
-            Monitor de red y sincronización (Firebase Real-time)
+            Monitor de red y sincronización ({isSupabasePrimary ? 'Supabase Real-time' : 'Firebase Real-time'})
           </span>
         </div>
         <div className="font-mono text-xs text-emerald-400/90 leading-relaxed bg-[#011114]/90 p-3 rounded-xl border border-teal-900/50 max-h-36 overflow-y-auto">

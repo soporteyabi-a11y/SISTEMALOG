@@ -4253,14 +4253,14 @@ export default function App() {
                         handleForceCloudSync();
                       }}
                       className="w-full text-left px-2.5 py-2 rounded-lg hover:bg-emerald-950/30 text-emerald-300 hover:text-emerald-200 flex items-center justify-between text-[11px] font-bold transition-colors cursor-pointer group"
-                      title="Forzar lectura directa desde Firestore para descargar todos los fletes y clientes"
+                      title={`Forzar lectura directa desde ${cloudStatus.engineMode === 'supabase_primary' ? 'Supabase PostgreSQL' : 'Firestore'} para descargar todos los fletes y clientes`}
                     >
                       <span className="flex items-center gap-2">
                         <RefreshCw className="w-3.5 h-3.5 text-emerald-400 group-hover:rotate-180 transition-transform duration-500" />
                         <span>Recargar Nube</span>
                       </span>
                       <span className="text-[9px] text-emerald-400/80">
-                        Firestore
+                        {cloudStatus.engineMode === 'supabase_primary' ? 'Supabase' : 'Firestore'}
                       </span>
                     </button>
 

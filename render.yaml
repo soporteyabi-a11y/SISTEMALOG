@@ -15,5 +15,5 @@ services:
       - key: VITE_SUPABASE_ANON_KEY
         value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR3eW9mbWlibmdqbHFjdnphaGVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM0NzIxNzksImV4cCI6MjEwOTA0ODE3OX0.PMgxQUt3X75XcyaXnLo53nzM_a62gXX70CWRpoYmxmQ
       - key: VITE_PRIMARY_CLOUD_DB
-        value: firestore
+        value: supabase
 
