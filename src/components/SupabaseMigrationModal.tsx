@@ -316,9 +316,14 @@ export default function SupabaseMigrationModal({
         message: '¡Migración total completada! Todos los módulos de SISTEMALOG (Fletes, Horas Extras, Pedidos de Empleados, Provisiones, Citas, Liquidador y Auxiliares/Logs) quedaron respaldados en Supabase PostgreSQL.'
       });
     } catch (e: any) {
+      setModuleSteps(prev => prev.map(s => (s.status === 'running' ? { ...s, status: 'error' } : s)));
+      const rawMsg = e?.message || String(e);
+      const isRls = rawMsg.toLowerCase().includes('row-level security');
       setMigrationResult({
         success: false,
-        message: `Error durante la migración: ${e?.message || e}`
+        message: isRls
+          ? `Falta desbloquear permisos (RLS) en Supabase: ${rawMsg}. Solución: copia el Script SQL v2.0 del Paso 1, pégalo en Supabase SQL Editor (+ New query), presiona Run hasta ver "Success. No rows returned", y vuelve a intentar.`
+          : `Error durante la migración: ${rawMsg}`
       });
     } finally {
       setIsMigrating(false);

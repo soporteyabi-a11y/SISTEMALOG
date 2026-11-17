@@ -308,7 +308,11 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
--- 14. RECARGAR ESQUEMA DE POSTGREST
+-- 14. PERMISOS COMPLETOS PARA CLIENTE API Y RECARGA DE ESQUEMA
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
+
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -686,7 +690,8 @@ export async function migrateNovedadesToSupabase(novedades: Novedad[]): Promise<
       data: n
     }));
     const { error } = await supabase.from('novedades').upsert(mapped, { onConflict: 'id' });
-    return !error;
+    if (error) throw new Error(error.message);
+    return true;
   } catch {
     return false;
   }
@@ -698,9 +703,10 @@ export async function migrateNovedadesToSupabase(novedades: Novedad[]): Promise<
 export async function migrateProvisionesToSupabase(
   vouchers: any[],
   provSyncDocs?: Record<string, any>
-): Promise<{ count: number; ok: boolean }> {
+): Promise<{ count: number; ok: boolean; error?: string }> {
   try {
-    await syncCloudKeyToSupabase('provisiones_state', 'saved_vouchers', vouchers || []);
+    const syncOk = await syncCloudKeyToSupabase('provisiones_state', 'saved_vouchers', vouchers || []);
+    if (!syncOk) throw new Error('No se pudo escribir en app_sync_state (revisa SQL v2.0 / RLS)');
     if (Array.isArray(vouchers) && vouchers.length > 0) {
       const mapped = vouchers.map((v: any) => {
         const ordersArr = Array.isArray(v.orders) ? v.orders : [];
@@ -722,15 +728,16 @@ export async function migrateProvisionesToSupabase(
         };
       });
       for (let i = 0; i < mapped.length; i += 50) {
-        await supabase.from('provisiones_vouchers').upsert(mapped.slice(i, i + 50), { onConflict: 'id' });
+        const { error } = await supabase.from('provisiones_vouchers').upsert(mapped.slice(i, i + 50), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
     if (provSyncDocs && Object.keys(provSyncDocs).length > 0) {
       await syncCloudKeyToSupabase('provisiones_state', 'sync_docs_archive', provSyncDocs);
     }
     return { count: Array.isArray(vouchers) ? vouchers.length : 0, ok: true };
-  } catch {
-    return { count: 0, ok: false };
+  } catch (err: any) {
+    return { count: 0, ok: false, error: err?.message || String(err) };
   }
 }
 
@@ -742,12 +749,13 @@ export async function migrateHorasExtrasToSupabase(payload: {
   workers: any[];
   config?: any;
   cortes?: Record<string, any>;
-}): Promise<{ recordsCount: number; workersCount: number; cortesCount: number; ok: boolean }> {
+}): Promise<{ recordsCount: number; workersCount: number; cortesCount: number; ok: boolean; error?: string }> {
   try {
     const { records = [], workers = [], config, cortes = {} } = payload;
 
-    await syncCloudKeyToSupabase('horas_extras_state', 'records', records);
-    await syncCloudKeyToSupabase('horas_extras_state', 'workers', workers);
+    const r1 = await syncCloudKeyToSupabase('horas_extras_state', 'records', records);
+    const r2 = await syncCloudKeyToSupabase('horas_extras_state', 'workers', workers);
+    if (!r1 || !r2) throw new Error('Error sincronizando app_sync_state de Horas Extras');
     if (config) {
       await syncCloudKeyToSupabase('horas_extras_state', 'config', config);
     }
@@ -780,7 +788,8 @@ export async function migrateHorasExtrasToSupabase(payload: {
         updated_at: new Date().toISOString()
       }));
       for (let i = 0; i < mappedRecs.length; i += 50) {
-        await supabase.from('horas_extras_records').upsert(mappedRecs.slice(i, i + 50), { onConflict: 'id' });
+        const { error } = await supabase.from('horas_extras_records').upsert(mappedRecs.slice(i, i + 50), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -793,7 +802,8 @@ export async function migrateHorasExtrasToSupabase(payload: {
         data: w,
         updated_at: new Date().toISOString()
       }));
-      await supabase.from('horas_extras_workers').upsert(mappedWorkers, { onConflict: 'id' });
+      const { error } = await supabase.from('horas_extras_workers').upsert(mappedWorkers, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
     }
 
     const corteKeys = Object.keys(cortes);
@@ -811,7 +821,8 @@ export async function migrateHorasExtrasToSupabase(payload: {
           updated_at: new Date().toISOString()
         });
       }
-      await supabase.from('horas_extras_cortes').upsert(mappedCortes, { onConflict: 'id' });
+      const { error } = await supabase.from('horas_extras_cortes').upsert(mappedCortes, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
     }
 
     return {
@@ -820,8 +831,8 @@ export async function migrateHorasExtrasToSupabase(payload: {
       cortesCount: corteKeys.length,
       ok: true
     };
-  } catch {
-    return { recordsCount: 0, workersCount: 0, cortesCount: 0, ok: false };
+  } catch (err: any) {
+    return { recordsCount: 0, workersCount: 0, cortesCount: 0, ok: false, error: err?.message || String(err) };
   }
 }
 
@@ -832,12 +843,13 @@ export async function migratePedidosEmpleadosToSupabase(payload: {
   orders: any[];
   products: any[];
   config?: any;
-}): Promise<{ ordersCount: number; productsCount: number; ok: boolean }> {
+}): Promise<{ ordersCount: number; productsCount: number; ok: boolean; error?: string }> {
   try {
     const { orders = [], products = [], config } = payload;
 
-    await syncCloudKeyToSupabase('pedidos_empleados_state', 'orders', orders);
-    await syncCloudKeyToSupabase('pedidos_empleados_state', 'products', products);
+    const p1 = await syncCloudKeyToSupabase('pedidos_empleados_state', 'orders', orders);
+    const p2 = await syncCloudKeyToSupabase('pedidos_empleados_state', 'products', products);
+    if (!p1 || !p2) throw new Error('Error sincronizando app_sync_state de Pedidos');
     if (config) {
       await syncCloudKeyToSupabase('pedidos_empleados_state', 'config', config);
     }
@@ -856,7 +868,8 @@ export async function migratePedidosEmpleadosToSupabase(payload: {
         updated_at: new Date().toISOString()
       }));
       for (let i = 0; i < mappedOrders.length; i += 20) {
-        await supabase.from('pedidos_empleados_orders').upsert(mappedOrders.slice(i, i + 20), { onConflict: 'id' });
+        const { error } = await supabase.from('pedidos_empleados_orders').upsert(mappedOrders.slice(i, i + 20), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -872,13 +885,14 @@ export async function migratePedidosEmpleadosToSupabase(payload: {
         updated_at: new Date().toISOString()
       }));
       for (let i = 0; i < mappedProds.length; i += 25) {
-        await supabase.from('pedidos_empleados_products').upsert(mappedProds.slice(i, i + 25), { onConflict: 'id' });
+        const { error } = await supabase.from('pedidos_empleados_products').upsert(mappedProds.slice(i, i + 25), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
     return { ordersCount: orders.length, productsCount: products.length, ok: true };
-  } catch {
-    return { ordersCount: 0, productsCount: 0, ok: false };
+  } catch (err: any) {
+    return { ordersCount: 0, productsCount: 0, ok: false, error: err?.message || String(err) };
   }
 }
 
@@ -889,13 +903,14 @@ export async function migrateCitasToSupabase(payload: {
   appointments: any[];
   archived: any[];
   clients: any[];
-}): Promise<{ appointmentsCount: number; archivedCount: number; clientsCount: number; ok: boolean }> {
+}): Promise<{ appointmentsCount: number; archivedCount: number; clientsCount: number; ok: boolean; error?: string }> {
   try {
     const { appointments = [], archived = [], clients = [] } = payload;
 
-    await syncCloudKeyToSupabase('citas_state', 'appointments', appointments);
-    await syncCloudKeyToSupabase('citas_state', 'archived', archived);
-    await syncCloudKeyToSupabase('citas_state', 'clients', clients);
+    const c1 = await syncCloudKeyToSupabase('citas_state', 'appointments', appointments);
+    const c2 = await syncCloudKeyToSupabase('citas_state', 'archived', archived);
+    const c3 = await syncCloudKeyToSupabase('citas_state', 'clients', clients);
+    if (!c1 || !c2 || !c3) throw new Error('Error sincronizando app_sync_state de Citas');
 
     const combined = [
       ...appointments.map((a: any, idx: number) => ({
@@ -921,7 +936,8 @@ export async function migrateCitasToSupabase(payload: {
     ];
 
     if (combined.length > 0) {
-      await supabase.from('citas_appointments').upsert(combined, { onConflict: 'id' });
+      const { error } = await supabase.from('citas_appointments').upsert(combined, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
     }
 
     if (clients.length > 0) {
@@ -931,7 +947,8 @@ export async function migrateCitasToSupabase(payload: {
         data: c,
         updated_at: new Date().toISOString()
       }));
-      await supabase.from('citas_clients').upsert(mappedClients, { onConflict: 'id' });
+      const { error } = await supabase.from('citas_clients').upsert(mappedClients, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
     }
 
     return {
@@ -940,8 +957,8 @@ export async function migrateCitasToSupabase(payload: {
       clientsCount: clients.length,
       ok: true
     };
-  } catch {
-    return { appointmentsCount: 0, archivedCount: 0, clientsCount: 0, ok: false };
+  } catch (err: any) {
+    return { appointmentsCount: 0, archivedCount: 0, clientsCount: 0, ok: false, error: err?.message || String(err) };
   }
 }
 
@@ -952,13 +969,14 @@ export async function migrateLiquidadorToSupabase(payload: {
   catalog: any[];
   clientes: any;
   historial: any[];
-}): Promise<{ catalogCount: number; clientesCount: number; historialCount: number; ok: boolean }> {
+}): Promise<{ catalogCount: number; clientesCount: number; historialCount: number; ok: boolean; error?: string }> {
   try {
     const { catalog = [], clientes = {}, historial = [] } = payload;
 
-    await syncCloudKeyToSupabase('liq_state', 'catalog', catalog);
-    await syncCloudKeyToSupabase('liq_state', 'clientes', clientes);
-    await syncCloudKeyToSupabase('liq_state', 'historial', historial);
+    const l1 = await syncCloudKeyToSupabase('liq_state', 'catalog', catalog);
+    const l2 = await syncCloudKeyToSupabase('liq_state', 'clientes', clientes);
+    const l3 = await syncCloudKeyToSupabase('liq_state', 'historial', historial);
+    if (!l1 || !l2 || !l3) throw new Error('Error sincronizando app_sync_state de Liquidador');
 
     if (Array.isArray(catalog) && catalog.length > 0) {
       const mappedCat = catalog.map((item: any, idx: number) => ({
@@ -969,7 +987,8 @@ export async function migrateLiquidadorToSupabase(payload: {
         updated_at: new Date().toISOString()
       }));
       for (let i = 0; i < mappedCat.length; i += 100) {
-        await supabase.from('liq_catalog').upsert(mappedCat.slice(i, i + 100), { onConflict: 'id' });
+        const { error } = await supabase.from('liq_catalog').upsert(mappedCat.slice(i, i + 100), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -978,7 +997,8 @@ export async function migrateLiquidadorToSupabase(payload: {
       : Object.entries(clientes || {}).map(([k, v]: [string, any]) => ({ id: k, nombre: k, data: v }));
 
     if (clienteEntries.length > 0) {
-      await supabase.from('liq_clientes').upsert(clienteEntries, { onConflict: 'id' });
+      const { error } = await supabase.from('liq_clientes').upsert(clienteEntries, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
     }
 
     if (Array.isArray(historial) && historial.length > 0) {
@@ -988,7 +1008,8 @@ export async function migrateLiquidadorToSupabase(payload: {
         updated_at: new Date().toISOString()
       }));
       for (let i = 0; i < mappedHist.length; i += 50) {
-        await supabase.from('liq_historial').upsert(mappedHist.slice(i, i + 50), { onConflict: 'id' });
+        const { error } = await supabase.from('liq_historial').upsert(mappedHist.slice(i, i + 50), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -998,8 +1019,8 @@ export async function migrateLiquidadorToSupabase(payload: {
       historialCount: Array.isArray(historial) ? historial.length : 0,
       ok: true
     };
-  } catch {
-    return { catalogCount: 0, clientesCount: 0, historialCount: 0, ok: false };
+  } catch (err: any) {
+    return { catalogCount: 0, clientesCount: 0, historialCount: 0, ok: false, error: err?.message || String(err) };
   }
 }
 
@@ -1013,7 +1034,7 @@ export async function migrateAuxiliaresAndLogsToSupabase(payload: {
   syncQueue?: any[];
   syncLogs?: any[];
   analisisSyncLogs?: any[];
-}): Promise<{ auxOk: boolean; queueCount: number; logsCount: number }> {
+}): Promise<{ auxOk: boolean; queueCount: number; logsCount: number; error?: string }> {
   try {
     const {
       deletedOrders = {},
@@ -1024,9 +1045,10 @@ export async function migrateAuxiliaresAndLogsToSupabase(payload: {
       analisisSyncLogs = []
     } = payload;
 
-    await syncCloudKeyToSupabase('app_state', 'deleted_orders', deletedOrders);
-    await syncCloudKeyToSupabase('app_state', 'reminders', reminders);
-    await syncCloudKeyToSupabase('app_state', 'cierres', cierres);
+    const a1 = await syncCloudKeyToSupabase('app_state', 'deleted_orders', deletedOrders);
+    const a2 = await syncCloudKeyToSupabase('app_state', 'reminders', reminders);
+    const a3 = await syncCloudKeyToSupabase('app_state', 'cierres', cierres);
+    if (!a1 || !a2 || !a3) throw new Error('Error sincronizando app_sync_state de Auxiliares');
 
     if (analisisSyncLogs.length > 0) {
       await syncCloudKeyToSupabase('analisis_sync_logs', 'archive', analisisSyncLogs);
@@ -1047,7 +1069,8 @@ export async function migrateAuxiliaresAndLogsToSupabase(payload: {
         updated_at: q.updatedAt || new Date().toISOString()
       }));
       for (let i = 0; i < mappedQ.length; i += 100) {
-        await supabase.from('sync_queue_events').upsert(mappedQ.slice(i, i + 100), { onConflict: 'id' });
+        const { error } = await supabase.from('sync_queue_events').upsert(mappedQ.slice(i, i + 100), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -1065,7 +1088,8 @@ export async function migrateAuxiliaresAndLogsToSupabase(payload: {
         timestamp_iso: l.timestamp || new Date().toISOString()
       }));
       for (let i = 0; i < mappedL.length; i += 100) {
-        await supabase.from('sync_audit_logs').upsert(mappedL.slice(i, i + 100), { onConflict: 'id' });
+        const { error } = await supabase.from('sync_audit_logs').upsert(mappedL.slice(i, i + 100), { onConflict: 'id' });
+        if (error) throw new Error(error.message);
       }
     }
 
@@ -1074,8 +1098,8 @@ export async function migrateAuxiliaresAndLogsToSupabase(payload: {
       queueCount: syncQueue.length,
       logsCount: syncLogs.length
     };
-  } catch {
-    return { auxOk: false, queueCount: 0, logsCount: 0 };
+  } catch (err: any) {
+    return { auxOk: false, queueCount: 0, logsCount: 0, error: err?.message || String(err) };
   }
 }
 
