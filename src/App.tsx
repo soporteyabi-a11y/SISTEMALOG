@@ -146,13 +146,24 @@ const normalizeCarrierName = (name: string): string => {
   return String(name || '').trim();
 };
 
+const sanitizeJunkFactura = (rawFact: string, estado: string, fechaFactura?: string): string => {
+  const f = String(rawFact || '').trim();
+  if (!f) return '';
+  if (estado === 'Pendiente' && !String(fechaFactura || '').trim() && /^\d{1,2}$/.test(f)) {
+    return '';
+  }
+  return f;
+};
+
 const decompressOrderFromCloud = (c: any): Order => {
   const isFullObj = c.cliente !== undefined || c.fechaIngreso !== undefined;
   const rawEstado = isFullObj ? (c.estado || "Pendiente") : (c.es || "Pendiente");
-  const factVal = isFullObj ? (c.factura || "") : (c.fa || "");
+  const rawFactVal = isFullObj ? (c.factura || "") : (c.fa || "");
+  const fechaFacturaVal = isFullObj ? (c.fechaFactura || "") : (c.ff || "");
   const fechaSalVal = isFullObj ? (c.fechaSalida || "") : (c.fs || "");
 
-  const finalEstado = normalizeEstado(rawEstado, factVal, fechaSalVal);
+  const finalEstado = normalizeEstado(rawEstado, rawFactVal, fechaSalVal);
+  const factVal = sanitizeJunkFactura(rawFactVal, finalEstado, fechaFacturaVal);
 
   if (isFullObj) {
     return {
@@ -170,7 +181,7 @@ const decompressOrderFromCloud = (c: any): Order => {
       peso: Number(c.peso) || 0,
       cajas: Number(c.cajas) || 0,
       venta: Number(c.venta) || 0,
-      factura: c.factura || "",
+      factura: factVal,
       facturado: Number(c.facturado) || 0,
       cajasFact: Number(c.cajasFact) || 0,
       pesoFact: Number(c.pesoFact) || 0,
@@ -200,7 +211,7 @@ const decompressOrderFromCloud = (c: any): Order => {
     peso: Number(c.pe) || 0,
     cajas: Number(c.ca) || 0,
     venta: Number(c.ve) || 0,
-    factura: c.fa || "",
+    factura: factVal,
     facturado: Number(c.fct) || 0,
     cajasFact: Number(c.cf) || 0,
     pesoFact: Number(c.pf) || 0,
@@ -2042,19 +2053,22 @@ export default function App() {
       venta = "5000000";
     }
 
-    // 8. EXTRACT FACTURA
+    // 8. EXTRACT FACTURA (exige mínimo 3 dígitos y prefijo con límite de palabra para evitar falsos positivos como 'CAFÉ 2' o '2')
     const facturaMatches = [
-      /Factura\s*(?:de\s*venta)?\s*[:\-–]?\s*([A-Z0-9\-]+)/i,
-      /FE\s*[-–]?\s*(\d+)/i,
-      /N[o°]\.?\s*Factura\s*[:\-–]?\s*([A-Z0-9\-]+)/i,
-      /N[o°]\.?\s*Factura\s*FE\s*[-–]?\s*(\d+)/i,
-      /Factura\s+No\.?\s*([A-Z0-9\-]+)/i
+      /\bFactura\s*(?:de\s*venta)?\s*(?:No\.?|N[o°]\.?)?\s*[:\-–]\s*([A-Z0-9\-]{3,})/i,
+      /\bN[o°]\.?\s*Factura\s*(?:FE\s*[-–]?)?\s*[:\-–]?\s*([A-Z0-9\-]{3,})/i,
+      /\bFactura\s+No\.?\s*[:\-–]?\s*([A-Z0-9\-]{3,})/i,
+      /\bFE\s*[-–]?\s*(\d{3,})\b/i
     ];
     for (const regex of facturaMatches) {
       const match = text.match(regex);
       if (match && match[1]) {
-        factura = match[1].trim();
-        break;
+        const candidate = match[1].trim();
+        const digitsCount = candidate.replace(/[^0-9]/g, '').length;
+        if (digitsCount >= 3 && !/^(DE|LA|EL|NO|FECHA|VENTA|ELECTRONICA)$/i.test(candidate)) {
+          factura = candidate;
+          break;
+        }
       }
     }
 

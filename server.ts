@@ -786,19 +786,22 @@ async function parsePdfDeterministically(dataBuffer: Buffer, fileName?: string):
       venta = "5000000";
     }
 
-    // 8. EXTRACT FACTURA
+    // 8. EXTRACT FACTURA (exige mínimo 3 dígitos y límite de palabra para evitar falsos positivos como 'CAFÉ 2' o '2')
     const facturaMatches = [
-      /Factura\s*(?:de\s*venta)?\s*[:\-–]?\s*([A-Z0-9\-]+)/i,
-      /FE\s*[-–]?\s*(\d+)/i,
-      /N[o°]\.?\s*Factura\s*[:\-–]?\s*([A-Z0-9\-]+)/i,
-      /N[o°]\.?\s*Factura\s*FE\s*[-–]?\s*(\d+)/i,
-      /Factura\s+No\.?\s*([A-Z0-9\-]+)/i
+      /\bFactura\s*(?:de\s*venta)?\s*(?:No\.?|N[o°]\.?)?\s*[:\-–]\s*([A-Z0-9\-]{3,})/i,
+      /\bN[o°]\.?\s*Factura\s*(?:FE\s*[-–]?)?\s*[:\-–]?\s*([A-Z0-9\-]{3,})/i,
+      /\bFactura\s+No\.?\s*[:\-–]?\s*([A-Z0-9\-]{3,})/i,
+      /\bFE\s*[-–]?\s*(\d{3,})\b/i
     ];
     for (const regex of facturaMatches) {
       const match = text.match(regex);
       if (match && match[1]) {
-        factura = match[1].trim();
-        break;
+        const candidate = match[1].trim();
+        const digitsCount = candidate.replace(/[^0-9]/g, '').length;
+        if (digitsCount >= 3 && !/^(DE|LA|EL|NO|FECHA|VENTA|ELECTRONICA)$/i.test(candidate)) {
+          factura = candidate;
+          break;
+        }
       }
     }
 

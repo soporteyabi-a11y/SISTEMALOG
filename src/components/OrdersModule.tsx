@@ -458,7 +458,12 @@ export default function OrdersModule({
         const text = h.toLowerCase();
         Object.keys(keywords).forEach(field => {
           if (mappings[field] !== -1) return; // already matched
-          let matches = keywords[field].some(kw => text.includes(kw));
+          let matches = keywords[field].some(kw => {
+            if (field === 'factura' && (kw === 'fe' || kw === 'fv')) {
+              return new RegExp(`\\b${kw}\\b`, 'i').test(text);
+            }
+            return text.includes(kw);
+          });
           if (field === 'factura' && (
             text.includes('fecha') || 
             text.includes('date') || 
@@ -467,7 +472,13 @@ export default function OrdersModule({
             text.includes('valor') ||
             text.includes('monto') ||
             text.includes('pesos') ||
-            text.includes('$')
+            text.includes('$') ||
+            text.includes('referencia') ||
+            text.includes('diferencia') ||
+            text.includes('frecuencia') ||
+            text.includes('efectivo') ||
+            text.includes('tipo') ||
+            text.includes('estado')
           )) {
             matches = false;
           }
@@ -699,7 +710,7 @@ export default function OrdersModule({
       const cajas = Math.round(parseColombianFloat(getCellValue('cajas'))) || 10;
       const peso = parseColombianFloat(getCellValue('peso')) || 100;
       const venta = Math.round(parseColombianFloat(getCellValue('venta')));
-      const factura = getCellValue('factura');
+      const rawFactura = getCellValue('factura');
       const rawCarrier = getCellValue('transportadora');
       const carrierResolved = resolveMatchedCarrier(rawCarrier);
 
@@ -738,6 +749,7 @@ export default function OrdersModule({
 
       const rawFechaFactura = getCellValue('fechaFactura');
       const fechaFacturaVal = rawFechaFactura ? normalizeImportedDate(rawFechaFactura) : '';
+      const factura = (!fechaFacturaVal && /^\d{1,2}$/.test(rawFactura)) ? '' : rawFactura;
 
       const rawFechaSalida = getCellValue('fechaSalida');
       const fechaSalidaVal = rawFechaSalida ? normalizeImportedDate(rawFechaSalida) : '';
