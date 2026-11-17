@@ -1,6 +1,7 @@
 import { db } from '../firebase';
 import { doc, getDoc, setDoc, updateDoc, runTransaction, writeBatch } from 'firebase/firestore';
-import { sanitizeForFirestore } from '../firebaseService';
+import { sanitizeForFirestore, getCloudEngineMode } from '../firebaseService';
+import { syncQueueEventToSupabase, syncAuditLogToSupabase, syncCloudKeyToSupabase } from './supabaseSyncService';
 
 export interface SyncQueueItem {
   id: string;
@@ -94,6 +95,8 @@ export function addAuditLog(log: Omit<SyncAuditLog, 'id' | 'timestamp'>) {
 }
 
 async function saveLogToCloud(log: SyncAuditLog) {
+  syncAuditLogToSupabase(log).catch(() => {});
+  if (getCloudEngineMode() === 'supabase_primary') return;
   try {
     const docRef = doc(db, 'sync_logs', log.id);
     await setDoc(docRef, sanitizeForFirestore(log));
@@ -160,12 +163,15 @@ export async function enqueueSyncEvent(
     message: `Evento encolado [Idempotency: ${item.idempotencyKey}]`
   });
 
-  // Best-effort write to cloud queue
-  try {
-    const docRef = doc(db, 'sync_queue', item.id);
-    await setDoc(docRef, sanitizeForFirestore(item));
-  } catch (err) {
-    // Persistent local queue handles offline/quota state seamlessly
+  // Best-effort write to cloud queue (Supabase + Firestore during transition)
+  syncQueueEventToSupabase(item).catch(() => {});
+  if (getCloudEngineMode() !== 'supabase_primary') {
+    try {
+      const docRef = doc(db, 'sync_queue', item.id);
+      await setDoc(docRef, sanitizeForFirestore(item));
+    } catch (err) {
+      // Persistent local queue handles offline/quota state seamlessly
+    }
   }
 
   // Trigger processing asynchronously
@@ -219,15 +225,18 @@ export async function processSyncQueue(): Promise<{ processed: number; failed: n
         });
 
         // Update cloud status
-        try {
-          const docRef = doc(db, 'sync_queue', item.id);
-          await updateDoc(docRef, {
-            status: 'processed',
-            attempts: item.attempts,
-            updatedAt: item.updatedAt
-          });
-        } catch (e) {
-          // Local state remains source of truth
+        syncQueueEventToSupabase(item).catch(() => {});
+        if (getCloudEngineMode() !== 'supabase_primary') {
+          try {
+            const docRef = doc(db, 'sync_queue', item.id);
+            await updateDoc(docRef, {
+              status: 'processed',
+              attempts: item.attempts,
+              updatedAt: item.updatedAt
+            });
+          } catch (e) {
+            // Local state remains source of truth
+          }
         }
       } catch (err: any) {
         failedCount++;
@@ -264,17 +273,20 @@ export async function processSyncQueue(): Promise<{ processed: number; failed: n
 
         saveLocalState();
 
-        try {
-          const docRef = doc(db, 'sync_queue', item.id);
-          await updateDoc(docRef, {
-            status: item.status,
-            attempts: item.attempts,
-            nextRetryAt: item.nextRetryAt,
-            lastError: item.lastError,
-            updatedAt: item.updatedAt
-          });
-        } catch (e) {
-          // Local fallback
+        syncQueueEventToSupabase(item).catch(() => {});
+        if (getCloudEngineMode() !== 'supabase_primary') {
+          try {
+            const docRef = doc(db, 'sync_queue', item.id);
+            await updateDoc(docRef, {
+              status: item.status,
+              attempts: item.attempts,
+              nextRetryAt: item.nextRetryAt,
+              lastError: item.lastError,
+              updatedAt: item.updatedAt
+            });
+          } catch (e) {
+            // Local fallback
+          }
         }
       }
     }
@@ -293,43 +305,65 @@ export async function processSyncQueue(): Promise<{ processed: number; failed: n
 async function executeAtomicSync(item: SyncQueueItem): Promise<void> {
   const { eventType, payload, recordId } = item;
 
-  // Simulate network fault handler or execute Firestore Transaction
-  try {
-    // Attempt Firestore RunTransaction or WriteBatch for atomic multi-collection propagation
-    const batch = writeBatch(db);
+  // Always mirror atomic sync records to Supabase
+  if (item.targetModule === 'Todos' || item.targetModule === 'Provisiones') {
+    syncCloudKeyToSupabase('provisiones_state', `sync_${recordId}`, {
+      recordId,
+      eventType,
+      syncedData: payload,
+      updatedAt: new Date().toISOString()
+    }).catch(() => {});
+  }
+  if (item.targetModule === 'Todos' || item.targetModule === 'Análisis') {
+    syncCloudKeyToSupabase('analisis_sync_logs', `log_${recordId}`, {
+      recordId,
+      eventType,
+      payloadSummary: {
+        pv: payload?.pv || '',
+        cliente: payload?.cliente || '',
+        estado: payload?.estado || '',
+        venta: payload?.venta || '',
+        flete: payload?.flete || ''
+      },
+      processedAt: new Date().toISOString()
+    }).catch(() => {});
+  }
 
-    // 1. Target: App State Sync (Despacho / Orders)
-    if (item.targetModule === 'Todos' || item.targetModule === 'Provisiones') {
-      const provisionDocRef = doc(db, 'provisiones_state', `sync_${recordId}`);
-      batch.set(provisionDocRef, sanitizeForFirestore({
-        recordId,
-        eventType,
-        syncedData: payload,
-        updatedAt: new Date().toISOString()
-      }), { merge: true });
+  // Secondary/primary Firestore Transaction during transition
+  if (getCloudEngineMode() !== 'supabase_primary') {
+    try {
+      const batch = writeBatch(db);
+
+      if (item.targetModule === 'Todos' || item.targetModule === 'Provisiones') {
+        const provisionDocRef = doc(db, 'provisiones_state', `sync_${recordId}`);
+        batch.set(provisionDocRef, sanitizeForFirestore({
+          recordId,
+          eventType,
+          syncedData: payload,
+          updatedAt: new Date().toISOString()
+        }), { merge: true });
+      }
+
+      if (item.targetModule === 'Todos' || item.targetModule === 'Análisis') {
+        const analyticsDocRef = doc(db, 'analisis_sync_logs', `log_${recordId}`);
+        batch.set(analyticsDocRef, sanitizeForFirestore({
+          recordId,
+          eventType,
+          payloadSummary: {
+            pv: payload?.pv || '',
+            cliente: payload?.cliente || '',
+            estado: payload?.estado || '',
+            venta: payload?.venta || '',
+            flete: payload?.flete || ''
+          },
+          processedAt: new Date().toISOString()
+        }), { merge: true });
+      }
+
+      await batch.commit();
+    } catch (dbErr: any) {
+      console.info(`[SyncQueue] Cloud write deferred to offline queue engine: ${dbErr?.message}`);
     }
-
-    // 2. Target: Analytics / Reconciliation Sync
-    if (item.targetModule === 'Todos' || item.targetModule === 'Análisis') {
-      const analyticsDocRef = doc(db, 'analisis_sync_logs', `log_${recordId}`);
-      batch.set(analyticsDocRef, sanitizeForFirestore({
-        recordId,
-        eventType,
-        payloadSummary: {
-          pv: payload?.pv || '',
-          cliente: payload?.cliente || '',
-          estado: payload?.estado || '',
-          venta: payload?.venta || '',
-          flete: payload?.flete || ''
-        },
-        processedAt: new Date().toISOString()
-      }), { merge: true });
-    }
-
-    await batch.commit();
-  } catch (dbErr: any) {
-    // If Firestore fails (quota, offline, permission), we still verify local consistency so local state is 100% loss-proof
-    console.info(`[SyncQueue] Cloud write deferred to offline queue engine: ${dbErr?.message}`);
   }
 
   // Update local application state deterministically

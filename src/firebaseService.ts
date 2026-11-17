@@ -1,5 +1,39 @@
 import { db, dbDefault, firebaseConfig, databaseId } from './firebase';
 import { doc, getDoc, getDocFromServer, setDoc, onSnapshot } from 'firebase/firestore';
+import {
+  syncCloudKeyToSupabase,
+  fetchCloudKeyFromSupabase,
+  subscribeCloudKeyInSupabase,
+  migrateNovedadesToSupabase,
+  migrateProvisionesToSupabase
+} from './services/supabaseSyncService';
+
+export type CloudEngineMode = 'firestore_primary' | 'supabase_primary';
+
+const CLOUD_ENGINE_STORAGE_KEY = 'sistemalog_cloud_engine';
+
+export function getCloudEngineMode(): CloudEngineMode {
+  try {
+    const envPrimary = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PRIMARY_CLOUD_DB) || '';
+    if (String(envPrimary).toLowerCase() === 'supabase') {
+      return 'supabase_primary';
+    }
+    if (typeof window !== 'undefined') {
+      const localMode = localStorage.getItem(CLOUD_ENGINE_STORAGE_KEY);
+      if (localMode === 'supabase_primary') return 'supabase_primary';
+    }
+  } catch {}
+  return 'firestore_primary';
+}
+
+export function setCloudEngineMode(mode: CloudEngineMode) {
+  try {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(CLOUD_ENGINE_STORAGE_KEY, mode);
+    }
+    notifyStatusListeners();
+  } catch {}
+}
 
 // Cache for tracking last saved payloads per document to eliminate duplicate cloud writes
 const lastSavedPayloads = new Map<string, string>();
@@ -23,52 +57,41 @@ export interface CloudStatusInfo {
   projectId: string;
   databaseId: string;
   lastError: string | null;
+  engineMode: CloudEngineMode;
 }
 
 const statusListeners = new Set<(status: CloudStatusInfo) => void>();
 
-function notifyStatusListeners() {
-  const info: CloudStatusInfo = {
-    connected: isCloudConnected,
-    isSyncedWithServer,
-    lastServerSyncTime,
-    errorCount: cloudErrorCount,
-    isFromCache: isFromCacheState,
-    projectId: firebaseConfig.projectId || 'sistemalog',
-    databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
-    lastError: lastErrorMessage
-  };
-  statusListeners.forEach(cb => cb(info));
-}
-
-export function subscribeCloudStatus(callback: (status: CloudStatusInfo) => void): () => void {
-  statusListeners.add(callback);
-  callback({
-    connected: isCloudConnected,
-    isSyncedWithServer,
-    lastServerSyncTime,
-    errorCount: cloudErrorCount,
-    isFromCache: isFromCacheState,
-    projectId: firebaseConfig.projectId || 'sistemalog',
-    databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
-    lastError: lastErrorMessage
-  });
-  return () => {
-    statusListeners.delete(callback);
-  };
-}
-
-export function getCloudStatus(): CloudStatusInfo {
+function buildStatusInfo(): CloudStatusInfo {
+  const mode = getCloudEngineMode();
   return {
     connected: isCloudConnected,
     isSyncedWithServer,
     lastServerSyncTime,
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
-    projectId: firebaseConfig.projectId || 'sistemalog',
-    databaseId: databaseId || firebaseConfig.firestoreDatabaseId || '(default)',
-    lastError: lastErrorMessage
+    projectId: mode === 'supabase_primary' ? 'supabase-postgresql' : (firebaseConfig.projectId || 'sistemalog'),
+    databaseId: mode === 'supabase_primary' ? 'dwyofmibngjlqcvzahee' : (databaseId || firebaseConfig.firestoreDatabaseId || '(default)'),
+    lastError: lastErrorMessage,
+    engineMode: mode
   };
+}
+
+function notifyStatusListeners() {
+  const info = buildStatusInfo();
+  statusListeners.forEach(cb => cb(info));
+}
+
+export function subscribeCloudStatus(callback: (status: CloudStatusInfo) => void): () => void {
+  statusListeners.add(callback);
+  callback(buildStatusInfo());
+  return () => {
+    statusListeners.delete(callback);
+  };
+}
+
+export function getCloudStatus(): CloudStatusInfo {
+  return buildStatusInfo();
 }
 
 /**
@@ -147,6 +170,50 @@ export async function saveToCloud(
     lastSavedPayloads.set(key, serialized);
     saveCooldowns.set(key, now);
 
+    const engineMode = getCloudEngineMode();
+
+    // Helper for Supabase persistence (primary in supabase_primary mode, dual-write mirror otherwise)
+    const mirrorToSupabase = async (): Promise<boolean> => {
+      const ok = await syncCloudKeyToSupabase(collectionName, docId, cleanData, userEmail);
+      if (collectionName === 'app_state' && docId === 'novedades' && Array.isArray(cleanData)) {
+        migrateNovedadesToSupabase(cleanData).catch(() => {});
+      } else if (collectionName === 'provisiones_state' && docId === 'saved_vouchers' && Array.isArray(cleanData)) {
+        migrateProvisionesToSupabase(cleanData).catch(() => {});
+      }
+      return ok;
+    };
+
+    if (engineMode === 'supabase_primary') {
+      const supaOk = await mirrorToSupabase();
+      // Best-effort secondary mirror to Firestore during transition
+      try {
+        const docRef = doc(db, collectionName, docId);
+        const timestamp = new Date().toISOString();
+        const payload = sanitizeForFirestore({
+          data: cleanData,
+          updatedAt: timestamp,
+          updatedBy: userEmail,
+          deviceAppletId: 'multi-pc-shared-v1'
+        });
+        setDoc(docRef, payload).catch(() => {});
+      } catch {}
+
+      if (supaOk) {
+        isCloudConnected = true;
+        isSyncedWithServer = true;
+        lastErrorMessage = null;
+        lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        notifyStatusListeners();
+        return true;
+      }
+      isCloudConnected = false;
+      cloudErrorCount++;
+      lastErrorMessage = 'Error escribiendo en Supabase PostgreSQL';
+      notifyStatusListeners();
+      lastSavedPayloads.delete(key);
+      return false;
+    }
+
     const docRef = doc(db, collectionName, docId);
     const timestamp = new Date().toISOString();
     
@@ -166,6 +233,9 @@ export async function saveToCloud(
         setDoc(mirrorRef, payload).catch(() => {});
       } catch (err) {}
     }
+
+    // Background dual-write mirror to Supabase PostgreSQL for ALL modules
+    mirrorToSupabase().catch(() => {});
     
     isCloudConnected = true;
     isSyncedWithServer = true;
@@ -218,30 +288,55 @@ export async function fetchFromFirestoreRest(collectionName: string, docId: stri
   const dbId = databaseId || '(default)';
   const databasesToTry = dbId === '(default)' ? ['(default)'] : [dbId, '(default)'];
 
-  for (const targetDb of databasesToTry) {
-    const encodedDb = targetDb === '(default)' ? '(default)' : encodeURIComponent(targetDb);
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${encodedDb}/documents/${collectionName}/${docId}?key=${apiKey}`;
-
-    try {
-      const resp = await fetch(url, { cache: 'no-store' });
-      if (resp.ok) {
-        const json = await resp.json();
-        if (json && json.fields && json.fields.data) {
-          return parseFirestoreRestField(json.fields.data);
+  const results = await Promise.all(
+    databasesToTry.map(async (targetDb) => {
+      const encodedDb = targetDb === '(default)' ? '(default)' : encodeURIComponent(targetDb);
+      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${encodedDb}/documents/${collectionName}/${docId}?key=${apiKey}`;
+      try {
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (resp.ok) {
+          const json = await resp.json();
+          if (json && json.fields && json.fields.data !== undefined) {
+            const updatedAt = json.fields.updatedAt?.stringValue || json.updateTime || '';
+            const ts = updatedAt ? Date.parse(updatedAt) || 0 : 0;
+            return {
+              targetDb,
+              ts,
+              data: parseFirestoreRestField(json.fields.data)
+            };
+          }
+        } else {
+          console.warn(`[Firestore REST] HTTP ${resp.status} on ${targetDb} for ${collectionName}/${docId}`);
         }
-      } else {
-        console.warn(`[Firestore REST] HTTP ${resp.status} on ${targetDb} for ${collectionName}/${docId}`);
+      } catch (err) {
+        console.warn(`[Firestore REST] Direct fetch failed on ${targetDb} for ${collectionName}/${docId}:`, err);
       }
-    } catch (err) {
-      console.warn(`[Firestore REST] Direct fetch failed on ${targetDb} for ${collectionName}/${docId}:`, err);
-    }
-  }
-  return null;
+      return null;
+    })
+  );
+
+  const valid = results.filter((r): r is { targetDb: string; ts: number; data: any } => r !== null);
+  if (valid.length === 0) return null;
+  valid.sort((a, b) => b.ts - a.ts);
+  return valid[0].data;
 }
 
 // Force a fresh read directly from the cloud server bypassing IndexedDB cache
 export async function forceRefreshFromCloud(collectionName: string, docId: string): Promise<any | null> {
-  // 1. Direct REST HTTP read: 100% reliable across all browsers, proxies and iFrames
+  if (getCloudEngineMode() === 'supabase_primary') {
+    const supaData = await fetchCloudKeyFromSupabase(collectionName, docId);
+    if (supaData !== null) {
+      isCloudConnected = true;
+      isSyncedWithServer = true;
+      lastErrorMessage = null;
+      lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      isFromCacheState = false;
+      notifyStatusListeners();
+      return supaData;
+    }
+  }
+
+  // Direct REST HTTP read from Firestore: 100% reliable across all browsers, proxies and iFrames
   const restData = await fetchFromFirestoreRest(collectionName, docId);
   if (restData !== null) {
     isCloudConnected = true;
@@ -282,8 +377,19 @@ export async function forceRefreshFromCloud(collectionName: string, docId: strin
   return res;
 }
 
-// Load data once from Firestore
+// Load data once from Cloud (Supabase or Firestore depending on active engine)
 export async function loadFromCloud(collectionName: string, docId: string): Promise<any | null> {
+  if (getCloudEngineMode() === 'supabase_primary') {
+    const supaData = await fetchCloudKeyFromSupabase(collectionName, docId);
+    if (supaData !== null) {
+      isCloudConnected = true;
+      lastErrorMessage = null;
+      isFromCacheState = false;
+      notifyStatusListeners();
+      return supaData;
+    }
+  }
+
   try {
     const docRef = doc(db, collectionName, docId);
     const docSnap = await getDoc(docRef);
@@ -313,8 +419,8 @@ export async function loadFromCloud(collectionName: string, docId: string): Prom
 }
 
 /**
- * Subscribe to live cloud changes using Firestore onSnapshot.
- * Triggers updates across all PCs sharing the exact same Firestore collection/document.
+ * Subscribe to live cloud changes.
+ * Uses Supabase Realtime when engineMode === 'supabase_primary', otherwise Firestore onSnapshot.
  */
 export function subscribeToCloud(
   collectionName: string, 
@@ -322,6 +428,21 @@ export function subscribeToCloud(
   callback: (data: any, rawDoc?: any) => void
 ): () => void {
   const key = `${collectionName}/${docId}`;
+
+  if (getCloudEngineMode() === 'supabase_primary') {
+    return subscribeCloudKeyInSupabase(collectionName, docId, (data, rawRow) => {
+      const serialized = JSON.stringify(data);
+      if (lastSavedPayloads.get(key) === serialized) return;
+      lastSavedPayloads.set(key, serialized);
+      isCloudConnected = true;
+      isSyncedWithServer = true;
+      isFromCacheState = false;
+      lastErrorMessage = null;
+      lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      notifyStatusListeners();
+      callback(data, rawRow);
+    });
+  }
   
   try {
     const docRef = doc(db, collectionName, docId);

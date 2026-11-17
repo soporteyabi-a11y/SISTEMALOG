@@ -50,6 +50,7 @@ import {
   saveToCloud, 
   subscribeToCloud, 
   subscribeCloudStatus, 
+  getCloudStatus,
   forceRefreshFromCloud,
   CloudStatusInfo,
   generateFullBackupObject, 
@@ -397,16 +398,7 @@ export default function App() {
   const pdfFileInputRef = useRef<HTMLInputElement>(null);
 
   // Backup & Hybrid Data System states
-  const [cloudStatus, setCloudStatusState] = useState<CloudStatusInfo>({ 
-    connected: true, 
-    isSyncedWithServer: false,
-    lastServerSyncTime: null,
-    errorCount: 0,
-    isFromCache: false,
-    projectId: firebaseConfig.projectId || 'sistemalog',
-    databaseId: firebaseConfig.firestoreDatabaseId || '(default)',
-    lastError: null
-  });
+  const [cloudStatus, setCloudStatusState] = useState<CloudStatusInfo>(() => getCloudStatus());
 
   const handleSwitchDatabase = (targetDbId: string) => {
     if (typeof window !== 'undefined') {
@@ -8532,6 +8524,9 @@ export default function App() {
           orders={orders}
           customers={customers}
           carriers={carriers}
+          novedades={novedades}
+          deletedOrders={deletedOrderIds}
+          reminders={reminders}
           onClose={() => setIsSupabaseModalOpen(false)}
         />
       )}

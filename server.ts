@@ -1218,6 +1218,23 @@ async function main() {
         }
       }, PING_INTERVAL_MS);
     }
+
+    // Supabase Free-Tier Keep-Alive (prevents automatic 7-day inactivity pause in production)
+    const supaUrl = process.env.VITE_SUPABASE_URL;
+    const supaKey = process.env.VITE_SUPABASE_ANON_KEY;
+    if (process.env.NODE_ENV === "production" && supaUrl && supaKey) {
+      const SUPABASE_PING_MS = 6 * 60 * 60 * 1000; // every 6 hours
+      setInterval(async () => {
+        try {
+          await fetch(`${supaUrl.replace(/\/$/, '')}/rest/v1/app_sync_state?select=key&limit=1`, {
+            headers: {
+              apikey: supaKey,
+              Authorization: `Bearer ${supaKey}`
+            }
+          });
+        } catch {}
+      }, SUPABASE_PING_MS);
+    }
   });
 }
 
