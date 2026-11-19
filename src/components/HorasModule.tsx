@@ -3860,7 +3860,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           </div>
 
           <div className="mt-4 text-[7.5px] font-mono text-slate-500 text-center border-t border-slate-300 pt-1.5">
-            Documento generado por SISTEMALOG • LATIN PRODUCTS S.A.S. • Impresión formato A4 conforme a Ley 2466 • Liquidación aprobada para pago
+            Documento generado por SISTEMALOG • Plataforma Logística para LATIN PRODUCTS S.A.S. • Impresión formato A4 conforme a Ley 2466
           </div>
         </div>,
         document.body

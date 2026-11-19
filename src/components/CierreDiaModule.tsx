@@ -466,7 +466,7 @@ export default function CierreDiaModule({
       `• Turnos / Horas Extras del día: ${report.turnosDia.length} turnos (${formatHoursCompact(report.totalHorasExtrasDia)} netas · Rec. Noct: ${formatHoursCompact(report.totalRecNoctDia)})`,
       `• Pedidos de empleados del día: ${report.pedidosEmpDia.length} pedidos (${formatCOP(report.totalPedidosEmpDia)})`,
       ``,
-      `_Informe solo informativo — SISTEMALOG / LATIN PRODUCTS S.A.S._`
+      `_Informe generado por SISTEMALOG • Plataforma Logística para LATIN PRODUCTS S.A.S._`
     );
     return lines.join('\n');
   };
@@ -1717,7 +1717,7 @@ export default function CierreDiaModule({
                   color: '#64748b'
                 }}
               >
-                Documento generado por SISTEMALOG • Cierre Operativo Diario — LATIN PRODUCTS S.A.S.
+                Documento generado por SISTEMALOG • Plataforma Logística para LATIN PRODUCTS S.A.S.
               </div>
             </div>
           </div>,
