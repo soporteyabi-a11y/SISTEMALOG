@@ -248,14 +248,57 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   const [newWorkerAre, setNewWorkerAre] = useState('');
   const [editingWorkerId, setEditingWorkerId] = useState<number | null>(null);
 
-  // Historical lists and explicit Corte / Period binding
-  const [corteType, setCorteType] = useState<'all' | 'corte12' | 'corte27' | 'mes' | 'custom'>('all');
-  const [selectedMonth, setSelectedMonth] = useState<number>(9); // 9 = Octubre (donde están los turnos de producción)
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [corteStartDate, setCorteStartDate] = useState<string>('2026-09-28');
-  const [corteEndDate, setCorteEndDate] = useState<string>('2026-10-12');
-  const [filterWeekDate, setFilterWeekDate] = useState<string>('2026-10-30');
-  const [historyRangeType, setHistoryRangeType] = useState<'all' | 'weekly' | 'fortnightly' | 'monthly'>('all');
+  // Helper dinámico para calcular el período / corte actual según la fecha del sistema (siempre actual)
+  const initialPeriod = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth(); // 0..11
+    const day = now.getDate();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todayStr = `${year}-${pad(month + 1)}-${pad(day)}`;
+
+    if (day <= 12) {
+      const prevMonth = month === 0 ? 11 : month - 1;
+      const prevYear = month === 0 ? year - 1 : year;
+      return {
+        corteType: 'corte12' as const,
+        selectedMonth: month,
+        selectedYear: year,
+        corteStartDate: `${prevYear}-${pad(prevMonth + 1)}-28`,
+        corteEndDate: `${year}-${pad(month + 1)}-12`,
+        todayStr,
+      };
+    }
+    if (day <= 27) {
+      return {
+        corteType: 'corte27' as const,
+        selectedMonth: month,
+        selectedYear: year,
+        corteStartDate: `${year}-${pad(month + 1)}-13`,
+        corteEndDate: `${year}-${pad(month + 1)}-27`,
+        todayStr,
+      };
+    }
+    const nextMonth = month === 11 ? 0 : month + 1;
+    const nextYear = month === 11 ? year + 1 : year;
+    return {
+      corteType: 'corte12' as const,
+      selectedMonth: nextMonth,
+      selectedYear: nextYear,
+      corteStartDate: `${year}-${pad(month + 1)}-28`,
+      corteEndDate: `${nextYear}-${pad(nextMonth + 1)}-12`,
+      todayStr,
+    };
+  }, []);
+
+  // Historical lists and explicit Corte / Period binding (por defecto inicia en el período/fecha actual, nunca cargando todo el historial)
+  const [corteType, setCorteType] = useState<'all' | 'corte12' | 'corte27' | 'mes' | 'custom'>(initialPeriod.corteType);
+  const [selectedMonth, setSelectedMonth] = useState<number>(initialPeriod.selectedMonth);
+  const [selectedYear, setSelectedYear] = useState<number>(initialPeriod.selectedYear);
+  const [corteStartDate, setCorteStartDate] = useState<string>(initialPeriod.corteStartDate);
+  const [corteEndDate, setCorteEndDate] = useState<string>(initialPeriod.corteEndDate);
+  const [filterWeekDate, setFilterWeekDate] = useState<string>(initialPeriod.todayStr);
+  const [historyRangeType, setHistoryRangeType] = useState<'all' | 'weekly' | 'fortnightly' | 'monthly'>('fortnightly');
   const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('cards');
   const [filterWorker, setFilterWorker] = useState<string>('__all');
   const [activeWorkerTab, setActiveWorkerTab] = useState<string>('__global');
@@ -880,15 +923,34 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     }
   };
 
-  // Group Records inside a structured index for calculations rendering
+  // Base records matching active period / date bounds & search query (before individual worker chip selection)
+  const recordsInActivePeriod = useMemo(() => {
+    return records.filter(r => {
+      if (historySearchTerm.trim()) {
+        const query = historySearchTerm.trim().toLowerCase();
+        const matchesNom = r.nom.toLowerCase().includes(query);
+        const matchesCar = (r.car || '').toLowerCase().includes(query);
+        const matchesFec = r.fec.includes(query);
+        const matchesMot = (r.mot || '').toLowerCase().includes(query);
+        if (!matchesNom && !matchesCar && !matchesFec && !matchesMot) return false;
+      }
+
+      if (corteType !== 'all') {
+        if (corteStartDate && r.fec < corteStartDate) return false;
+        if (corteEndDate && r.fec > corteEndDate) return false;
+      }
+
+      return true;
+    }).sort((a, b) => b.fec.localeCompare(a.fec));
+  }, [records, corteType, corteStartDate, corteEndDate, historySearchTerm]);
+
+  // Group Records inside a structured index ONLY for workers who have registered hours matching active scope & payment status
   const recordsIndexedByWorker = useMemo(() => {
     const indexes: Record<string, { nom: string; car: string; are: string; regs: OvertimeRecord[] }> = {};
-    // Ensure all registered workers are initialized in the index
-    workers.forEach(w => {
-      const normalize = w.nom.trim().toLowerCase();
-      indexes[normalize] = { nom: w.nom, car: w.car || 'Operario', are: w.are || 'Logística', regs: [] };
-    });
-    records.forEach(r => {
+    recordsInActivePeriod.forEach(r => {
+      if (paymentFilter === 'pending' && r.pagado) return;
+      if (paymentFilter === 'paid' && !r.pagado) return;
+
       const tag = r.nom.trim();
       const normalize = tag.toLowerCase();
       if (!indexes[normalize]) {
@@ -896,8 +958,28 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       }
       indexes[normalize].regs.push(r);
     });
+
+    // Excluir colaboradores sin horas registradas o con 0 horas netas en el estado activo (ej. sin horas pendientes)
+    Object.keys(indexes).forEach(k => {
+      const workerNetas = indexes[k].regs.reduce((acc, r) => acc + (r.netas || 0), 0);
+      if (indexes[k].regs.length === 0 || workerNetas <= 0) {
+        delete indexes[k];
+      }
+    });
+
     return indexes;
-  }, [records, workers]);
+  }, [recordsInActivePeriod, paymentFilter]);
+
+  const activeWorkerBarCount = useMemo(() => {
+    return Object.values(recordsIndexedByWorker).reduce((acc, chunk) => acc + chunk.regs.length, 0);
+  }, [recordsIndexedByWorker]);
+
+  useEffect(() => {
+    if (activeWorkerTab !== '__global' && !recordsIndexedByWorker[activeWorkerTab]) {
+      setActiveWorkerTab('__global');
+      setFilterWorker('__all');
+    }
+  }, [activeWorkerTab, recordsIndexedByWorker]);
 
   // Summarize calculation attributes of worker's cumulative weeks
   const getCumulativeAggregateStats = (regs: OvertimeRecord[]) => {
@@ -934,7 +1016,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     ];
 
     if (corteType === 'all') {
-      return 'Todos los registros históricos (95 turnos)';
+      return `Todos los registros históricos (${records.length} turnos)`;
     }
     if (corteType === 'corte12') {
       return `Corte del 12 (${months[selectedMonth]} ${selectedYear}): del ${corteStartDate} al ${corteEndDate}`;
@@ -950,30 +1032,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
   // 1. Records strictly matching active Corte date boundaries, worker filter, and search query
   const recordsInCorte = useMemo(() => {
-    return records.filter(r => {
-      // Worker filter
-      const inWorkerName = filterWorker === '__all' || r.nom.toLowerCase() === filterWorker.toLowerCase();
-      if (!inWorkerName) return false;
-
-      // Search query filter
-      if (historySearchTerm.trim()) {
-        const query = historySearchTerm.trim().toLowerCase();
-        const matchesNom = r.nom.toLowerCase().includes(query);
-        const matchesCar = (r.car || '').toLowerCase().includes(query);
-        const matchesFec = r.fec.includes(query);
-        const matchesMot = (r.mot || '').toLowerCase().includes(query);
-        if (!matchesNom && !matchesCar && !matchesFec && !matchesMot) return false;
-      }
-
-      // Strict Date Range filters (Amarre exacto de fechas de corte)
-      if (corteType !== 'all') {
-        if (corteStartDate && r.fec < corteStartDate) return false;
-        if (corteEndDate && r.fec > corteEndDate) return false;
-      }
-
-      return true;
-    }).sort((a, b) => b.fec.localeCompare(a.fec));
-  }, [records, corteType, corteStartDate, corteEndDate, filterWorker, historySearchTerm]);
+    if (filterWorker === '__all') return recordsInActivePeriod;
+    return recordsInActivePeriod.filter(r => r.nom.toLowerCase() === filterWorker.toLowerCase());
+  }, [recordsInActivePeriod, filterWorker]);
 
   // 2. Metrics for the active corte: separates Horas Pendientes de Liquidar vs Horas Ya Pagadas (Amarradas)
   const corteStats = useMemo(() => {
@@ -1249,7 +1310,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 {syncStatus === 'synced' && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 shadow-sm">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    Base en la Nube Sincronizada (95 Turnos | 5 Colaboradores)
+                    Base en la Nube Sincronizada ({records.length} Turnos | {workers.length} Colaboradores)
                   </span>
                 )}
                 {syncStatus === 'error' && (
@@ -1846,7 +1907,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                         : 'bg-[#02141c] border-slate-700 text-slate-300 hover:text-white hover:border-[#00c5d8]/50'
                     }`}
                   >
-                    🌐 Todo el Histórico ({records.length})
+                    🌐 Ver Todo el Historial ({records.length})
                   </button>
 
                   <button
@@ -1926,9 +1987,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       }}
                       className="bg-transparent text-white text-xs font-mono font-bold outline-none cursor-pointer px-1 py-1"
                     >
-                      <option value="2025" className="bg-slate-900 text-white">2025</option>
-                      <option value="2026" className="bg-slate-900 text-white">2026</option>
-                      <option value="2027" className="bg-slate-900 text-white">2027</option>
+                      {[initialPeriod.selectedYear - 1, initialPeriod.selectedYear, initialPeriod.selectedYear + 1].map(y => (
+                        <option key={y} value={y} className="bg-slate-900 text-white">{y}</option>
+                      ))}
                     </select>
 
                     <button
@@ -2156,7 +2217,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     {getHistoryRangeLabel()}
                   </p>
                   <p className="text-[11px] font-mono text-slate-400">
-                    Límites exactos de liquidación: Del <strong className="text-white underline">{corteStartDate || 'Sin límite inicial'}</strong> al <strong className="text-white underline">{corteEndDate || 'Sin límite final'}</strong>
+                    Fecha actual: <strong className="text-[#00c5d8]">{initialPeriod.todayStr}</strong> · Límites de consulta: Del <strong className="text-white underline">{corteStartDate || 'Sin límite inicial'}</strong> al <strong className="text-white underline">{corteEndDate || 'Sin límite final'}</strong>
                   </p>
                 </div>
               </div>
@@ -2227,7 +2288,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
               </div>
             </div>
 
-            {/* Aviso inteligente si no hay turnos en el rango seleccionado */}
+            {/* Aviso si no hay turnos en el rango seleccionado */}
             {filteredRecords.length === 0 && (
               <div className="bg-amber-950/40 border border-amber-500/50 p-4 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-mono shadow-lg">
                 <div className="flex items-center gap-3">
@@ -2237,34 +2298,34 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       0 turnos encontrados en este período ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'})
                     </span>
                     <span className="text-slate-300 text-[11px]">
-                      Los 95 registros históricos de nómina están en Agosto, Septiembre y Octubre de 2026. Haz clic para ir al corte correspondiente:
+                      No hay turnos con este filtro en el período actual. Puedes cambiar de corte o cargar el historial completo ({records.length} registros):
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
-                    onClick={() => applyCorteSelection('corte12', 9, 2026)}
+                    onClick={() => applyCorteSelection('corte12', initialPeriod.selectedMonth, initialPeriod.selectedYear)}
                     className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-lg text-xs cursor-pointer shadow-md"
                   >
-                    📌 Octubre Corte 12
+                    📌 Corte 12 Actual
                   </button>
                   <button
-                    onClick={() => applyCorteSelection('corte27', 9, 2026)}
+                    onClick={() => applyCorteSelection('corte27', initialPeriod.selectedMonth, initialPeriod.selectedYear)}
                     className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black rounded-lg text-xs cursor-pointer shadow-md"
                   >
-                    📌 Octubre Corte 27
+                    📌 Corte 27 Actual
                   </button>
                   <button
                     onClick={() => applyCorteSelection('all')}
                     className="px-3 py-1.5 bg-[#00c5d8] hover:bg-[#38d9f5] text-slate-950 font-black rounded-lg text-xs cursor-pointer shadow-md"
                   >
-                    🌐 Ver Todo (95)
+                    🌐 Ver Todo el Historial ({records.length})
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Quick Workers Horizontal Slices for Multi-user Dashboard */}
+            {/* Quick Workers Horizontal Slices: solo colaboradores con horas registradas/pendientes en el estado activo */}
             <div className="overflow-x-auto pb-2">
               <div className="flex gap-2.5 min-w-max">
                 <button
@@ -2279,12 +2340,12 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                   }`}
                 >
                   <span>★</span>
-                  <span>Todos los Colaboradores ({records.length} turnos)</span>
+                  <span>Todos los Colaboradores ({activeWorkerBarCount} turnos)</span>
                 </button>
 
                 {Object.keys(recordsIndexedByWorker).map(k => {
                   const chunk = recordsIndexedByWorker[k];
-                  const totals = getCumulativeAggregateStats(chunk.regs);
+                  const workerNetas = chunk.regs.reduce((acc, r) => acc + (r.netas || 0), 0);
                   return (
                     <button
                       key={k}
@@ -2305,7 +2366,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
                         activeWorkerTab === k ? 'bg-slate-950 text-[#00c5d8]' : 'bg-slate-950/70 text-[#00c5d8] border border-[#00c5d8]/20'
                       }`}>
-                        {totals.netas.toFixed(1)}h
+                        {workerNetas.toFixed(1)}h
                       </span>
                       <span className="text-[9px] text-slate-400">
                         ({chunk.regs.length})
@@ -2376,23 +2437,23 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             )}
 
             {/* Warning banner about filtered-out records */}
-            {records.length > filteredRecords.length && historyRangeType !== 'all' && (
+            {records.length > filteredRecords.length && corteType !== 'all' && (
               <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4 animate-fadeIn">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-500 shrink-0">
                     <AlertTriangle className="w-4 h-4 animate-bounce" />
                   </div>
                   <div>
-                    <h5 className="text-xs font-bold text-white uppercase font-mono">Registros Ocultos</h5>
+                    <h5 className="text-xs font-bold text-white uppercase font-mono">Historial Anterior Protegido</h5>
                     <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                      Tienes <b>{records.length - filteredRecords.length} turnos</b> registrados en otros períodos de tiempo que están ocultos por el filtro activo.
+                      Hay <b>{records.length - filteredRecords.length} turnos</b> de otros períodos o ya liquidados que no se cargan por defecto. Haz clic solo si deseas ver todo el historial.
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setHistoryRangeType('all')}
-                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2 rounded-lg text-[10px] font-mono font-black uppercase tracking-wider shadow-lg hover:shadow-cyan-500/25 transition-all w-full md:w-auto text-center shrink-0"
+                  onClick={() => applyCorteSelection('all')}
+                  className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 px-4 py-2 rounded-lg text-[10px] font-mono font-black uppercase tracking-wider shadow-lg hover:shadow-cyan-500/25 transition-all w-full md:w-auto text-center shrink-0 cursor-pointer"
                 >
                   Ver Todo el Historial
                 </button>
@@ -2884,9 +2945,10 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                         <div className="grid grid-cols-3 gap-2 pt-1 border-t border-[#00c5d8]/15">
                           <button
                             onClick={() => {
+                              applyCorteSelection('all');
+                              setPaymentFilter('all');
                               setActiveWorkerTab(w.nom.toLowerCase());
                               setFilterWorker(w.nom);
-                              setHistoryRangeType('all');
                               setActiveSubTab('historial');
                             }}
                             className="bg-[#02141c] hover:bg-[#04202c] border border-[#00c5d8]/30 text-white font-bold py-2 rounded-lg text-[10px] uppercase flex items-center justify-center gap-1 transition-all cursor-pointer"
