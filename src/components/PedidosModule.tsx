@@ -2865,9 +2865,9 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
             <div className="col-span-8 flex items-start gap-4">
               {/* Styled Logo Box like screenshot 3 */}
               <div className="border-4 border-[#0c2340] p-2 flex flex-col items-center justify-center text-center" style={{ minWidth: '160px', minHeight: '80px', borderColor: '#0c2340' }}>
-                <span className="text-[#0c2340] font-black text-2xl tracking-tight leading-none" style={{ fontFamily: '"Inter", sans-serif' }}>SISTEMA</span>
-                <span className="text-[#0c2340] font-bold text-xl tracking-widest leading-none mt-1" style={{ fontFamily: '"Inter", sans-serif' }}>LOG</span>
-                <span className="text-[7.5px] text-[#00b4d8] font-bold tracking-wider mt-1 whitespace-nowrap">SISTEMA CONTROL LOGÍSTICO</span>
+                <span className="text-[#0c2340] font-black text-xl tracking-tight leading-none" style={{ fontFamily: '"Inter", sans-serif' }}>LATIN</span>
+                <span className="text-[#0c2340] font-bold text-lg tracking-widest leading-none mt-1" style={{ fontFamily: '"Inter", sans-serif' }}>PRODUCTS</span>
+                <span className="text-[7.5px] text-[#00b4d8] font-bold tracking-wider mt-1 whitespace-nowrap">S.A.S. • CONTROL LOGÍSTICO</span>
               </div>
               <div className="space-y-0.5" style={{ fontSize: '9px', lineHeight: '1.2' }}>
                 <strong className="text-gray-900 text-[10px] block font-bold">LATIN PRODUCTS S.A.S.</strong>
@@ -3062,7 +3062,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
           <div className="text-center text-[7.5px] text-gray-400 uppercase tracking-wide border-t border-gray-200 pt-3 mt-4" style={{ lineHeight: '1.4' }}>
             ACTIVIDAD ECONÓMICA CIIU 2023. TRIBUTAMOS EN YUMBO ACTIVIDAD INDUSTRIAL ICA 102-97 A LA TARIFA 7 X 1000. 
             <br />
-            ESTE COMPROBANTE DE VENTA DE CONTROL INTERNO GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADO CON ÉXITO EN EL SERVIDOR CLOUD DE SISTEMALOG PARA LATIN PRODUCTS S.A.S.
+            ESTE COMPROBANTE DE VENTA DE CONTROL INTERNO GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADO EN EL SISTEMA DE LATIN PRODUCTS S.A.S.
           </div>
         </div>,
         document.body
@@ -3259,7 +3259,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
           <div className="text-center text-[8px] text-gray-500 uppercase tracking-wide border-t border-gray-300 pt-4 mt-8" style={{ lineHeight: '1.4' }}>
             REPORTE OFICIAL GENERADO AUTOMÁTICAMENTE PARA CONTRALORÍA DE LOGÍSTICA Y RECURSOS HUMANOS - LATIN PRODUCTS S.A.S.
             <br />
-            ESTA INFORMACIÓN GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADA CON ÉXITO EN LA PLATAFORMA SISTEMALOG DE LATIN PRODUCTS S.A.S.
+            ESTA INFORMACIÓN GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADA CON ÉXITO EN LA PLATAFORMA DE LATIN PRODUCTS S.A.S.
           </div>
         </div>,
         document.body

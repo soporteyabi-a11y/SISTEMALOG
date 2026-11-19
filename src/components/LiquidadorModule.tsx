@@ -2539,7 +2539,7 @@ export default function LiquidadorModule() {
           {/* Cabecera */}
           <div className="text-center pb-1.5 mb-2 border-b-2 border-black">
             <div className="text-base font-extrabold tracking-wide uppercase">LATIN PRODUCTS S.A.S.</div>
-            <div className="text-[9px] text-gray-500 font-mono">NIT: 800.225.074-3 / SISTEMALOG — Control y Liquidación de Operaciones</div>
+            <div className="text-[9px] text-gray-500 font-mono">NIT: 800.225.074-3 — Control y Liquidación de Operaciones</div>
             <div className="text-[10px] font-bold uppercase mt-1 bg-slate-100 py-0.5 px-2 border border-black inline-block tracking-widest">
               VALORACIÓN DE CARGA / LIQUIDACIÓN COMERCIAL
             </div>

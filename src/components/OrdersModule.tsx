@@ -1641,6 +1641,8 @@ export default function OrdersModule({
                           </head>
                           <body>
                             <div class="header">
+                              <div style="font-size: 14px; font-weight: 800; letter-spacing: 1px; color: #0f172a;">LATIN PRODUCTS S.A.S.</div>
+                              <div style="font-size: 10px; color: #475569; margin-bottom: 6px;">NIT: 800.225.074-3 • ACOPI - YUMBO</div>
                               <div class="title">Gestión de Despacho Consolidado</div>
                               <div class="subtitle">Generado el: ${new Date().toLocaleString()}</div>
                             </div>

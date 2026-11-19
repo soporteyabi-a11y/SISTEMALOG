@@ -84,12 +84,12 @@ export function printSingleOrder(order: Order, carriers: Carrier[], customers: C
     }
     
     .logo-large {
-      font-size: 24px;
+      font-size: 16px;
       font-weight: 800;
-      letter-spacing: 2px;
+      letter-spacing: 1px;
       margin: 0;
       color: #000000;
-      line-height: 1;
+      line-height: 1.1;
     }
     
     .logo-sub {
@@ -348,8 +348,8 @@ export function printSingleOrder(order: Order, carriers: Carrier[], customers: C
       <!-- Row 1: Header logo, title, metadata -->
       <tr>
         <td class="header-logo-cell">
-          <div class="logo-large">SISTEMALOG</div>
-          <div class="logo-sub">LOGÍSTICA</div>
+          <div class="logo-large">LATIN PRODUCTS</div>
+          <div class="logo-sub">S.A.S.</div>
           <div class="logo-desc">control de operaciones logísticas</div>
         </td>
         <td class="header-title-cell">
@@ -688,7 +688,7 @@ export function printManifestDocument(data: ManifestPrintData) {
       <tr>
         <td style="width: 55%;">
           <h1 class="logo-title">LATIN PRODUCTS S.A.S.</h1>
-          <p class="logo-sub">SISTEMALOG | CENTRO DE CONTROL LOGÍSTICO Y DESPACHO</p>
+          <p class="logo-sub">CENTRO DE CONTROL LOGÍSTICO Y DESPACHO</p>
           <span style="font-size: 9px; color: #64748b;">ACOPI - YUMBO | NIT 800.225.074-3</span>
         </td>
         <td style="width: 45%; text-align: right;">

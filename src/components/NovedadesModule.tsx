@@ -217,7 +217,7 @@ export default function NovedadesModule({ novedades, onAddNovedad, onUpdateNoved
   // Printable summary window
   const printHistory = () => {
     const original = document.title;
-    document.title = "HISTORIAL_DE_NOVEDADES_SISTEMALOG";
+    document.title = "HISTORIAL_DE_NOVEDADES_LATIN_PRODUCTS";
     window.print();
     document.title = original;
   };

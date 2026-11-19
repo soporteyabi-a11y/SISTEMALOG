@@ -3615,7 +3615,6 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-black tracking-tight text-slate-950 font-mono">LATIN PRODUCTS S.A.S.</span>
-                <span className="text-sm text-slate-700 font-bold">| SISTEMALOG</span>
               </div>
               <p className="text-[10px] text-slate-700 font-mono mt-0.5 font-semibold">
                 NIT: 800.225.074-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
@@ -3861,7 +3860,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           </div>
 
           <div className="mt-4 text-[7.5px] font-mono text-slate-500 text-center border-t border-slate-300 pt-1.5">
-            Documento Oficial generado por SISTEMALOG • Impresión formato A4 conforme a Ley 2466 • Liquidación aprobada para pago
+            Documento Oficial LATIN PRODUCTS S.A.S. • Impresión formato A4 conforme a Ley 2466 • Liquidación aprobada para pago
           </div>
         </div>,
         document.body
