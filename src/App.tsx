@@ -38,6 +38,7 @@ import SyncQueueMonitorModal from './components/SyncQueueMonitorModal';
 import SupabaseMigrationModal from './components/SupabaseMigrationModal';
 import { 
   syncStateToSupabase, 
+  syncOrderToSupabase,
   migrateCustomersToSupabase, 
   migrateCarriersToSupabase 
 } from './services/supabaseSyncService';
@@ -116,6 +117,14 @@ const compressOrderForCloud = (o: Order) => {
   if (o.estado && o.estado !== "Pendiente") compressed.es = o.estado;
   if (o.obs) compressed.ob = o.obs;
   if (o.anuladoMotivo) compressed.am = o.anuladoMotivo;
+  if (o.direccion) compressed.di = o.direccion;
+  if (o.tipoPedido) compressed.tp = o.tipoPedido;
+  if (o.manifiesto) compressed.mf = o.manifiesto;
+  if (o.isSplit) compressed.sp = o.isSplit;
+  if (o.creadoPor) compressed.cp = o.creadoPor;
+  if (o.creadoEn) compressed.cen = o.creadoEn;
+  if (o.modificadoPor) compressed.mp = o.modificadoPor;
+  if (o.modificadoEn) compressed.men = o.modificadoEn;
   return compressed;
 };
 
@@ -193,7 +202,15 @@ const decompressOrderFromCloud = (c: any): Order => {
       celular: c.celular || "",
       estado: finalEstado,
       obs: c.obs || "",
-      anuladoMotivo: c.anuladoMotivo || ""
+      anuladoMotivo: c.anuladoMotivo || "",
+      ...(c.direccion ? { direccion: c.direccion } : {}),
+      ...(c.tipoPedido ? { tipoPedido: c.tipoPedido } : {}),
+      ...(c.manifiesto ? { manifiesto: c.manifiesto } : {}),
+      ...(c.isSplit ? { isSplit: c.isSplit } : {}),
+      ...(c.creadoPor ? { creadoPor: c.creadoPor } : {}),
+      ...(c.creadoEn ? { creadoEn: c.creadoEn } : {}),
+      ...(c.modificadoPor ? { modificadoPor: c.modificadoPor } : {}),
+      ...(c.modificadoEn ? { modificadoEn: c.modificadoEn } : {})
     };
   }
   return {
@@ -223,7 +240,15 @@ const decompressOrderFromCloud = (c: any): Order => {
     celular: c.ce || "",
     estado: finalEstado,
     obs: c.ob || "",
-    anuladoMotivo: c.am || ""
+    anuladoMotivo: c.am || "",
+    ...(c.di ? { direccion: c.di } : {}),
+    ...(c.tp ? { tipoPedido: c.tp } : {}),
+    ...(c.mf ? { manifiesto: c.mf } : {}),
+    ...(c.sp ? { isSplit: c.sp } : {}),
+    ...(c.cp ? { creadoPor: c.cp } : {}),
+    ...(c.cen ? { creadoEn: c.cen } : {}),
+    ...(c.mp ? { modificadoPor: c.mp } : {}),
+    ...(c.men ? { modificadoEn: c.men } : {})
   };
 };
 
@@ -747,10 +772,28 @@ export default function App() {
     const initialReminders = parseJSONSafely(rawReminders, SEED_REMINDERS);
     setReminders(initialReminders);
 
-    // Fast direct fetch from server immediately on boot to guarantee all 1,318 orders load without delay
-    forceRefreshFromCloud('app_state', 'orders').then(fresh => {
+    // Fast direct fetch from server immediately on boot to guarantee all cloud orders load cleanly
+    Promise.all([
+      forceRefreshFromCloud('app_state', 'orders'),
+      forceRefreshFromCloud('app_state', 'deleted_orders')
+    ]).then(([fresh, freshDeleted]) => {
+      const activeDel = (freshDeleted && typeof freshDeleted === 'object') ? freshDeleted : initialDeleted;
+      if (freshDeleted && typeof freshDeleted === 'object') {
+        setDeletedOrderIds(freshDeleted);
+        safeLocalStorage.setItem('lp_deleted_orders', JSON.stringify(freshDeleted));
+      }
       if (Array.isArray(fresh) && fresh.length > 0) {
-        const decompressed = fresh.map(decompressOrderFromCloud);
+        let decompressed = fresh.map(decompressOrderFromCloud);
+        if (activeDel && Object.keys(activeDel).length > 0) {
+          decompressed = decompressed.map(o => {
+            const delObj = activeDel[o.id];
+            if (delObj) {
+              if (delObj.physical) return null;
+              return { ...o, estado: 'Anulado' as const, anuladoMotivo: delObj.motivo || '' };
+            }
+            return o;
+          }).filter(Boolean) as Order[];
+        }
         const { cleanedList } = deduplicateOrders(decompressed);
         setOrders(cleanedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
@@ -929,7 +972,43 @@ export default function App() {
       }
     });
 
+    // Refresh cloud orders when user returns to an idle/sleeping tab (prevents stale multi-PC writes)
+    let lastFocusRefresh = Date.now();
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastFocusRefresh > 60000) {
+        lastFocusRefresh = Date.now();
+        Promise.all([
+          forceRefreshFromCloud('app_state', 'orders'),
+          forceRefreshFromCloud('app_state', 'deleted_orders')
+        ]).then(([fresh, freshDeleted]) => {
+          if (freshDeleted && typeof freshDeleted === 'object') {
+            setDeletedOrderIds(freshDeleted);
+            safeLocalStorage.setItem('lp_deleted_orders', JSON.stringify(freshDeleted));
+          }
+          if (Array.isArray(fresh) && fresh.length > 0) {
+            const delMap = (freshDeleted && typeof freshDeleted === 'object') ? freshDeleted : {};
+            let decompressed = fresh.map(decompressOrderFromCloud);
+            if (Object.keys(delMap).length > 0) {
+              decompressed = decompressed.map(o => {
+                const delObj = delMap[o.id];
+                if (delObj) {
+                  if (delObj.physical) return null;
+                  return { ...o, estado: 'Anulado' as const, anuladoMotivo: delObj.motivo || '' };
+                }
+                return o;
+              }).filter(Boolean) as Order[];
+            }
+            const { cleanedList } = deduplicateOrders(decompressed);
+            setOrders(cleanedList);
+            safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
+          }
+        }).catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
       unsubDeleted();
       unsubOrders();
       unsubCarriers();
@@ -940,20 +1019,151 @@ export default function App() {
     };
   }, []);
 
+  // Serialized cloud save chain to prevent multi-PC overwrites and ID collisions
+  const cloudOrdersSaveChainRef = useRef<Promise<void>>(Promise.resolve());
+
   // Save changes wrapper
   const saveDeletedOrders = (updated: Record<string, { physical: boolean; motivo?: string }>) => {
     setDeletedOrderIds(updated);
     safeLocalStorage.setItem('lp_deleted_orders', JSON.stringify(updated));
-    saveToCloud('app_state', 'deleted_orders', updated);
+    saveToCloud('app_state', 'deleted_orders', updated, currentUser?.email || 'soporteyabi@gmail.com', true);
   };
 
-  const saveOrders = (updated: Order[]) => {
+  const saveOrders = (
+    updated: Order[],
+    options?: {
+      touchedOrders?: Order[];
+      deletedPhysicalIds?: string[];
+      forceFullOverwrite?: boolean;
+    }
+  ) => {
     setOrders(updated);
     safeLocalStorage.setItem('lp_orders', JSON.stringify(updated));
-    const compressed = updated.map(compressOrderForCloud);
-    saveToCloud('app_state', 'orders', compressed);
-    // Dual-Write active mirror to Supabase PostgreSQL
-    syncStateToSupabase('orders_master', updated);
+
+    const userEmail = currentUser?.email || 'soporteyabi@gmail.com';
+    const touchedOrders = options?.touchedOrders || [];
+    const deletedPhysicalSet = new Set(options?.deletedPhysicalIds || []);
+    const forceFullOverwrite = Boolean(options?.forceFullOverwrite);
+
+    cloudOrdersSaveChainRef.current = cloudOrdersSaveChainRef.current
+      .then(async () => {
+        let finalOrders = updated;
+        let resolvedTouched = [...touchedOrders];
+
+        if (!forceFullOverwrite) {
+          try {
+            const [cloudRaw, cloudDelRaw] = await Promise.all([
+              forceRefreshFromCloud('app_state', 'orders'),
+              forceRefreshFromCloud('app_state', 'deleted_orders')
+            ]);
+
+            const cloudDeletedMap: Record<string, { physical: boolean; motivo?: string }> =
+              cloudDelRaw && typeof cloudDelRaw === 'object' ? cloudDelRaw : {};
+
+            if (Array.isArray(cloudRaw) && cloudRaw.length > 0) {
+              const cloudOrders = cloudRaw
+                .map(decompressOrderFromCloud)
+                .filter(o => o && o.id && !cloudDeletedMap[o.id]?.physical && !deletedPhysicalSet.has(o.id));
+
+              const cloudById = new globalThis.Map<string, Order>();
+              cloudOrders.forEach(o => cloudById.set(o.id, o));
+
+              let maxSolNum = cloudOrders.reduce((max, o) => {
+                const n = parseInt(String(o.id || '').replace(/\D/g, ''), 10);
+                return !isNaN(n) && n > max ? n : max;
+              }, 1000);
+              Object.keys(cloudDeletedMap).forEach(id => {
+                const n = parseInt(String(id || '').replace(/\D/g, ''), 10);
+                if (!isNaN(n) && n > maxSolNum) maxSolNum = n;
+              });
+              updated.forEach(o => {
+                const n = parseInt(String(o.id || '').replace(/\D/g, ''), 10);
+                if (!isNaN(n) && n > maxSolNum) maxSolNum = n;
+              });
+
+              const touchedById = new globalThis.Map<string, Order>();
+              touchedOrders.forEach(t => {
+                if (t && t.id) touchedById.set(t.id, t);
+              });
+
+              const normPv = (v?: string) => String(v || '').trim().toUpperCase().replace(/^PV\s*/i, '');
+              const mergedById = new globalThis.Map<string, Order>(cloudById);
+              const addedToTop: Order[] = [];
+
+              const applyLocalCandidate = (cand: Order, isExplicitTouch: boolean) => {
+                if (!cand || !cand.id) return;
+                if (cloudDeletedMap[cand.id]?.physical || deletedPhysicalSet.has(cand.id)) return;
+
+                const existingCloud = mergedById.get(cand.id);
+                if (existingCloud) {
+                  const cPv = normPv(existingCloud.pv);
+                  const lPv = normPv(cand.pv);
+                  const isDifferentOrderCollision =
+                    Boolean(cPv && lPv && cPv !== lPv) &&
+                    Boolean(cand.creadoEn && existingCloud.creadoEn !== cand.creadoEn);
+
+                  if (isDifferentOrderCollision) {
+                    // Another PC already used this SOL-xxxx ID for a different PV: preserve cloud order & re-ID this one
+                    maxSolNum += 1;
+                    const reassigned: Order = { ...cand, id: `SOL-${maxSolNum}` };
+                    mergedById.set(reassigned.id, reassigned);
+                    addedToTop.push(reassigned);
+                    resolvedTouched = resolvedTouched.map(t => t.id === cand.id ? reassigned : t);
+                    return;
+                  }
+
+                  if (isExplicitTouch) {
+                    mergedById.set(cand.id, { ...existingCloud, ...cand, id: existingCloud.id });
+                  }
+                } else {
+                  mergedById.set(cand.id, cand);
+                  addedToTop.push(cand);
+                }
+              };
+
+              // Apply explicitly touched records first, then any locally present records missing from cloud
+              touchedById.forEach(t => applyLocalCandidate(t, true));
+              if (touchedById.size === 0) {
+                // Fallback when caller didn't specify touchedOrders: preserve cloud orders & add any missing local orders
+                updated.forEach(o => applyLocalCandidate(o, false));
+              } else {
+                updated.forEach(o => {
+                  if (!touchedById.has(o.id)) applyLocalCandidate(o, false);
+                });
+              }
+
+              // Rebuild ordered list: newly added local orders on top, then cloud orders (with updates in place)
+              const addedIds = new Set(addedToTop.map(a => a.id));
+              const orderedCloud = cloudOrders
+                .filter(c => !addedIds.has(c.id))
+                .map(c => mergedById.get(c.id) || c);
+
+              const { cleanedList } = deduplicateOrders([...addedToTop, ...orderedCloud]);
+              finalOrders = cleanedList;
+
+              // Refresh local UI state if cloud merge brought in orders from other PCs or re-IDed a collision
+              if (finalOrders.length !== updated.length || addedToTop.some(a => !updated.some(u => u.id === a.id))) {
+                setOrders(finalOrders);
+                safeLocalStorage.setItem('lp_orders', JSON.stringify(finalOrders));
+              }
+            }
+          } catch (mergeErr) {
+            console.warn('[CloudMerge] Fallback to direct save due to fetch error:', mergeErr);
+          }
+        }
+
+        const compressed = finalOrders.map(compressOrderForCloud);
+        await saveToCloud('app_state', 'orders', compressed, userEmail, true);
+        await syncStateToSupabase('orders_master', finalOrders);
+
+        // Dual-write individual touched orders to relational fletes_solicitudes table
+        if (resolvedTouched.length > 0) {
+          Promise.all(resolvedTouched.map(o => syncOrderToSupabase(o))).catch(() => {});
+        }
+      })
+      .catch(err => {
+        console.warn('[saveOrders] Serialized cloud save error:', err);
+      });
   };
   const saveCarriers = (updated: Carrier[]) => {
     const sanitized = ensureUniqueCarrierIds(updated);
@@ -1138,7 +1348,7 @@ export default function App() {
         modificadoEn: new Date().toISOString()
       };
       updated[idx] = merged;
-      saveOrders(updated);
+      saveOrders(updated, { touchedOrders: [merged] });
 
       // Enqueue Sync Event for updated order
       enqueueSyncEvent({
@@ -1167,7 +1377,7 @@ export default function App() {
       creadoEn: filled.creadoEn || new Date().toISOString(),
     };
     const updated = [orderWithStamp, ...orders];
-    saveOrders(updated);
+    saveOrders(updated, { touchedOrders: [orderWithStamp] });
 
     // Enqueue Sync Event for new order
     enqueueSyncEvent({
@@ -1215,6 +1425,7 @@ export default function App() {
     const currentOrders = [...orders];
     let addedCount = 0;
     let updatedCount = 0;
+    const touchedBatch: Order[] = [];
 
     filled.forEach(newO => {
       const cleanPv = newO.pv ? newO.pv.trim().toLowerCase() : '';
@@ -1249,6 +1460,7 @@ export default function App() {
             modificadoEn: new Date().toISOString(),
           };
           currentOrders[targetIdx] = merged;
+          touchedBatch.push(merged);
           updatedCount++;
         }
       } else {
@@ -1259,6 +1471,7 @@ export default function App() {
           creadoEn: newO.creadoEn || new Date().toISOString()
         };
         currentOrders.unshift(stampedNew);
+        touchedBatch.push(stampedNew);
         addedCount++;
         // Update lookup maps for intra-batch duplicate prevention
         if (stampedNew.id) existingById[stampedNew.id] = stampedNew;
@@ -1269,7 +1482,7 @@ export default function App() {
 
     const { cleanedList, removedCount } = deduplicateOrders(currentOrders);
 
-    saveOrders(cleanedList);
+    saveOrders(cleanedList, { touchedOrders: touchedBatch });
     setOrders(cleanedList);
 
     // Enqueue sync events for batch items
@@ -1311,7 +1524,8 @@ export default function App() {
     } else {
       updated = [stampedOrder, ...orders];
     }
-    saveOrders(updated);
+    const touchedUpdated = updated.find(o => o.id === stampedOrder.id) || stampedOrder;
+    saveOrders(updated, { touchedOrders: [touchedUpdated] });
 
     // Enqueue sync event
     enqueueSyncEvent({
@@ -1336,14 +1550,20 @@ export default function App() {
 
   const handleUpdateOrders = (updatedOrdersList: Order[]) => {
     const filled = updatedOrdersList.map(fillBillingDefaults);
+    const touchedBatch: Order[] = [];
     const updated = orders.map(o => {
       const match = filled.find(f => 
         f.id === o.id || 
         (!f.isSplit && !o.isSplit && f.pv && o.pv && f.pv.toString().trim().toLowerCase() === o.pv.toString().trim().toLowerCase())
       );
-      return match ? { ...o, ...match, id: o.id } : o;
+      if (match) {
+        const merged = { ...o, ...match, id: o.id };
+        touchedBatch.push(merged);
+        return merged;
+      }
+      return o;
     });
-    saveOrders(updated);
+    saveOrders(updated, { touchedOrders: touchedBatch });
     setPSuccessToast({
       title: "CAMBIOS GUARDADOS",
       message: `Se actualizaron correctamente ${filled.length} órdenes del lote.`
@@ -1393,10 +1613,12 @@ export default function App() {
     let updated;
     if (physical) {
       updated = orders.filter(o => o.id !== id);
+      saveOrders(updated, { deletedPhysicalIds: [id] });
     } else {
+      const cancelledOrder = orders.find(o => o.id === id);
       updated = orders.map(o => o.id === id ? { ...o, estado: 'Anulado' as const, anuladoMotivo: motivo } : o);
+      saveOrders(updated, { touchedOrders: cancelledOrder ? [{ ...cancelledOrder, estado: 'Anulado' as const, anuladoMotivo: motivo }] : [] });
     }
-    saveOrders(updated);
     return true;
   };
 
@@ -1409,12 +1631,12 @@ export default function App() {
                          o.id.startsWith("SOL-4");
       return !isImported;
     });
-    saveOrders(updated);
+    saveOrders(updated, { forceFullOverwrite: true });
   };
 
   const handleManualDeduplicate = () => {
     const { cleanedList, removedCount } = deduplicateOrders(orders);
-    saveOrders(cleanedList);
+    saveOrders(cleanedList, { forceFullOverwrite: true });
     setOrders(cleanedList);
     if (removedCount > 0) {
       setPSuccessToast({
@@ -1432,7 +1654,7 @@ export default function App() {
 
   const handleResetDatabase = () => {
     saveDeletedOrders({});
-    saveOrders(SEED_ORDERS);
+    saveOrders(SEED_ORDERS, { forceFullOverwrite: true });
     saveCarriers(SEED_CARRIERS);
     saveCustomers(SEED_CUSTOMERS);
     saveNovedades(SEED_NOVEDADES);
@@ -8550,7 +8772,7 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     const { cleanedList, removedCount } = deduplicateOrders(orders);
-                    saveOrders(cleanedList);
+                    saveOrders(cleanedList, { forceFullOverwrite: true });
                     setOrders(cleanedList);
                     if (removedCount > 0) {
                       setBackupRestoreMessage({ type: 'success', text: `Se unificaron y limpiaron ${removedCount} registros duplicados con éxito.` });

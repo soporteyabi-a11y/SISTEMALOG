@@ -105,7 +105,12 @@ export async function enqueueSyncEvent(
     maxAttempts?: number;
   }
 ): Promise<SyncQueueItem> {
-  const existingIdx = localQueueItems.findIndex(q => q.idempotencyKey === params.idempotencyKey);
+  const existingIdx = localQueueItems.findIndex(q => {
+    if (q.idempotencyKey !== params.idempotencyKey) return false;
+    const prevPv = String(q.payload?.pv || '').trim().toUpperCase();
+    const nextPv = String(params.payload?.pv || '').trim().toUpperCase();
+    return !prevPv || !nextPv || prevPv === nextPv;
+  });
   const now = Date.now();
   const nowIso = new Date().toISOString();
 
