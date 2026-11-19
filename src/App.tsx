@@ -9,7 +9,7 @@ import {
   Map, Users, DollarSign, Bell, Activity, Play, Plus, Search, 
   Download, FileSpreadsheet, Lock, RefreshCw, LogOut, Trash2, CheckCircle2, ChevronDown, ListPlus, Send,
   ChevronLeft, ChevronRight, Upload, AlertTriangle, Sliders, Calendar, ShoppingBag, Printer,
-  LayoutGrid, List, Database, ArrowLeft
+  LayoutGrid, List, Database, ArrowLeft, ClipboardCheck
 } from 'lucide-react';
 
 import { Order, Carrier, Customer, Novedad, Reminder, AppUser } from './types';
@@ -33,6 +33,7 @@ import CitasModule from './components/CitasModule';
 import HorasModule from './components/HorasModule';
 import PedidosModule, { KNOWN_COMPANY_EMPLOYEES } from './components/PedidosModule';
 import UsuariosModule from './components/UsuariosModule';
+import CierreDiaModule from './components/CierreDiaModule';
 import SyncQueueMonitorModal from './components/SyncQueueMonitorModal';
 import SupabaseMigrationModal from './components/SupabaseMigrationModal';
 import { 
@@ -282,6 +283,7 @@ const getTabTitle = (tab: string): string => {
     case 'seguimiento': return 'Monitoreo y Seguimiento Satelital';
     case 'mapas': return 'Control GPS & Mapas Pro';
     case 'dialogo': return 'Monitor de Novedades';
+    case 'cierreDia': return 'Cierre Operativo del Día (Informativo)';
     case 'usuarios': return 'Gestión de Usuarios & Sellos de Autoría';
     default: return 'Módulo Operativo';
   }
@@ -4026,6 +4028,14 @@ export default function App() {
                     <ShoppingBag className="w-4 h-4 text-orange-450 font-bold" />
                     {sidebarOpen && <span>Pedido Empleados</span>}
                   </button>
+
+                  <button 
+                    onClick={() => setActiveTab('cierreDia')}
+                    className={`w-full text-left rounded-lg p-3 flex items-center gap-3 transition-colors ${activeTab === 'cierreDia' ? 'bg-hud-accent/10 border-l-2 border-hud-accent text-hud-accent font-bold' : 'text-slate-200 hover:text-white hover:bg-slate-900/50 font-semibold'}`}
+                  >
+                    <ClipboardCheck className="w-4 h-4 text-teal-300" />
+                    {sidebarOpen && <span>Cierre del Día</span>}
+                  </button>
                 </div>
               )}
             </div>
@@ -4471,6 +4481,7 @@ export default function App() {
                 else if (tab === 'dashboard') setActiveTab('dashboard');
                 else if (tab === 'seguimiento') setActiveTab('seguimiento');
                 else if (tab === 'novedades') setActiveTab('dialogo');
+                else if (tab === 'cierreDia' || tab === 'cierre') setActiveTab('cierreDia');
                 else if (tab === 'usuarios') setActiveTab('usuarios');
                 else setActiveTab(tab);
               }}
@@ -5715,6 +5726,21 @@ export default function App() {
               currentUser={currentUser}
               hasAdminRights={currentUser?.rol === 'SUPER_ADMIN' || currentUser?.email?.toLowerCase().includes('soporteyabi') || !!currentUser?.permisos?.puedeVerFinanzas}
               isExternalEmployeeLink={isEmployeeMode}
+            />
+          ) : null}
+
+          {activeTab === 'cierreDia' ? (
+            <CierreDiaModule
+              orders={orders}
+              carriers={carriers}
+              novedades={novedades}
+              reminders={reminders}
+              currentUser={currentUser}
+              onOpenOrder={handleOpenOrderForm}
+              onNavigateTab={(tab) => {
+                if (tab === 'pendientes') setActiveTab('pendiente');
+                else setActiveTab(tab);
+              }}
             />
           ) : null}
 

@@ -14,7 +14,7 @@ import {
   Eye, EyeOff, Sparkles, ChevronDown, ChevronUp, Layers, DollarSign,
   Activity, Map, ShieldCheck, Database, FileSpreadsheet, Briefcase, 
   Receipt, BarChart3, Navigation, AlertTriangle, Shield, Check, ArrowLeft,
-  Grid, List, Bell, Lock, User
+  Grid, List, Bell, Lock, User, ClipboardCheck
 } from 'lucide-react';
 
 interface HomeModuleProps {
@@ -115,7 +115,15 @@ const MODULES_DIRECTORY: ModuleDefinition[] = [
     icon: Briefcase
   },
 
-  // 3. Contabilidad & Nómina (6)
+  // 3. Contabilidad & Nómina (7)
+  {
+    id: 'mod_cierre_dia',
+    name: 'Cierre del Día',
+    category: 'contabilidad',
+    description: 'Informe ejecutivo diario de despachos, fletes, pendientes y novedades (solo informativo)',
+    tabTarget: 'cierreDia',
+    icon: ClipboardCheck
+  },
   {
     id: 'mod_provisiones',
     name: 'Provisiones de Fletes',

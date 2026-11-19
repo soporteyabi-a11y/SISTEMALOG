@@ -109,7 +109,8 @@
 #printProvision,
 #printReport,
 #printNominaA4,
-#printWorkerExtract {
+#printWorkerExtract,
+#printCierreDia {
   display: none !important;
 }
 
@@ -387,5 +388,58 @@
     font-weight: 800 !important;
     text-transform: uppercase !important;
     font-size: 8.5px !important;
+  }
+
+  /* 📋 REPORTE DE CIERRE OPERATIVO DEL DÍA (LATIN PRODUCTS S.A.S.) */
+  body.print-cierre-mode #root {
+    display: none !important;
+  }
+
+  body.print-cierre-mode #printCierreDia {
+    display: block !important;
+    visibility: visible !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 210mm !important;
+    margin: 0 auto !important;
+    padding: 6mm 8mm !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body.print-cierre-mode #printCierreDia * {
+    visibility: visible !important;
+    color: #0f172a !important;
+  }
+
+  body.print-cierre-mode #printCierreDia table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+    margin-bottom: 10px !important;
+    background-color: #ffffff !important;
+  }
+
+  body.print-cierre-mode #printCierreDia th,
+  body.print-cierre-mode #printCierreDia td {
+    border: 1px solid #334155 !important;
+    padding: 4px 6px !important;
+    font-size: 8.5px !important;
+    line-height: 1.25 !important;
+    text-align: left !important;
+  }
+
+  body.print-cierre-mode #printCierreDia th {
+    background-color: #f1f5f9 !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    font-size: 8px !important;
+  }
+
+  body.print-cierre-mode #printCierreDia .text-right {
+    text-align: right !important;
   }
 }

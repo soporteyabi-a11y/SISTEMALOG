@@ -34,6 +34,7 @@ export const SYSTEM_MODULES_LIST: SystemModuleInfo[] = [
   { id: 'comprobantes', aliases: ['comprobantes'], nombre: 'Comprobantes Contables', categoria: 'Contabilidad & Nómina', descripcion: 'Generación, registro y auditoría de comprobantes' },
   { id: 'horas', aliases: ['horas', 'horasExtras'], nombre: 'Horas Extras & Nómina', categoria: 'Contabilidad & Nómina', descripcion: 'Control de turnos, recargos Ley 2466 y cortes 12/27' },
   { id: 'diferencias', aliases: ['diferencias'], nombre: 'Auditoría Fletes', categoria: 'Contabilidad & Nómina', descripcion: 'Detección de diferencias entre flete cotizado y facturado' },
+  { id: 'cierreDia', aliases: ['cierreDia', 'cierre'], nombre: 'Cierre del Día', categoria: 'Contabilidad & Nómina', descripcion: 'Informe ejecutivo diario de cierre operativo (solo informativo)' },
   { id: 'pedidos', aliases: ['pedidos', 'pedidoEmpleados'], nombre: 'Pedido Empleados', categoria: 'Contabilidad & Nómina', descripcion: 'Gestión y despacho de pedidos para el equipo interno' },
 
   // Inteligencia & GPS
@@ -61,7 +62,7 @@ export const USERS_ROSTER: AppUser[] = [
       'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
       'carriers', 'provisiones', 'comprobantes', 'diferencias', 'liquidador',
-      'horas', 'pedidos', 'pedidoEmpleados', 'recordatorios', 'analytics',
+      'horas', 'cierreDia', 'cierre', 'pedidos', 'pedidoEmpleados', 'recordatorios', 'analytics',
       'mapas', 'seguimiento', 'novedades', 'usuarios', 'configuracion', 'backup', 'supabase'
     ],
     permisos: {
@@ -85,7 +86,7 @@ export const USERS_ROSTER: AppUser[] = [
     modulosPermitidos: [
       'inicio', 'tablero', 'orders', 'facturacion', 'liquidador', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
-      'carriers', 'horas', 'horasExtras', 'pedidos', 'pedidoEmpleados', 'novedades', 'recordatorios'
+      'carriers', 'horas', 'horasExtras', 'cierreDia', 'cierre', 'pedidos', 'pedidoEmpleados', 'novedades', 'recordatorios'
     ],
     permisos: {
       puedeCrearOrdenes: true,
@@ -108,7 +109,7 @@ export const USERS_ROSTER: AppUser[] = [
     modulosPermitidos: [
       'inicio', 'tablero', 'orders', 'facturacion', 'despachados', 'despachado',
       'pendientes', 'pendiente', 'vehiculos', 'citas', 'agenda', 'customers',
-      'carriers', 'provisiones', 'liquidador', 'horas', 'horasExtras', 'mapas', 'seguimiento',
+      'carriers', 'provisiones', 'liquidador', 'horas', 'horasExtras', 'cierreDia', 'cierre', 'mapas', 'seguimiento',
       'novedades', 'pedidos', 'pedidoEmpleados', 'recordatorios'
     ],
     permisos: {
@@ -172,7 +173,7 @@ export const USERS_ROSTER: AppUser[] = [
     color: '#f59e0b',
     departamento: 'Seguridad y Salud en el Trabajo & Nómina',
     modulosPermitidos: [
-      'inicio', 'tablero', 'horas', 'horasExtras', 'vehiculos', 'citas', 'agenda',
+      'inicio', 'tablero', 'horas', 'horasExtras', 'cierreDia', 'cierre', 'vehiculos', 'citas', 'agenda',
       'novedades', 'pedidos', 'pedidoEmpleados', 'recordatorios'
     ],
     permisos: {
@@ -202,6 +203,16 @@ export const enrichUsersRoster = (rawList: AppUser[]): AppUser[] => {
     }
     if (updatedUser.email.toLowerCase() === 'auxlogistico@latinproducts.com.co' && !nextMods.includes('liquidador')) {
       nextMods.push('liquidador');
+    }
+    const emailLower = updatedUser.email.toLowerCase();
+    if (
+      (emailLower === 'soporteyabi@gmail.com' ||
+        emailLower === 'auxlogistico@latinproducts.com.co' ||
+        emailLower === 'logistica@latinproducts.com.co' ||
+        emailLower === 'sst@latinproducts.com.co') &&
+      !nextMods.includes('cierreDia')
+    ) {
+      nextMods.push('cierreDia', 'cierre');
     }
     updatedUser.modulosPermitidos = nextMods;
     return updatedUser;
