@@ -1706,6 +1706,19 @@ export default function CierreDiaModule({
                   <div style={{ fontSize: '9px', color: '#475569' }}>LATIN PRODUCTS S.A.S. · Vo.Bo.</div>
                 </div>
               </div>
+
+              <div
+                style={{
+                  marginTop: '14px',
+                  paddingTop: '6px',
+                  borderTop: '1px solid #cbd5e1',
+                  textAlign: 'center',
+                  fontSize: '7.5px',
+                  color: '#64748b'
+                }}
+              >
+                Documento generado por SISTEMALOG • Cierre Operativo Diario — LATIN PRODUCTS S.A.S.
+              </div>
             </div>
           </div>,
           document.body

@@ -3035,7 +3035,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
                     <td className="border border-gray-400 p-1.5 font-bold uppercase">IMPUESTO (IVA 19%):</td>
                     <td className="border border-gray-400 p-1.5 text-right font-mono">{fmt(activePrintOrder.iva)}</td>
                   </tr>
-                  <tr className="bg-[#0c2340] text-white">
+                  <tr className="receipt-total-row bg-[#0c2340] text-white">
                     <td className="border border-gray-400 p-2 font-black uppercase text-[10px]" style={{ backgroundColor: '#0c2340', color: '#ffffff' }}>VALOR A PAGAR:</td>
                     <td className="border border-gray-400 p-2 text-right font-mono font-black text-xs" style={{ backgroundColor: '#0c2340', color: '#ffffff' }}>{fmt(activePrintOrder.total)}</td>
                   </tr>
@@ -3059,10 +3059,10 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
           </div>
 
           {/* 6. Legal footnote */}
-          <div className="text-center text-[7.5px] text-gray-400 uppercase tracking-wide border-t border-gray-200 pt-3 mt-4" style={{ lineHeight: '1.4' }}>
+          <div className="text-center text-[7.5px] text-gray-500 uppercase tracking-wide border-t border-gray-200 pt-3 mt-4" style={{ lineHeight: '1.4' }}>
             ACTIVIDAD ECONÓMICA CIIU 2023. TRIBUTAMOS EN YUMBO ACTIVIDAD INDUSTRIAL ICA 102-97 A LA TARIFA 7 X 1000. 
             <br />
-            ESTE COMPROBANTE DE VENTA DE CONTROL INTERNO GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADO EN EL SISTEMA DE LATIN PRODUCTS S.A.S.
+            ESTE COMPROBANTE DE VENTA DE CONTROL INTERNO GOZA DE PLENA VALIDEZ · GENERADO POR SISTEMALOG PARA LATIN PRODUCTS S.A.S.
           </div>
         </div>,
         document.body
@@ -3259,7 +3259,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
           <div className="text-center text-[8px] text-gray-500 uppercase tracking-wide border-t border-gray-300 pt-4 mt-8" style={{ lineHeight: '1.4' }}>
             REPORTE OFICIAL GENERADO AUTOMÁTICAMENTE PARA CONTRALORÍA DE LOGÍSTICA Y RECURSOS HUMANOS - LATIN PRODUCTS S.A.S.
             <br />
-            ESTA INFORMACIÓN GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADA CON ÉXITO EN LA PLATAFORMA DE LATIN PRODUCTS S.A.S.
+            ESTA INFORMACIÓN GOZA DE PLENA VALIDEZ Y HA SIDO GENERADA POR SISTEMALOG PARA LATIN PRODUCTS S.A.S.
           </div>
         </div>,
         document.body

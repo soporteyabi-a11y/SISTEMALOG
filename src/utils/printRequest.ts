@@ -482,6 +482,9 @@ export function printSingleOrder(order: Order, carriers: Carrier[], customers: C
         Fecha Impresión: ${todayStr}
       </div>
     </div>
+    <div style="margin-top: 10px; padding-top: 5px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 7.5px; color: #64748b;">
+      Documento generado por SISTEMALOG • Plataforma Logística de LATIN PRODUCTS S.A.S.
+    </div>
   </div>
 
   <script>
@@ -795,6 +798,9 @@ export function printManifestDocument(data: ManifestPrintData) {
         <div>Diana M. Agudelo / Washington Quiñones</div>
         <div style="font-size: 8px; color: #64748b;">Aprobación y Control</div>
       </div>
+    </div>
+    <div style="margin-top: 12px; padding-top: 5px; border-top: 1px solid #cbd5e1; text-align: center; font-size: 7.5px; color: #64748b;">
+      Documento generado por SISTEMALOG • Control de Despachos — LATIN PRODUCTS S.A.S.
     </div>
   </div>
 

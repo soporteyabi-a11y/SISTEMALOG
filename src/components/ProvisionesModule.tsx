@@ -1252,6 +1252,10 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
             <p className="text-[8px] text-gray-500 font-semibold uppercase">REVISIÓN Y AUTORIZACIÓN DE PAGO</p>
           </div>
         </div>
+
+        <div className="pt-2.5 mt-2 border-t border-gray-300 text-center text-[7.5px] font-mono text-gray-500">
+          Documento generado por SISTEMALOG • Soporte Operativo de Provisiones — LATIN PRODUCTS S.A.S.
+        </div>
       </div>
     );
   };
