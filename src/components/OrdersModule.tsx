@@ -37,7 +37,7 @@ export default function OrdersModule({
   const [statusFilter, setStatusFilter] = useState('');
   const [carrierFilter, setCarrierFilter] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(15);
-  const [sortOrder, setSortOrder] = useState<'pv_asc' | 'pv_desc' | 'id_desc' | 'id_asc' | 'date_desc' | 'date_asc' | 'client_asc'>('pv_asc');
+  const [sortOrder, setSortOrder] = useState<'pv_desc' | 'pv_asc' | 'id_desc' | 'id_asc' | 'date_desc' | 'date_asc' | 'client_asc'>('pv_desc');
   const [currentPage, setCurrentPage] = useState(1);
 
   // Selected items state for Consolidation
@@ -1062,8 +1062,8 @@ export default function OrdersModule({
             onChange={e => { setSortOrder(e.target.value as any); setCurrentPage(1); }}
             className="bg-slate-950/80 border border-slate-800 text-xs rounded px-3 py-2 w-full text-white outline-none focus:border-hud-accent/60"
           >
-            <option value="pv_asc">PV Ascendente (Consecutivo)</option>
-            <option value="pv_desc">PV Descendente (Mayor a Menor)</option>
+            <option value="pv_desc">PV Descendente (Últimos Primero)</option>
+            <option value="pv_asc">PV Ascendente (Desde el Inicio)</option>
             <option value="id_desc">Código Descendente</option>
             <option value="id_asc">Código Ascendente</option>
             <option value="date_desc">Fecha Inversa</option>

@@ -469,7 +469,7 @@ export default function App() {
       if (Array.isArray(freshOrders)) {
         const decompressed = freshOrders.map(decompressOrderFromCloud);
         const { cleanedList } = deduplicateOrders(decompressed);
-        const sortedList = [...cleanedList].sort(compareOrdersByPvAsc);
+        const sortedList = [...cleanedList].sort(compareOrdersByPvDesc);
         orderCount = sortedList.length;
         setOrders(sortedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(sortedList));
@@ -531,8 +531,7 @@ export default function App() {
     const engineLabel = 'Supabase PostgreSQL';
     try {
       setBackupRestoreMessage({ type: 'success', text: `Subiendo todos los fletes y catálogos locales a ${engineLabel}...` });
-      const compressed = orders.map(compressOrderForCloud);
-      await saveToCloud('app_state', 'orders', compressed, 'soporteyabi@gmail.com', true);
+      saveOrders(orders, { touchedOrders: orders });
       await saveToCloud('app_state', 'carriers', carriers, 'soporteyabi@gmail.com', true);
       await saveToCloud('app_state', 'customers', customers, 'soporteyabi@gmail.com', true);
       await saveToCloud('app_state', 'novedades', novedades, 'soporteyabi@gmail.com', true);
@@ -582,10 +581,10 @@ export default function App() {
   const [despachadoFilterMes, setDespachadoFilterMes] = useState('');
   const [despachadoPage, setDespachadoPage] = useState(1);
   const [despachadoItemsPerPage, setDespachadoItemsPerPage] = useState(15);
-  const [despachadoSortOrder, setDespachadoSortOrder] = useState<'pv_asc' | 'pv_desc'>('pv_asc');
+  const [despachadoSortOrder, setDespachadoSortOrder] = useState<'pv_asc' | 'pv_desc'>('pv_desc');
   const [pendienteSearch, setPendienteSearch] = useState('');
   const [pendientePage, setPendientePage] = useState(1);
-  const [pendienteSortOrder, setPendienteSortOrder] = useState<'pv_asc' | 'pv_desc'>('pv_asc');
+  const [pendienteSortOrder, setPendienteSortOrder] = useState<'pv_asc' | 'pv_desc'>('pv_desc');
   const [customerSearch, setCustomerSearch] = useState('');
   const [orderFormClientSearch, setOrderFormClientSearch] = useState('');
   const [carrierPage, setCarrierPage] = useState(1);
@@ -760,7 +759,7 @@ export default function App() {
         ...updated,
         estado: normalizeEstado(updated.estado || "Pendiente")
       };
-    }).sort(compareOrdersByPvAsc);
+    }).sort(compareOrdersByPvDesc);
     setOrders(migratedInitialOrders);
 
     const parseJSONSafely = (str: string | null, fallback: any) => {
@@ -904,7 +903,7 @@ export default function App() {
         }
         if (targetList.length === 0) targetList = SEED_ORDERS;
         const { cleanedList } = deduplicateOrders(targetList);
-        const sortedList = [...cleanedList].sort(compareOrdersByPvAsc);
+        const sortedList = [...cleanedList].sort(compareOrdersByPvDesc);
 
         setOrders(sortedList);
         safeLocalStorage.setItem('lp_orders', JSON.stringify(sortedList));
@@ -1013,7 +1012,7 @@ export default function App() {
               }).filter(Boolean) as Order[];
             }
             const { cleanedList } = deduplicateOrders(decompressed);
-            const sortedList = [...cleanedList].sort(compareOrdersByPvAsc);
+            const sortedList = [...cleanedList].sort(compareOrdersByPvDesc);
             setOrders(sortedList);
             safeLocalStorage.setItem('lp_orders', JSON.stringify(sortedList));
           }
@@ -1052,7 +1051,7 @@ export default function App() {
       forceFullOverwrite?: boolean;
     }
   ) => {
-    const orderedLocal = [...updated].sort(compareOrdersByPvAsc);
+    const orderedLocal = [...updated].sort(compareOrdersByPvDesc);
     setOrders(orderedLocal);
     safeLocalStorage.setItem('lp_orders', JSON.stringify(orderedLocal));
 
@@ -1155,7 +1154,7 @@ export default function App() {
                 .map(c => mergedById.get(c.id) || c);
 
               const { cleanedList } = deduplicateOrders([...addedToTop, ...orderedCloud]);
-              finalOrders = [...cleanedList].sort(compareOrdersByPvAsc);
+              finalOrders = [...cleanedList].sort(compareOrdersByPvDesc);
 
               // Refresh local UI state if cloud merge brought in orders from other PCs, re-IDed a collision, or normalized PV order
               if (finalOrders.length !== orderedLocal.length || addedToTop.some(a => !orderedLocal.some(u => u.id === a.id))) {
@@ -1392,7 +1391,7 @@ export default function App() {
       creadoPor: filled.creadoPor || authorStamp,
       creadoEn: filled.creadoEn || new Date().toISOString(),
     };
-    const updated = [...orders, orderWithStamp].sort(compareOrdersByPvAsc);
+    const updated = [...orders, orderWithStamp].sort(compareOrdersByPvDesc);
     saveOrders(updated, { touchedOrders: [orderWithStamp] });
 
     // Enqueue Sync Event for new order
@@ -1497,7 +1496,7 @@ export default function App() {
     });
 
     const { cleanedList, removedCount } = deduplicateOrders(currentOrders);
-    const sortedBatch = [...cleanedList].sort(compareOrdersByPvAsc);
+    const sortedBatch = [...cleanedList].sort(compareOrdersByPvDesc);
 
     saveOrders(sortedBatch, { touchedOrders: touchedBatch });
     setOrders(sortedBatch);
@@ -1541,7 +1540,7 @@ export default function App() {
     } else {
       updated = [...orders, stampedOrder];
     }
-    updated = [...updated].sort(compareOrdersByPvAsc);
+    updated = [...updated].sort(compareOrdersByPvDesc);
     const touchedUpdated = updated.find(o => o.id === stampedOrder.id) || stampedOrder;
     saveOrders(updated, { touchedOrders: [touchedUpdated] });
 
@@ -4983,8 +4982,8 @@ export default function App() {
                       }}
                       className="bg-slate-900 border border-slate-700 text-yellow-400 font-bold text-xs rounded px-2 py-0.5 outline-none focus:border-yellow-400 cursor-pointer"
                     >
-                      <option value="pv_asc">PV Ascendente (Consecutivo)</option>
-                      <option value="pv_desc">PV Descendente</option>
+                      <option value="pv_desc">PV Descendente (Últimos Primero)</option>
+                      <option value="pv_asc">PV Ascendente (Desde el Inicio)</option>
                     </select>
                   </div>
 
@@ -5194,8 +5193,8 @@ export default function App() {
                       }}
                       className="bg-slate-900 border border-slate-700 text-yellow-400 font-bold text-xs rounded px-2 py-1 outline-none focus:border-yellow-400 cursor-pointer"
                     >
-                      <option value="pv_asc">PV Ascendente (Consecutivo)</option>
-                      <option value="pv_desc">PV Descendente</option>
+                      <option value="pv_desc">PV Descendente (Últimos Primero)</option>
+                      <option value="pv_asc">PV Ascendente (Desde el Inicio)</option>
                     </select>
                   </div>
 
