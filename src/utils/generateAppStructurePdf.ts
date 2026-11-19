@@ -365,7 +365,7 @@ export function generateAppStructurePdf() {
         </div>
         <div class="meta-item">
           <label>MOTOR DE BASE DE DATOS</label>
-          <span>Firestore Cloud + LocalStorage</span>
+          <span>Supabase PostgreSQL + LocalStorage</span>
         </div>
       </div>
     </div>
@@ -387,7 +387,7 @@ export function generateAppStructurePdf() {
       <div class="card">
         <div class="card-title">☁️ Backend & Persistencia Híbrida</div>
         <p>
-          Base de datos distribuida <strong>Google Cloud Firestore</strong> sincronizada en tiempo real, respaldada por un sistema de cache local en <strong>LocalStorage</strong> para garantizar operación ininterrumpida ante fallos de red.
+          Base de datos distribuida <strong>Supabase PostgreSQL + Realtime</strong> sincronizada en tiempo real, respaldada por un sistema de cache local en <strong>LocalStorage</strong> para garantizar operación ininterrumpida ante fallos de red.
         </p>
       </div>
     </div>
@@ -416,7 +416,7 @@ export function generateAppStructurePdf() {
         </tr>
         <tr>
           <td><strong>3. Reintentos Exponenciales</strong></td>
-          <td>Si falla la red o cuotas de Firebase, el motor reintenta automáticamente con retroceso exponencial (2s, 4s, 8s, 16s...).</td>
+          <td>Si falla la red o hay latencia en Supabase, el motor reintenta automáticamente con retroceso exponencial (2s, 4s, 8s, 16s...).</td>
         </tr>
         <tr>
           <td><strong>4. Idempotencia Garantizada</strong></td>

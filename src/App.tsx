@@ -45,13 +45,11 @@ import {
   processSyncQueue, 
   getSyncQueueStats 
 } from './services/syncQueueService';
-import { firebaseConfig } from './firebase';
 import { 
   saveToCloud, 
   subscribeToCloud, 
   subscribeCloudStatus, 
   getCloudStatus,
-  getCloudEngineMode,
   forceRefreshFromCloud,
   CloudStatusInfo,
   generateFullBackupObject, 
@@ -419,13 +417,6 @@ export default function App() {
 
   // Backup & Hybrid Data System states
   const [cloudStatus, setCloudStatusState] = useState<CloudStatusInfo>(() => getCloudStatus());
-
-  const handleSwitchDatabase = (targetDbId: string) => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('override_firestore_db_id', targetDbId);
-      window.location.reload();
-    }
-  };
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [isSyncMonitorOpen, setIsSyncMonitorOpen] = useState(false);
@@ -434,7 +425,7 @@ export default function App() {
   const restoreFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleForceCloudSync = async () => {
-    const engineLabel = getCloudEngineMode() === 'supabase_primary' ? 'Supabase PostgreSQL' : 'Firestore';
+    const engineLabel = 'Supabase PostgreSQL';
     try {
       setBackupRestoreMessage({ type: 'success', text: `Conectando directamente al servidor de ${engineLabel}...` });
       const freshOrders = await forceRefreshFromCloud('app_state', 'orders');
@@ -500,7 +491,7 @@ export default function App() {
   };
 
   const handlePushLocalToCloud = async () => {
-    const engineLabel = getCloudEngineMode() === 'supabase_primary' ? 'Supabase PostgreSQL' : 'Firestore';
+    const engineLabel = 'Supabase PostgreSQL';
     try {
       setBackupRestoreMessage({ type: 'success', text: `Subiendo todos los fletes y catálogos locales a ${engineLabel}...` });
       const compressed = orders.map(compressOrderForCloud);
@@ -8357,7 +8348,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] bg-slate-900/60 p-2.5 rounded border border-slate-800/80">
                 <div>
-                  <span className="text-slate-400 block">Proyecto Firestore:</span>
+                  <span className="text-slate-400 block">Motor Nube Principal:</span>
                   <strong className="text-emerald-400 select-all">{cloudStatus.projectId}</strong>
                 </div>
                 <div>
@@ -8376,7 +8367,7 @@ export default function App() {
                 <div>
                   <span className="text-slate-400 block">Origen de Datos:</span>
                   <strong className={cloudStatus.isFromCache ? 'text-amber-400' : 'text-emerald-400'}>
-                    {cloudStatus.isFromCache ? 'Caché Local (Sincronizando)' : 'Servidor Firestore Directo'}
+                    {cloudStatus.isFromCache ? 'Caché Local (Sincronizando)' : 'Servidor Supabase Directo'}
                   </strong>
                 </div>
               </div>
@@ -8386,7 +8377,7 @@ export default function App() {
                   <div className="font-bold flex items-center justify-between gap-1.5 text-rose-400 mb-1">
                     <span className="flex items-center gap-1.5">
                       <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-                      Estado de Conexión Nube Firestore
+                      Estado de Conexión Nube Supabase
                     </span>
                     <button 
                       type="button" 
@@ -8401,7 +8392,7 @@ export default function App() {
                   </p>
                   <div className="text-[10px] text-slate-300 space-y-1">
                     <p className="text-emerald-300 font-semibold">✓ Tus datos están 100% seguros y respaldados en la base de datos local de este equipo. No se pierde ninguna información antigua ni actual.</p>
-                    <p>• <strong>Sincronización en curso:</strong> Puedes seguir operando normalmente en todos los módulos de AI Studio. El sistema reintentará la sincronización en segundo plano automáticamente.</p>
+                    <p>• <strong>Sincronización en curso:</strong> Puedes seguir operando normalmente. El sistema reintentará la sincronización con Supabase en segundo plano automáticamente.</p>
                   </div>
                 </div>
               )}
@@ -8415,7 +8406,7 @@ export default function App() {
                     type="button"
                     onClick={handlePushLocalToCloud}
                     className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
-                    title="Subir inmediatamente los fletes y datos de este PC a la nube Firestore"
+                    title="Subir inmediatamente los fletes y datos de este PC a la nube Supabase"
                   >
                     <Upload className="w-3.5 h-3.5 text-emerald-400" /> Publicar a Nube
                   </button>
@@ -8423,7 +8414,7 @@ export default function App() {
                     type="button"
                     onClick={handleForceCloudSync}
                     className="bg-sky-500/20 border border-sky-500/40 text-sky-300 hover:bg-sky-500/30 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap"
-                    title="Cargar la última versión directa del servidor de Firestore"
+                    title="Cargar la última versión directa del servidor de Supabase"
                   >
                     <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin-slow" /> Descargar de Nube
                   </button>

@@ -1232,18 +1232,18 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 Control Operativo de Turnos, Recargos Nocturnos (19:00), Dominicales y Cortes 12/27
               </p>
               
-              {/* Firebase real-time status banner */}
+              {/* Supabase real-time status banner */}
               <div className="flex items-center gap-2.5 mt-2">
                 {syncStatus === 'loading' && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-[#04202c] text-slate-400 border border-slate-700">
                     <RefreshCw className="w-3 h-3 animate-spin text-[#00c5d8]" />
-                    Sincronizando con Firebase Firestore...
+                    Sincronizando con Supabase...
                   </span>
                 )}
                 {syncStatus === 'saving' && (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-mono uppercase bg-[#00c5d8]/20 text-[#00c5d8] border border-[#00c5d8]/40">
                     <RefreshCw className="w-3 h-3 animate-spin text-[#00c5d8]" />
-                    Guardando en la nube Firebase...
+                    Guardando en la nube Supabase...
                   </span>
                 )}
                 {syncStatus === 'synced' && (
@@ -3478,7 +3478,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                   <div className="bg-slate-950 p-5 rounded-xl border border-slate-850 flex flex-col justify-center space-y-3">
                     <span className="text-emerald-400 font-bold uppercase block text-center">Formularios de Ley Conectados</span>
                     <p className="text-slate-400 text-center text-[10px] leading-relaxed uppercase">
-                      El motor inteligente de guardado en la nube de Firebase mantendrá sincronizados los cálculos e índices de todos los usuarios de la corporación.
+                      El motor inteligente de guardado en Supabase PostgreSQL mantendrá sincronizados los cálculos e índices de todos los usuarios de la corporación.
                     </p>
                   </div>
 

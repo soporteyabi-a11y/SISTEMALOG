@@ -5,7 +5,6 @@
  */
 
 import { supabase } from '../supabaseConfig';
-import { firebaseConfig, databaseId } from '../firebase';
 import { Order, Customer, Carrier, Novedad } from '../types';
 
 export const SUPABASE_TABLES = [
@@ -1216,92 +1215,4 @@ export async function syncAuditLogToSupabase(log: any): Promise<void> {
       timestamp_iso: log.timestamp || new Date().toISOString()
     }, { onConflict: 'id' });
   } catch {}
-}
-
-// =========================================================================
-// FIRESTORE COLLECTION SNAPSHOT LOADER (Para Migración Total 1-Clic)
-// =========================================================================
-
-function parseRestValue(field: any): any {
-  if (!field || typeof field !== 'object') return null;
-  if ('stringValue' in field) return field.stringValue;
-  if ('integerValue' in field) return parseInt(field.integerValue, 10);
-  if ('doubleValue' in field) return parseFloat(field.doubleValue);
-  if ('booleanValue' in field) return field.booleanValue;
-  if ('timestampValue' in field) return field.timestampValue;
-  if ('nullValue' in field) return null;
-  if ('arrayValue' in field) return (field.arrayValue.values || []).map(parseRestValue);
-  if ('mapValue' in field) {
-    const res: Record<string, any> = {};
-    for (const [k, v] of Object.entries(field.mapValue.fields || {})) {
-      res[k] = parseRestValue(v);
-    }
-    return res;
-  }
-  return null;
-}
-
-export async function fetchFirestoreDocRaw(collectionName: string, docId: string): Promise<any | null> {
-  const projectId = firebaseConfig.projectId || 'sistemalog';
-  const apiKey = firebaseConfig.apiKey;
-  const dbId = databaseId || '(default)';
-  const dbs = dbId === '(default)' ? ['(default)'] : [dbId, '(default)'];
-
-  for (const targetDb of dbs) {
-    const enc = targetDb === '(default)' ? '(default)' : encodeURIComponent(targetDb);
-    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${enc}/documents/${collectionName}/${encodeURIComponent(docId)}?key=${apiKey}`;
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (res.ok) {
-        const json = await res.json();
-        if (json?.fields?.data !== undefined) {
-          return parseRestValue(json.fields.data);
-        }
-        const rawObj: Record<string, any> = {};
-        for (const [k, v] of Object.entries(json?.fields || {})) {
-          rawObj[k] = parseRestValue(v);
-        }
-        return rawObj;
-      }
-    } catch {}
-  }
-  return null;
-}
-
-export async function listFirestoreCollectionDocs(collectionName: string, maxDocs = 500): Promise<Record<string, any>> {
-  const projectId = firebaseConfig.projectId || 'sistemalog';
-  const apiKey = firebaseConfig.apiKey;
-  const result: Record<string, any> = {};
-  const dbs = ['(default)', ...(databaseId && databaseId !== '(default)' ? [databaseId] : [])];
-
-  for (const targetDb of dbs) {
-    const enc = targetDb === '(default)' ? '(default)' : encodeURIComponent(targetDb);
-    let pageToken = '';
-    let collected = 0;
-    try {
-      do {
-        const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${enc}/documents/${collectionName}?key=${apiKey}&pageSize=300${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) break;
-        const json = await res.json();
-        for (const d of (json.documents || [])) {
-          const id = d.name.split('/').pop();
-          if (id) {
-            if (d.fields?.data !== undefined) {
-              result[id] = parseRestValue(d.fields.data);
-            } else {
-              const obj: Record<string, any> = {};
-              for (const [k, v] of Object.entries(d.fields || {})) obj[k] = parseRestValue(v);
-              result[id] = obj;
-            }
-            collected++;
-            if (collected >= maxDocs) break;
-          }
-        }
-        pageToken = collected >= maxDocs ? '' : (json.nextPageToken || '');
-      } while (pageToken);
-      if (Object.keys(result).length > 0) break;
-    } catch {}
-  }
-  return result;
 }

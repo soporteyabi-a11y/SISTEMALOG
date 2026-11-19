@@ -451,10 +451,10 @@ export default function PedidosModule({
         lastSavedConfig.current = JSON.stringify(merged);
       }
 
-      triggerToast(`¡Sincronizado con Firebase! (${updatedCount} registros actualizados)`, 'success');
+      triggerToast(`¡Sincronizado con Supabase! (${updatedCount} registros actualizados)`, 'success');
     } catch (err: any) {
       console.warn('[PedidosModule] Error in manual sync:', err);
-      triggerToast('Conectado a Firebase (datos locales actualizados)', 'info');
+      triggerToast('Conectado a Supabase (datos locales actualizados)', 'info');
     } finally {
       setIsCloudSyncing(false);
     }
@@ -1160,7 +1160,7 @@ export default function PedidosModule({
               Pedidos Empleados <span className="text-orange-500 font-extrabold text-[10px] sm:text-xs border border-orange-500/30 px-1.5 py-0.5 rounded bg-orange-950/20 shrink-0">SISTEMALOG</span>
             </h1>
             <p className="text-[9px] sm:text-[10px] md:text-[11px] font-mono text-slate-400 tracking-wider uppercase mt-1 truncate">
-              Portal Centralizado de Logística e Integración Multi-usuario Firestore
+              Portal Centralizado de Logística e Integración Multi-usuario Supabase
             </p>
           </div>
         </div>
@@ -1173,10 +1173,10 @@ export default function PedidosModule({
             onClick={handleManualSyncFromCloud}
             disabled={isCloudSyncing}
             className="px-3 py-1.5 bg-slate-900 hover:bg-slate-850 border border-orange-500/40 text-orange-300 hover:text-orange-200 rounded-md text-xs font-mono font-bold uppercase transition-all flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
-            title="Sincronizar y recargar catálogo de 38 productos e historial de órdenes desde Firebase Cloud"
+            title="Sincronizar y recargar catálogo de 38 productos e historial de órdenes desde Supabase Cloud"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-orange-400 ${isCloudSyncing ? 'animate-spin' : ''}`} />
-            <span>{isCloudSyncing ? 'Sincronizando...' : '☁️ Sincronizar Firebase'}</span>
+            <span>{isCloudSyncing ? 'Sincronizando...' : '☁️ Sincronizar Supabase'}</span>
           </button>
 
           {activeTab !== 'acceso' && activeTab !== 'admin' && activeTab !== 'adminLogin' && (

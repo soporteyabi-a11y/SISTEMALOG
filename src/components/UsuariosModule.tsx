@@ -836,7 +836,7 @@ export default function UsuariosModule({
               <div>
                 <div className="text-xs font-bold text-white">Infraestructura Supabase + Render</div>
                 <div className="text-[10px] text-slate-400">
-                  Firebase se utiliza exclusivamente para extracción de datos maestros. La autenticación y roles quedan preparados para el motor PostgreSQL.
+                  Operación 100% autónoma sobre Supabase PostgreSQL + Realtime (Firestore desconectado). Roles y permisos sincronizados en vivo entre los 4 PCs.
                 </div>
               </div>
             </div>

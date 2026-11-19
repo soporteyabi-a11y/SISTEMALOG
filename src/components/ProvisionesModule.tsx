@@ -1948,7 +1948,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
                 onClick={handleReloadCloudHistory}
                 disabled={isReloadingCloud}
                 className="bg-slate-950 hover:bg-slate-900 border border-slate-700 text-hud-green text-[11px] font-mono font-bold px-3 py-1.5 rounded flex items-center gap-1.5 transition-all cursor-pointer shadow-sm disabled:opacity-50"
-                title="Recargar y sincronizar comprobantes desde Firebase Cloud"
+                title="Recargar y sincronizar comprobantes desde Supabase PostgreSQL"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isReloadingCloud ? 'animate-spin' : ''}`} />
                 <span>{isReloadingCloud ? 'SINCRONIZANDO...' : 'RECARGAR NUBE'}</span>

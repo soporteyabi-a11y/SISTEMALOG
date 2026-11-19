@@ -1,5 +1,3 @@
-import { db, dbDefault, firebaseConfig, databaseId } from './firebase';
-import { doc, getDoc, getDocFromServer, setDoc, onSnapshot } from 'firebase/firestore';
 import {
   syncCloudKeyToSupabase,
   fetchCloudKeyFromSupabase,
@@ -8,37 +6,14 @@ import {
   migrateProvisionesToSupabase
 } from './services/supabaseSyncService';
 
-export type CloudEngineMode = 'firestore_primary' | 'supabase_primary';
-
-const CLOUD_ENGINE_STORAGE_KEY = 'sistemalog_cloud_engine';
+export type CloudEngineMode = 'supabase_primary';
 
 export function getCloudEngineMode(): CloudEngineMode {
-  try {
-    const envPrimary = String(
-      (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PRIMARY_CLOUD_DB) || ''
-    ).trim().toLowerCase();
-    if (envPrimary === 'firestore') {
-      return 'firestore_primary';
-    }
-    if (envPrimary === 'supabase') {
-      return 'supabase_primary';
-    }
-    if (typeof window !== 'undefined') {
-      const localMode = localStorage.getItem(CLOUD_ENGINE_STORAGE_KEY);
-      if (localMode === 'firestore_primary') return 'firestore_primary';
-      if (localMode === 'supabase_primary') return 'supabase_primary';
-    }
-  } catch {}
   return 'supabase_primary';
 }
 
-export function setCloudEngineMode(mode: CloudEngineMode) {
-  try {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(CLOUD_ENGINE_STORAGE_KEY, mode);
-    }
-    notifyStatusListeners();
-  } catch {}
+export function setCloudEngineMode(_mode?: string) {
+  notifyStatusListeners();
 }
 
 // Cache for tracking last saved payloads per document to eliminate duplicate cloud writes
@@ -69,17 +44,16 @@ export interface CloudStatusInfo {
 const statusListeners = new Set<(status: CloudStatusInfo) => void>();
 
 function buildStatusInfo(): CloudStatusInfo {
-  const mode = getCloudEngineMode();
   return {
     connected: isCloudConnected,
     isSyncedWithServer,
     lastServerSyncTime,
     errorCount: cloudErrorCount,
     isFromCache: isFromCacheState,
-    projectId: mode === 'supabase_primary' ? 'supabase-postgresql' : (firebaseConfig.projectId || 'sistemalog'),
-    databaseId: mode === 'supabase_primary' ? 'dwyofmibngjlqcvzahee' : (databaseId || firebaseConfig.firestoreDatabaseId || '(default)'),
+    projectId: 'supabase-postgresql',
+    databaseId: 'dwyofmibngjlqcvzahee',
     lastError: lastErrorMessage,
-    engineMode: mode
+    engineMode: 'supabase_primary'
   };
 }
 
@@ -101,8 +75,7 @@ export function getCloudStatus(): CloudStatusInfo {
 }
 
 /**
- * Recursively cleans objects and arrays to ensure NO `undefined` values can ever be sent to Firestore,
- * preventing 'Unsupported field value: undefined' errors permanently.
+ * Recursively normalizes objects and arrays so no `undefined` values remain before JSON/Supabase serialization.
  */
 export function sanitizeForFirestore<T = any>(val: T): any {
   if (val === undefined || val === null) return null;
@@ -110,7 +83,7 @@ export function sanitizeForFirestore<T = any>(val: T): any {
     const jsonStr = JSON.stringify(val, (_key, v) => (v === undefined ? null : v));
     if (jsonStr === undefined) return null;
     return JSON.parse(jsonStr);
-  } catch (err) {
+  } catch {
     if (Array.isArray(val)) {
       return (val as any[]).map(item => (item === undefined ? null : sanitizeForFirestore(item)));
     }
@@ -126,28 +99,27 @@ export function sanitizeForFirestore<T = any>(val: T): any {
 }
 
 /**
- * Save data to Firestore with strict duplicate prevention, rate limiting, and concurrency audit fields.
- * Guarantees that identical payloads are NEVER written twice to Cloud Firestore.
+ * Save data exclusively to Supabase PostgreSQL with duplicate prevention and trailing rate limiting.
  */
 export async function saveToCloud(
-  collectionName: string, 
-  docId: string, 
-  data: any, 
-  userEmail: string = 'soporteyabi@gmail.com', 
+  collectionName: string,
+  docId: string,
+  data: any,
+  userEmail: string = 'soporteyabi@gmail.com',
   force: boolean = false
 ): Promise<boolean> {
   const key = `${collectionName}/${docId}`;
-  
+
   try {
     const cleanData = sanitizeForFirestore(data);
     const serialized = JSON.stringify(cleanData);
-    
+
     // 1. Strict Payload Deduplication: Skip if identical payload UNLESS force is true
     if (!force && lastSavedPayloads.get(key) === serialized && !pendingSaveTimers.has(key)) {
-      return true; // Already saved, return immediately
+      return true;
     }
 
-    // 2. Rate Limiting: Throttle to max 1 write per 300ms, but ALWAYS schedule a trailing write for fast sequence changes
+    // 2. Rate Limiting: Throttle to max 1 write per 300ms, scheduling a trailing write for rapid changes
     const now = Date.now();
     const lastWriteTime = saveCooldowns.get(key) || 0;
     const timeSinceLastWrite = now - lastWriteTime;
@@ -172,339 +144,108 @@ export async function saveToCloud(
       pendingSaveTimers.delete(key);
     }
 
-    // Update trackers before writing
     lastSavedPayloads.set(key, serialized);
     saveCooldowns.set(key, now);
 
-    const engineMode = getCloudEngineMode();
+    const supaOk = await syncCloudKeyToSupabase(collectionName, docId, cleanData, userEmail);
+    if (collectionName === 'app_state' && docId === 'novedades' && Array.isArray(cleanData)) {
+      migrateNovedadesToSupabase(cleanData).catch(() => {});
+    } else if (collectionName === 'provisiones_state' && docId === 'saved_vouchers' && Array.isArray(cleanData)) {
+      migrateProvisionesToSupabase(cleanData).catch(() => {});
+    }
 
-    // Helper for Supabase persistence (primary in supabase_primary mode, dual-write mirror otherwise)
-    const mirrorToSupabase = async (): Promise<boolean> => {
-      const ok = await syncCloudKeyToSupabase(collectionName, docId, cleanData, userEmail);
-      if (collectionName === 'app_state' && docId === 'novedades' && Array.isArray(cleanData)) {
-        migrateNovedadesToSupabase(cleanData).catch(() => {});
-      } else if (collectionName === 'provisiones_state' && docId === 'saved_vouchers' && Array.isArray(cleanData)) {
-        migrateProvisionesToSupabase(cleanData).catch(() => {});
-      }
-      return ok;
-    };
-
-    if (engineMode === 'supabase_primary') {
-      const supaOk = await mirrorToSupabase();
-      // Best-effort secondary mirror to Firestore during transition
-      try {
-        const docRef = doc(db, collectionName, docId);
-        const timestamp = new Date().toISOString();
-        const payload = sanitizeForFirestore({
-          data: cleanData,
-          updatedAt: timestamp,
-          updatedBy: userEmail,
-          deviceAppletId: 'multi-pc-shared-v1'
-        });
-        setDoc(docRef, payload).catch(() => {});
-      } catch {}
-
-      if (supaOk) {
-        isCloudConnected = true;
-        isSyncedWithServer = true;
-        lastErrorMessage = null;
-        lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        notifyStatusListeners();
-        return true;
-      }
-      isCloudConnected = false;
-      cloudErrorCount++;
-      lastErrorMessage = 'Error escribiendo en Supabase PostgreSQL';
+    if (supaOk) {
+      isCloudConnected = true;
+      isSyncedWithServer = true;
+      isFromCacheState = false;
+      lastErrorMessage = null;
+      lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       notifyStatusListeners();
-      lastSavedPayloads.delete(key);
-      return false;
+      return true;
     }
 
-    const docRef = doc(db, collectionName, docId);
-    const timestamp = new Date().toISOString();
-    
-    const payload = sanitizeForFirestore({ 
-      data: cleanData, 
-      updatedAt: timestamp,
-      updatedBy: userEmail,
-      deviceAppletId: 'multi-pc-shared-v1'
-    });
-
-    await setDoc(docRef, payload);
-    
-    // Background dual-write redundancy: Also mirror to (default) DB so other machines stay in sync
-    if (databaseId && databaseId !== '(default)' && dbDefault) {
-      try {
-        const mirrorRef = doc(dbDefault, collectionName, docId);
-        setDoc(mirrorRef, payload).catch(() => {});
-      } catch (err) {}
-    }
-
-    // Background dual-write mirror to Supabase PostgreSQL for ALL modules
-    mirrorToSupabase().catch(() => {});
-    
-    isCloudConnected = true;
-    isSyncedWithServer = true;
-    lastErrorMessage = null;
-    lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    isCloudConnected = false;
+    cloudErrorCount++;
+    lastErrorMessage = 'Error escribiendo en Supabase PostgreSQL';
     notifyStatusListeners();
-    return true;
+    lastSavedPayloads.delete(key);
+    return false;
   } catch (error: any) {
-    console.warn(`[Firebase] Error saving to ${collectionName}/${docId}:`, error);
+    console.warn(`[SupabaseCloud] Error saving to ${collectionName}/${docId}:`, error);
     isCloudConnected = false;
     cloudErrorCount++;
     lastErrorMessage = error?.message || String(error);
     notifyStatusListeners();
-    // Reset cache on error to allow retry
     lastSavedPayloads.delete(key);
     return false;
   }
 }
 
-// Parse raw Firestore REST API JSON field structure into plain JS values
-function parseFirestoreRestField(field: any): any {
-  if (!field || typeof field !== 'object') return null;
-  if ('stringValue' in field) return field.stringValue;
-  if ('integerValue' in field) return parseInt(field.integerValue, 10);
-  if ('doubleValue' in field) return parseFloat(field.doubleValue);
-  if ('booleanValue' in field) return field.booleanValue;
-  if ('nullValue' in field) return null;
-  if ('arrayValue' in field) {
-    return (field.arrayValue.values || []).map(parseFirestoreRestField);
-  }
-  if ('mapValue' in field) {
-    const res: Record<string, any> = {};
-    const f = field.mapValue.fields || {};
-    for (const k of Object.keys(f)) {
-      res[k] = parseFirestoreRestField(f[k]);
-    }
-    return res;
-  }
-  return null;
-}
-
 /**
- * Ultra-fast Direct REST Fetch from Firestore Cloud.
- * Completely immune to WebChannel / WebSocket / IndexedDB cache stalls.
- * Automatically tries target databaseId and falls back to (default) if 403/404.
+ * Force a fresh read directly from Supabase PostgreSQL bypassing local caches.
  */
-export async function fetchFromFirestoreRest(collectionName: string, docId: string): Promise<any | null> {
-  const projectId = firebaseConfig.projectId || 'sistemalog';
-  const apiKey = firebaseConfig.apiKey;
-  const dbId = databaseId || '(default)';
-  const databasesToTry = dbId === '(default)' ? ['(default)'] : [dbId, '(default)'];
-
-  const results = await Promise.all(
-    databasesToTry.map(async (targetDb) => {
-      const encodedDb = targetDb === '(default)' ? '(default)' : encodeURIComponent(targetDb);
-      const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${encodedDb}/documents/${collectionName}/${docId}?key=${apiKey}`;
-      try {
-        const resp = await fetch(url, { cache: 'no-store' });
-        if (resp.ok) {
-          const json = await resp.json();
-          if (json && json.fields && json.fields.data !== undefined) {
-            const updatedAt = json.fields.updatedAt?.stringValue || json.updateTime || '';
-            const ts = updatedAt ? Date.parse(updatedAt) || 0 : 0;
-            return {
-              targetDb,
-              ts,
-              data: parseFirestoreRestField(json.fields.data)
-            };
-          }
-        } else {
-          console.warn(`[Firestore REST] HTTP ${resp.status} on ${targetDb} for ${collectionName}/${docId}`);
-        }
-      } catch (err) {
-        console.warn(`[Firestore REST] Direct fetch failed on ${targetDb} for ${collectionName}/${docId}:`, err);
-      }
-      return null;
-    })
-  );
-
-  const valid = results.filter((r): r is { targetDb: string; ts: number; data: any } => r !== null);
-  if (valid.length === 0) return null;
-  valid.sort((a, b) => b.ts - a.ts);
-  return valid[0].data;
-}
-
-// Force a fresh read directly from the cloud server bypassing IndexedDB cache
 export async function forceRefreshFromCloud(collectionName: string, docId: string): Promise<any | null> {
-  if (getCloudEngineMode() === 'supabase_primary') {
+  try {
     const supaData = await fetchCloudKeyFromSupabase(collectionName, docId);
-    if (supaData !== null) {
-      isCloudConnected = true;
-      isSyncedWithServer = true;
-      lastErrorMessage = null;
-      lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      isFromCacheState = false;
-      notifyStatusListeners();
-      return supaData;
-    }
-  }
-
-  // Direct REST HTTP read from Firestore: 100% reliable across all browsers, proxies and iFrames
-  const restData = await fetchFromFirestoreRest(collectionName, docId);
-  if (restData !== null) {
     isCloudConnected = true;
     isSyncedWithServer = true;
     lastErrorMessage = null;
     lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     isFromCacheState = false;
     notifyStatusListeners();
-    return restData;
-  }
-
-  // 2. Fallback to Firestore SDK getDocFromServer
-  const docRef = doc(db, collectionName, docId);
-  try {
-    const docSnap = await getDocFromServer(docRef);
-    isCloudConnected = true;
-    isSyncedWithServer = true;
-    lastErrorMessage = null;
-    lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    isFromCacheState = false;
-    notifyStatusListeners();
-    if (docSnap.exists()) {
-      const docData = docSnap.data();
-      return docData ? docData.data : null;
-    }
-    return null;
+    return supaData;
   } catch (error: any) {
-    console.warn(`[Firebase] Server read attempt for ${collectionName}/${docId} note:`, error?.message || error);
-  }
-
-  // Fallback to standard getDoc
-  const res = await loadFromCloud(collectionName, docId);
-  if (res !== null) {
-    lastErrorMessage = null;
-    isCloudConnected = true;
+    console.warn(`[SupabaseCloud] Error refreshing ${collectionName}/${docId}:`, error);
+    isCloudConnected = false;
+    cloudErrorCount++;
+    lastErrorMessage = error?.message || String(error);
     notifyStatusListeners();
-  }
-  return res;
-}
-
-// Load data once from Cloud (Supabase or Firestore depending on active engine)
-export async function loadFromCloud(collectionName: string, docId: string): Promise<any | null> {
-  if (getCloudEngineMode() === 'supabase_primary') {
-    const supaData = await fetchCloudKeyFromSupabase(collectionName, docId);
-    if (supaData !== null) {
-      isCloudConnected = true;
-      lastErrorMessage = null;
-      isFromCacheState = false;
-      notifyStatusListeners();
-      return supaData;
-    }
-  }
-
-  try {
-    const docRef = doc(db, collectionName, docId);
-    const docSnap = await getDoc(docRef);
-    isCloudConnected = true;
-    lastErrorMessage = null;
-    isFromCacheState = docSnap.metadata.fromCache;
-    notifyStatusListeners();
-    if (docSnap.exists()) {
-      const docData = docSnap.data();
-      return docData ? docData.data : null;
-    }
     return null;
-  } catch (error: any) {
-    console.warn(`[Firebase] Error loading from ${collectionName}/${docId}:`, error);
-    const msg = error?.message || String(error);
-    if (!msg.toLowerCase().includes('offline')) {
-      isCloudConnected = false;
-      cloudErrorCount++;
-      lastErrorMessage = msg;
-    } else {
-      isCloudConnected = true; // Served or handled via offline local cache
-      lastErrorMessage = null;
-    }
-    notifyStatusListeners();
   }
-  return null;
 }
 
 /**
- * Subscribe to live cloud changes.
- * Uses Supabase Realtime when engineMode === 'supabase_primary', otherwise Firestore onSnapshot.
+ * Load data once from Supabase PostgreSQL.
+ */
+export async function loadFromCloud(collectionName: string, docId: string): Promise<any | null> {
+  try {
+    const supaData = await fetchCloudKeyFromSupabase(collectionName, docId);
+    isCloudConnected = true;
+    lastErrorMessage = null;
+    isFromCacheState = false;
+    notifyStatusListeners();
+    return supaData;
+  } catch (error: any) {
+    console.warn(`[SupabaseCloud] Error loading ${collectionName}/${docId}:`, error);
+    isCloudConnected = false;
+    cloudErrorCount++;
+    lastErrorMessage = error?.message || String(error);
+    notifyStatusListeners();
+    return null;
+  }
+}
+
+/**
+ * Subscribe to live cloud changes exclusively via Supabase Realtime.
  */
 export function subscribeToCloud(
-  collectionName: string, 
-  docId: string, 
+  collectionName: string,
+  docId: string,
   callback: (data: any, rawDoc?: any) => void
 ): () => void {
   const key = `${collectionName}/${docId}`;
-
-  if (getCloudEngineMode() === 'supabase_primary') {
-    return subscribeCloudKeyInSupabase(collectionName, docId, (data, rawRow) => {
-      const serialized = JSON.stringify(data);
-      if (lastSavedPayloads.get(key) === serialized) return;
-      lastSavedPayloads.set(key, serialized);
-      isCloudConnected = true;
-      isSyncedWithServer = true;
-      isFromCacheState = false;
-      lastErrorMessage = null;
-      lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      notifyStatusListeners();
-      callback(data, rawRow);
-    });
-  }
-  
-  try {
-    const docRef = doc(db, collectionName, docId);
-    return onSnapshot(docRef, { includeMetadataChanges: true }, (docSnap) => {
-      try {
-        isCloudConnected = true;
-        lastErrorMessage = null;
-        isFromCacheState = docSnap.metadata.fromCache;
-
-        if (!docSnap.metadata.fromCache) {
-          isSyncedWithServer = true;
-          lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        }
-        notifyStatusListeners();
-
-        // Ignore local uncommitted write echoes to prevent UI feedback jitter
-        if (docSnap.metadata.hasPendingWrites) {
-          return;
-        }
-
-        if (docSnap.exists()) {
-          const docData = docSnap.data();
-          if (docData && docData.data !== undefined) {
-            // Seed the deduplication cache with incoming cloud data so we don't save back what we just received
-            const serialized = JSON.stringify(docData.data);
-            lastSavedPayloads.set(key, serialized);
-            callback(docData.data, docData);
-          }
-        }
-      } catch (innerErr) {
-        console.warn(`[Firebase] Error parsing snapshot data for ${collectionName}/${docId}:`, innerErr);
-      }
-    }, (error: any) => {
-      console.warn(`[Firebase] Subscription error/paused for ${collectionName}/${docId}:`, error);
-      const msg = error?.message || String(error);
-      if (!msg.toLowerCase().includes('offline')) {
-        isCloudConnected = false;
-        cloudErrorCount++;
-        lastErrorMessage = msg;
-      } else {
-        isCloudConnected = true;
-        lastErrorMessage = null;
-      }
-      notifyStatusListeners();
-    });
-  } catch (error: any) {
-    console.error(`[Firebase] Failed to establish subscription for ${collectionName}/${docId}:`, error);
-    const msg = error?.message || String(error);
-    if (!msg.toLowerCase().includes('offline')) {
-      isCloudConnected = false;
-      cloudErrorCount++;
-      lastErrorMessage = msg;
-    }
+  return subscribeCloudKeyInSupabase(collectionName, docId, (data, rawRow) => {
+    const serialized = JSON.stringify(data);
+    if (lastSavedPayloads.get(key) === serialized) return;
+    lastSavedPayloads.set(key, serialized);
+    isCloudConnected = true;
+    isSyncedWithServer = true;
+    isFromCacheState = false;
+    lastErrorMessage = null;
+    lastServerSyncTime = new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     notifyStatusListeners();
-    return () => {};
-  }
+    callback(data, rawRow);
+  });
 }
 
 /**
@@ -556,7 +297,7 @@ export function generateFullBackupObject(): Record<string, any> {
 }
 
 /**
- * Universal Backup Importer: Restores all application data into localStorage and triggers sync to Cloud Firestore.
+ * Universal Backup Importer: Restores all application data into localStorage and triggers sync to Supabase Cloud.
  */
 export async function restoreFullBackupObject(backupJson: any): Promise<{ success: boolean; itemCount: number; message: string }> {
   try {
@@ -604,7 +345,7 @@ export async function restoreFullBackupObject(backupJson: any): Promise<{ succes
       erp_users_roster: { col: 'app_state', doc: 'users_roster' }
     };
 
-    // Best-effort write to cloud
+    // Write restored keys to Supabase PostgreSQL
     for (const [localKey, target] of Object.entries(syncMapping)) {
       if (dataObj[localKey] !== undefined) {
         saveToCloud(target.col, target.doc, dataObj[localKey]);
@@ -624,5 +365,3 @@ export async function restoreFullBackupObject(backupJson: any): Promise<{ succes
     };
   }
 }
-
-

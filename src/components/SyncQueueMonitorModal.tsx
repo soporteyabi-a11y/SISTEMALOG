@@ -509,7 +509,7 @@ export default function SyncQueueMonitorModal({
         <div className="bg-slate-950/80 border-t border-slate-800/80 px-6 py-3 flex items-center justify-between text-xs text-slate-500">
           <div className="flex items-center gap-2">
             <Database className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Persistencia Híbrida: LocalStorage + Cloud Firestore (Escrituras Atómicas)</span>
+            <span>Persistencia Híbrida: LocalStorage + Supabase PostgreSQL (Escrituras Atómicas)</span>
           </div>
 
           <button

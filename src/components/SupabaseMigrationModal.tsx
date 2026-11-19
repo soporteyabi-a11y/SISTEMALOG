@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Database, CheckCircle2, AlertTriangle, Copy, Check,
-  RefreshCw, ShieldCheck, Play, ExternalLink, X, Power, Layers, Server, Download
+  RefreshCw, ShieldCheck, Play, ExternalLink, X, Layers, Server, Download
 } from 'lucide-react';
 import { Order, Customer, Carrier, Novedad, Reminder } from '../types';
 import {
@@ -20,10 +20,8 @@ import {
   migrateLiquidadorToSupabase,
   migrateAuxiliaresAndLogsToSupabase,
   syncCloudKeyToSupabase,
-  fetchFirestoreDocRaw,
-  listFirestoreCollectionDocs
+  fetchCloudKeyFromSupabase
 } from '../services/supabaseSyncService';
-import { getCloudEngineMode, setCloudEngineMode, CloudEngineMode } from '../firebaseService';
 import { loadUsersRoster } from '../data/usersRoster';
 import { SUPABASE_URL } from '../supabaseConfig';
 
@@ -74,7 +72,6 @@ export default function SupabaseMigrationModal({
   const [copiedRls, setCopiedRls] = useState(false);
   const sqlTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [isChecking, setIsChecking] = useState(false);
-  const [engineMode, setEngineModeState] = useState<CloudEngineMode>(getCloudEngineMode());
   const [status, setStatus] = useState<{
     connected: boolean;
     tablesReady: boolean;
@@ -95,7 +92,7 @@ export default function SupabaseMigrationModal({
     { id: 'provisiones', label: 'Provisiones (Comprobantes y Conciliación)', status: 'pending' },
     { id: 'citas', label: 'Citas y Agendamiento (Activas, Archivadas, Clientes)', status: 'pending' },
     { id: 'liquidador', label: 'Liquidador (Catálogo, Clientes, Historial)', status: 'pending' },
-    { id: 'auxiliares', label: 'Auxiliares (Anulaciones, Recordatorios, Cierres, Colas/Logs)', status: 'pending' }
+    { id: 'auxiliares', label: 'Auxiliares (Usuarios, Anulaciones, Recordatorios, Cierres, Colas/Logs)', status: 'pending' }
   ]);
   const [migrationResult, setMigrationResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -107,7 +104,6 @@ export default function SupabaseMigrationModal({
     setIsChecking(true);
     const res = await testSupabaseConnection();
     setStatus(res);
-    setEngineModeState(getCloudEngineMode());
     setIsChecking(false);
   };
 
@@ -179,33 +175,28 @@ export default function SupabaseMigrationModal({
     } catch {}
   };
 
-  const handleToggleEngine = (targetMode: CloudEngineMode) => {
-    setCloudEngineMode(targetMode);
-    setEngineModeState(targetMode);
-  };
-
-  const handleStartFullMigration = async () => {
+  const handleStartFullSync = async () => {
     setIsMigrating(true);
     setMigrationResult(null);
     setModuleSteps(prev => prev.map(s => ({ ...s, status: 'pending', detail: undefined })));
 
     try {
       // 1. FLETES, CLIENTES, TRANSPORTADORAS Y NOVEDADES
-      setMigrationProgress({ current: 1, total: 7, phase: 'Migrando Fletes, Clientes, Transportadoras y Novedades...' });
+      setMigrationProgress({ current: 1, total: 7, phase: 'Sincronizando Fletes, Clientes, Transportadoras y Novedades...' });
       updateStep('fletes', { status: 'running' });
 
       const localNovedades = Array.isArray(novedades)
         ? novedades
         : safeParseJson<any[]>(localStorage.getItem('lp_novedades'), []);
-      const fsNovedades = await fetchFirestoreDocRaw('app_state', 'novedades');
-      const mergedNovedades = pickLongerArray(localNovedades, fsNovedades);
+      const cloudNovedades = await fetchCloudKeyFromSupabase('app_state', 'novedades');
+      const mergedNovedades = pickLongerArray(localNovedades, cloudNovedades);
 
       await migrateCustomersToSupabase(customers);
       await migrateCarriersToSupabase(carriers);
       await migrateNovedadesToSupabase(mergedNovedades);
       const ordersRes = await migrateAllOrdersToSupabase(orders);
       if (!ordersRes.success) {
-        throw new Error(ordersRes.error || 'Error migrando fletes');
+        throw new Error(ordersRes.error || 'Error sincronizando fletes');
       }
       updateStep('fletes', {
         status: 'done',
@@ -213,18 +204,22 @@ export default function SupabaseMigrationModal({
       });
 
       // 2. HORAS EXTRAS + CORTES_*
-      setMigrationProgress({ current: 2, total: 7, phase: 'Migrando Horas Extras y Cortes Quincenales...' });
+      setMigrationProgress({ current: 2, total: 7, phase: 'Sincronizando Horas Extras y Cortes Quincenales...' });
       updateStep('horas', { status: 'running' });
 
       const localHoras = safeParseJson<any>(localStorage.getItem('latin_overtime_state'), {});
-      const fsHorasAll = await listFirestoreCollectionDocs('horas_extras_state', 300);
-      const horasRecords = pickLongerArray(fsHorasAll.records, localHoras.records);
-      const horasWorkers = pickLongerArray(fsHorasAll.workers, localHoras.workers);
-      const horasConfig = fsHorasAll.config || localHoras.config || null;
+      const [cloudHorasRec, cloudHorasWork, cloudHorasCfg] = await Promise.all([
+        fetchCloudKeyFromSupabase('horas_extras_state', 'records'),
+        fetchCloudKeyFromSupabase('horas_extras_state', 'workers'),
+        fetchCloudKeyFromSupabase('horas_extras_state', 'config')
+      ]);
+      const horasRecords = pickLongerArray(cloudHorasRec, localHoras.records);
+      const horasWorkers = pickLongerArray(cloudHorasWork, localHoras.workers);
+      const horasConfig = cloudHorasCfg || localHoras.config || null;
       const horasCortes: Record<string, any> = {};
-      for (const [k, v] of Object.entries(fsHorasAll)) {
-        if (k.startsWith('cortes_') && v) {
-          horasCortes[k] = v;
+      for (const k of Object.keys(localHoras || {})) {
+        if (k.startsWith('cortes_') && localHoras[k]) {
+          horasCortes[k] = localHoras[k];
         }
       }
 
@@ -240,20 +235,20 @@ export default function SupabaseMigrationModal({
       });
 
       // 3. PEDIDOS DE EMPLEADOS
-      setMigrationProgress({ current: 3, total: 7, phase: 'Migrando Pedidos de Empleados y Catálogo...' });
+      setMigrationProgress({ current: 3, total: 7, phase: 'Sincronizando Pedidos de Empleados y Catálogo...' });
       updateStep('pedidos', { status: 'running' });
 
       const localPedidos = safeParseJson<any>(localStorage.getItem('latin_pedidos_local_state'), {});
-      const [fsPedOrders, fsPedProducts, fsPedConfig] = await Promise.all([
-        fetchFirestoreDocRaw('pedidos_empleados_state', 'orders'),
-        fetchFirestoreDocRaw('pedidos_empleados_state', 'products'),
-        fetchFirestoreDocRaw('pedidos_empleados_state', 'config')
+      const [cloudPedOrders, cloudPedProducts, cloudPedConfig] = await Promise.all([
+        fetchCloudKeyFromSupabase('pedidos_empleados_state', 'orders'),
+        fetchCloudKeyFromSupabase('pedidos_empleados_state', 'products'),
+        fetchCloudKeyFromSupabase('pedidos_empleados_state', 'config')
       ]);
 
       const pedRes = await migratePedidosEmpleadosToSupabase({
-        orders: pickLongerArray(fsPedOrders, localPedidos.orders),
-        products: pickLongerArray(fsPedProducts, localPedidos.products),
-        config: fsPedConfig || localPedidos.config || null
+        orders: pickLongerArray(cloudPedOrders, localPedidos.orders),
+        products: pickLongerArray(cloudPedProducts, localPedidos.products),
+        config: cloudPedConfig || localPedidos.config || null
       });
       updateStep('pedidos', {
         status: pedRes.ok ? 'done' : 'error',
@@ -261,53 +256,41 @@ export default function SupabaseMigrationModal({
       });
 
       // 4. PROVISIONES + ESTADOS DE CONCILIACIÓN
-      setMigrationProgress({ current: 4, total: 7, phase: 'Migrando Provisiones y Estados de Conciliación...' });
+      setMigrationProgress({ current: 4, total: 7, phase: 'Sincronizando Provisiones y Estados de Conciliación...' });
       updateStep('provisiones', { status: 'running' });
 
       const localVouchersRaw =
         localStorage.getItem('prov_saved_vouchers') ||
         localStorage.getItem('provisiones_saved_vouchers');
       const localVouchers = safeParseJson<any[]>(localVouchersRaw, []);
-      const [fsSavedVouchers, fsProvAll] = await Promise.all([
-        fetchFirestoreDocRaw('provisiones_state', 'saved_vouchers'),
-        listFirestoreCollectionDocs('provisiones_state', 500)
-      ]);
-      const vouchers = pickLongerArray(
-        pickLongerArray(fsSavedVouchers, fsProvAll.saved_vouchers),
-        localVouchers
-      );
-      const provSyncDocs: Record<string, any> = {};
-      for (const [k, v] of Object.entries(fsProvAll)) {
-        if (k !== 'saved_vouchers' && v) {
-          provSyncDocs[k] = v;
-        }
-      }
+      const cloudSavedVouchers = await fetchCloudKeyFromSupabase('provisiones_state', 'saved_vouchers');
+      const vouchers = pickLongerArray(cloudSavedVouchers, localVouchers);
 
-      const provRes = await migrateProvisionesToSupabase(vouchers, provSyncDocs);
+      const provRes = await migrateProvisionesToSupabase(vouchers, {});
       updateStep('provisiones', {
         status: provRes.ok ? 'done' : 'error',
         detail: provRes.ok
-          ? `${provRes.count} comprobantes, ${Object.keys(provSyncDocs).length} docs conciliación`
+          ? `${provRes.count} comprobantes sincronizados`
           : `Error (${provRes.count} comp.): ${provRes.error || 'revisa esquema SQL v2.0'}`
       });
 
       // 5. CITAS Y AGENDAMIENTO
-      setMigrationProgress({ current: 5, total: 7, phase: 'Migrando Citas, Archivadas y Clientes de Agenda...' });
+      setMigrationProgress({ current: 5, total: 7, phase: 'Sincronizando Citas, Archivadas y Clientes de Agenda...' });
       updateStep('citas', { status: 'running' });
 
       const localAppts = safeParseJson<any[]>(localStorage.getItem('logicoord_appointments'), []);
       const localArch = safeParseJson<any[]>(localStorage.getItem('logicoord_archived'), []);
       const localCitasCli = safeParseJson<any[]>(localStorage.getItem('logicoord_clients'), []);
-      const [fsAppts, fsArch, fsCitasCli] = await Promise.all([
-        fetchFirestoreDocRaw('citas_state', 'appointments'),
-        fetchFirestoreDocRaw('citas_state', 'archived'),
-        fetchFirestoreDocRaw('citas_state', 'clients')
+      const [cloudAppts, cloudArch, cloudCitasCli] = await Promise.all([
+        fetchCloudKeyFromSupabase('citas_state', 'appointments'),
+        fetchCloudKeyFromSupabase('citas_state', 'archived'),
+        fetchCloudKeyFromSupabase('citas_state', 'clients')
       ]);
 
       const citasRes = await migrateCitasToSupabase({
-        appointments: pickLongerArray(fsAppts, localAppts),
-        archived: pickLongerArray(fsArch, localArch),
-        clients: pickLongerArray(fsCitasCli, localCitasCli)
+        appointments: pickLongerArray(cloudAppts, localAppts),
+        archived: pickLongerArray(cloudArch, localArch),
+        clients: pickLongerArray(cloudCitasCli, localCitasCli)
       });
       updateStep('citas', {
         status: citasRes.ok ? 'done' : 'error',
@@ -315,70 +298,64 @@ export default function SupabaseMigrationModal({
       });
 
       // 6. LIQUIDADOR
-      setMigrationProgress({ current: 6, total: 7, phase: 'Migrando Liquidador (Catálogo, Clientes, Historial)...' });
+      setMigrationProgress({ current: 6, total: 7, phase: 'Sincronizando Liquidador (Catálogo, Clientes, Historial)...' });
       updateStep('liquidador', { status: 'running' });
 
       const localLiqCat = safeParseJson<any[]>(localStorage.getItem('liq_catalog'), []);
       const localLiqCli = safeParseJson<any>(localStorage.getItem('liq_clientes'), {});
       const localLiqHist = safeParseJson<any[]>(localStorage.getItem('liq_historial'), []);
-      const [fsLiqCat, fsLiqCli, fsLiqHist] = await Promise.all([
-        fetchFirestoreDocRaw('liq_state', 'catalog'),
-        fetchFirestoreDocRaw('liq_state', 'clientes'),
-        fetchFirestoreDocRaw('liq_state', 'historial')
+      const [cloudLiqCat, cloudLiqCli, cloudLiqHist] = await Promise.all([
+        fetchCloudKeyFromSupabase('liq_state', 'catalog'),
+        fetchCloudKeyFromSupabase('liq_state', 'clientes'),
+        fetchCloudKeyFromSupabase('liq_state', 'historial')
       ]);
 
       const liqClientesMerged =
-        fsLiqCli && Object.keys(fsLiqCli).length >= Object.keys(localLiqCli || {}).length
-          ? fsLiqCli
+        cloudLiqCli && Object.keys(cloudLiqCli).length >= Object.keys(localLiqCli || {}).length
+          ? cloudLiqCli
           : localLiqCli;
 
       const liqRes = await migrateLiquidadorToSupabase({
-        catalog: pickLongerArray(fsLiqCat, localLiqCat),
+        catalog: pickLongerArray(cloudLiqCat, localLiqCat),
         clientes: liqClientesMerged,
-        historial: pickLongerArray(fsLiqHist, localLiqHist)
+        historial: pickLongerArray(cloudLiqHist, localLiqHist)
       });
       updateStep('liquidador', {
         status: liqRes.ok ? 'done' : 'error',
         detail: `${liqRes.catalogCount} SKUs, ${liqRes.clientesCount} clientes, ${liqRes.historialCount} liq.`
       });
 
-      // 7. AUXILIARES, CIERRES Y COLAS/LOGS
-      setMigrationProgress({ current: 7, total: 7, phase: 'Migrando Auxiliares, Cierres, Colas y Logs...' });
+      // 7. AUXILIARES, USUARIOS, CIERRES Y COLAS/LOGS
+      setMigrationProgress({ current: 7, total: 7, phase: 'Sincronizando Usuarios, Auxiliares, Colas y Logs...' });
       updateStep('auxiliares', { status: 'running' });
 
       const localDeleted = deletedOrders || safeParseJson<Record<string, any>>(localStorage.getItem('lp_deleted_orders'), {});
       const localReminders = reminders || safeParseJson<any[]>(localStorage.getItem('lp_reminders'), []);
       const localQueue = safeParseJson<any[]>(localStorage.getItem('sync_queue_offline_v2'), []);
       const localLogs = safeParseJson<any[]>(localStorage.getItem('sync_logs_offline_v2'), []);
-
-      const [fsDeleted, fsReminders, fsCierres, fsQueueMap, fsLogsMap, fsAnalisisMap] = await Promise.all([
-        fetchFirestoreDocRaw('app_state', 'deleted_orders'),
-        fetchFirestoreDocRaw('app_state', 'reminders'),
-        fetchFirestoreDocRaw('app_state', 'cierres'),
-        listFirestoreCollectionDocs('sync_queue', 300),
-        listFirestoreCollectionDocs('sync_logs', 300),
-        listFirestoreCollectionDocs('analisis_sync_logs', 300)
+      const [cloudDeleted, cloudReminders, cloudCierres] = await Promise.all([
+        fetchCloudKeyFromSupabase('app_state', 'deleted_orders'),
+        fetchCloudKeyFromSupabase('app_state', 'reminders'),
+        fetchCloudKeyFromSupabase('app_state', 'cierres')
       ]);
 
-      const mergedDeleted = { ...(fsDeleted || {}), ...(localDeleted || {}) };
-      const mergedReminders = pickLongerArray(localReminders, fsReminders);
-      const cierresList = Array.isArray(fsCierres) ? fsCierres : fsCierres ? [fsCierres] : [];
-      const queueList = pickLongerArray(Object.values(fsQueueMap || {}), localQueue);
-      const logsList = pickLongerArray(Object.values(fsLogsMap || {}), localLogs);
-      const analisisList = Object.values(fsAnalisisMap || {});
+      const mergedDeleted = { ...(cloudDeleted || {}), ...(localDeleted || {}) };
+      const mergedReminders = pickLongerArray(localReminders, cloudReminders);
+      const cierresList = Array.isArray(cloudCierres) ? cloudCierres : cloudCierres ? [cloudCierres] : [];
 
       const auxRes = await migrateAuxiliaresAndLogsToSupabase({
         deletedOrders: mergedDeleted,
         reminders: mergedReminders,
         cierres: cierresList,
-        syncQueue: queueList,
-        syncLogs: logsList,
-        analisisSyncLogs: analisisList
+        syncQueue: localQueue,
+        syncLogs: localLogs,
+        analisisSyncLogs: []
       });
-      await syncCloudKeyToSupabase('app_state', 'users_roster', loadUsersRoster(), 'soporteyabi@gmail.com');
+      const currentRoster = loadUsersRoster();
+      await syncCloudKeyToSupabase('app_state', 'users_roster', currentRoster, 'soporteyabi@gmail.com');
       updateStep('auxiliares', {
         status: auxRes.auxOk ? 'done' : 'error',
-        detail: `${Object.keys(mergedDeleted).length} anul., ${mergedReminders.length} recordat., ${cierresList.length} cierres, ${auxRes.queueCount} cola, ${auxRes.logsCount} logs`
+        detail: `${currentRoster.length} usuarios, ${Object.keys(mergedDeleted).length} anul., ${mergedReminders.length} recordat., ${auxRes.queueCount} cola`
       });
 
       const failedModules: string[] = [];
@@ -392,12 +369,12 @@ export default function SupabaseMigrationModal({
       if (failedModules.length > 0) {
         setMigrationResult({
           success: false,
-          message: `Se migraron casi todos los módulos, pero hubo fallo en: ${failedModules.join(' | ')}. Ejecuta el Script SQL v2.0 actualizado en Supabase (+ New query -> Run) y vuelve a presionar "Iniciar Migración Total".`
+          message: `Se sincronizaron casi todos los módulos, pero hubo fallo en: ${failedModules.join(' | ')}. Ejecuta el Script SQL v2.0 actualizado en Supabase (+ New query -> Run) y vuelve a presionar "Consolidar en Supabase".`
         });
       } else {
         setMigrationResult({
           success: true,
-          message: '¡Migración total completada! Todos los módulos de SISTEMALOG (Fletes, Horas Extras, Pedidos de Empleados, Provisiones, Citas, Liquidador y Auxiliares/Logs) quedaron respaldados en Supabase PostgreSQL.'
+          message: '¡Consolidación 100% completada en Supabase PostgreSQL! Todos los módulos y usuarios de SISTEMALOG quedaron verificados y sincronizados en tiempo real sin dependencia de Firestore.'
         });
       }
     } catch (e: any) {
@@ -408,7 +385,7 @@ export default function SupabaseMigrationModal({
         success: false,
         message: isRls
           ? `Falta desbloquear permisos (RLS) en Supabase: ${rawMsg}. Solución: copia el Script SQL v2.0 del Paso 1, pégalo en Supabase SQL Editor (+ New query), presiona Run hasta ver "Success. No rows returned", y vuelve a intentar.`
-          : `Error durante la migración: ${rawMsg}`
+          : `Error durante la sincronización: ${rawMsg}`
       });
     } finally {
       setIsMigrating(false);
@@ -426,17 +403,13 @@ export default function SupabaseMigrationModal({
             <Database className="w-5 h-5 text-emerald-400 flex-shrink-0" />
             <div>
               <h3 className="text-sm sm:text-base font-bold uppercase tracking-wider text-white flex flex-wrap items-center gap-2">
-                Migración Total a Supabase & Render (v2.0)
-                <span className={`text-[10px] px-2 py-0.5 rounded border ${
-                  engineMode === 'supabase_primary'
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    : 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                }`}>
-                  {engineMode === 'supabase_primary' ? 'Supabase Principal Activo' : 'Dual-Write Activo'}
+                Centro Nube Supabase PostgreSQL & Render (v2.0)
+                <span className="text-[10px] px-2 py-0.5 rounded border bg-emerald-500/20 text-emerald-300 border-emerald-500/40">
+                  100% Supabase Activo
                 </span>
               </h3>
               <p className="text-[11px] text-slate-400 font-sans">
-                18 tablas relacionales + Sincronización Realtime unificada para los 7 módulos del ERP
+                18 tablas relacionales + Sincronización Realtime unificada para los 7 módulos y 4 PCs
               </p>
             </div>
           </div>
@@ -452,7 +425,7 @@ export default function SupabaseMigrationModal({
         {/* Project Target & 18-Table Status */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-950/70 p-3 rounded-lg border border-slate-800">
           <div>
-            <span className="text-slate-400 block text-[10px] uppercase font-bold">Proyecto Destino Supabase:</span>
+            <span className="text-slate-400 block text-[10px] uppercase font-bold">Proyecto Supabase PostgreSQL:</span>
             <div className="flex items-center gap-1.5 mt-0.5">
               <strong className="text-emerald-400 font-mono select-all truncate">{SUPABASE_URL}</strong>
               <a
@@ -511,17 +484,17 @@ export default function SupabaseMigrationModal({
           </div>
         )}
 
-        {/* Dual-Write Architecture Explanation */}
+        {/* Standalone Supabase Architecture Info */}
         <div className="bg-slate-900/60 border border-slate-800/80 rounded-lg p-3 text-[11px] font-sans space-y-1 text-slate-300">
-          <div className="font-bold flex items-center gap-1.5 font-mono text-xs text-sky-400">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Transición Cero Riesgo: Dual-Write Universal
+          <div className="font-bold flex items-center gap-1.5 font-mono text-xs text-emerald-400">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" /> Arquitectura Autónoma 100% Supabase (Sin Firestore)
           </div>
           <p>
-            Todos los módulos (Fletes, Horas Extras, Pedidos de Empleados, Provisiones, Citas, Liquidador y Colas) ya replican cada cambio hacia <code className="text-emerald-300">app_sync_state</code> y sus tablas en Supabase. Al completar los Pasos 1 y 2 puedes cambiar el motor principal a <strong>Supabase</strong> en el Paso 3.
+            Todos los módulos (Fletes, Horas Extras, Pedidos de Empleados, Provisiones, Citas, Liquidador, Usuarios & Permisos y Colas) operan exclusivamente contra <code className="text-emerald-300">app_sync_state</code> y sus tablas relacionales en Supabase PostgreSQL con canales Realtime en vivo.
           </p>
         </div>
 
-        {/* Step 1: SQL Schema Creation v2.0 */}
+        {/* Step 1: SQL Schema Maintenance v2.0 */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -529,7 +502,7 @@ export default function SupabaseMigrationModal({
                 1
               </span>
               <h4 className="text-xs font-bold uppercase tracking-wider text-white">
-                Ejecutar Script SQL v2.0 (18 Tablas + Realtime)
+                Script SQL v2.0 (18 Tablas + Realtime)
               </h4>
             </div>
             <div className="flex items-center gap-2">
@@ -567,7 +540,7 @@ export default function SupabaseMigrationModal({
           />
         </div>
 
-        {/* Step 2: Migrate All 7 Modules */}
+        {/* Step 2: Consolidate & Verify All 7 Modules */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -575,13 +548,13 @@ export default function SupabaseMigrationModal({
                 2
               </span>
               <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-emerald-400" /> Migrar Todos los Módulos a Supabase
+                <Layers className="w-3.5 h-3.5 text-emerald-400" /> Consolidar y Verificar Módulos en Supabase
               </h4>
             </div>
 
             <button
               type="button"
-              onClick={handleStartFullMigration}
+              onClick={handleStartFullSync}
               disabled={isMigrating}
               className={`px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 cursor-pointer transition-all ${
                 isMigrating
@@ -592,12 +565,12 @@ export default function SupabaseMigrationModal({
               {isMigrating ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Migrando Fase {migrationProgress.current}/{migrationProgress.total}...</span>
+                  <span>Verificando Fase {migrationProgress.current}/{migrationProgress.total}...</span>
                 </>
               ) : (
                 <>
                   <Play className="w-3.5 h-3.5" />
-                  <span>Iniciar Migración Total</span>
+                  <span>Consolidar en Supabase</span>
                 </>
               )}
             </button>
@@ -654,7 +627,7 @@ export default function SupabaseMigrationModal({
               <div className="font-bold flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5">
                   {migrationResult.success ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
-                  {migrationResult.success ? 'Migración Integral Finalizada' : 'Error en la Migración'}
+                  {migrationResult.success ? 'Consolidación Finalizada' : 'Error en la Consolidación'}
                 </span>
                 {!migrationResult.success && migrationResult.message.toLowerCase().includes('rls') && (
                   <button
@@ -672,7 +645,7 @@ export default function SupabaseMigrationModal({
           )}
         </div>
 
-        {/* Step 3: Switch Primary Database Engine & Render Env */}
+        {/* Step 3: Render Production Status */}
         <div className="bg-slate-950/80 border border-slate-800 rounded-lg p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -680,57 +653,29 @@ export default function SupabaseMigrationModal({
                 3
               </span>
               <h4 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Server className="w-3.5 h-3.5 text-sky-400" /> Motor Principal & Despliegue Render
+                <Server className="w-3.5 h-3.5 text-sky-400" /> Despliegue Producción Render & 4 PCs
               </h4>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleToggleEngine('firestore_primary')}
-                className={`px-2.5 py-1 rounded text-[11px] font-bold border transition-all ${
-                  engineMode === 'firestore_primary'
-                    ? 'bg-sky-600/30 border-sky-400 text-sky-200'
-                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
-                }`}
-              >
-                Firestore Principal
-              </button>
-              <button
-                type="button"
-                onClick={() => handleToggleEngine('supabase_primary')}
-                disabled={!status?.coreReady && engineMode !== 'supabase_primary'}
-                className={`px-2.5 py-1 rounded text-[11px] font-bold border flex items-center gap-1 transition-all ${
-                  engineMode === 'supabase_primary'
-                    ? 'bg-emerald-600 border-emerald-400 text-white'
-                    : status?.coreReady
-                      ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-600/30'
-                      : 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed'
-                }`}
-              >
-                <Power className="w-3 h-3" />
-                <span>Activar Supabase Principal</span>
-              </button>
-            </div>
+            <span className="px-2.5 py-1 rounded text-[11px] font-bold border bg-emerald-600/20 border-emerald-400 text-emerald-300">
+              Motor Único: Supabase PostgreSQL
+            </span>
           </div>
 
           <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
-            Cuando hayas ejecutado el Script SQL v2.0 (18/18 tablas) y completado el Paso 2, activa <strong>Supabase Principal</strong> para probar que todos los módulos lean y escuchen cambios Realtime exclusivamente desde Supabase. Para aplicarlo globalmente en los 4 PCs desde GitHub/Render, agrega en Render la variable:
-            {' '}<code className="text-emerald-300 font-mono">VITE_PRIMARY_CLOUD_DB=supabase</code>.
+            Firestore ha sido desconectado definitivamente. La aplicación lee, escribe y escucha cambios Realtime exclusivamente en Supabase PostgreSQL para los 4 PCs usando <code className="text-emerald-300 font-mono">VITE_PRIMARY_CLOUD_DB=supabase</code>.
           </p>
 
-          {engineMode === 'supabase_primary' && (
-            <div className="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded p-2.5 text-[11px] font-sans text-emerald-200">
-              <span>Modo <strong>Supabase Principal</strong> activo en este navegador. Recarga para hidratar todos los módulos desde PostgreSQL.</span>
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-[10px] shrink-0"
-              >
-                Recargar App
-              </button>
-            </div>
-          )}
+          <div className="flex items-center justify-between gap-2 bg-emerald-500/10 border border-emerald-500/30 rounded p-2.5 text-[11px] font-sans text-emerald-200">
+            <span>Sincronización directa con PostgreSQL y canales Realtime activa en esta sesión.</span>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-[10px] shrink-0"
+            >
+              Recargar App
+            </button>
+          </div>
         </div>
 
       </div>
