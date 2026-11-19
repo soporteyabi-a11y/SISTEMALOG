@@ -160,6 +160,31 @@ const DEFAULT_CONFIG: ConfigHours = {
   domFestMultiplier: 1.75,
 };
 
+const parseTimeHoursSafe = (timeStr: string): number | null => {
+  if (!timeStr || !timeStr.includes(':')) return null;
+  const [h, m] = timeStr.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h + m / 60;
+};
+
+// Completa el recargo nocturno de madrugada (00:00 a 06:00 AM) en turnos ordinarios pendientes que ingresaron antes de las 06:00
+const repairMorningRecNoctIfMissing = (list: OvertimeRecord[]): OvertimeRecord[] => {
+  return list.map(r => {
+    if (r.pagado || r.tipo !== 'ord' || (r.recNoct || 0) > 0) return r;
+    const ent = parseTimeHoursSafe(r._ent);
+    let sal = parseTimeHoursSafe(r._sal);
+    if (ent === null || sal === null) return r;
+    if (sal < ent) sal += 24;
+    const baseHours = Number(r.base) > 0 ? Number(r.base) : (r.jorn === 'mie' ? 9.25 : 9);
+    const ordEnd = Math.min(sal, ent + baseHours);
+    const morningRecNoct = Math.max(0, Math.min(ordEnd, 6) - Math.max(ent, 0));
+    if (morningRecNoct > 0) {
+      return { ...r, recNoct: Number(morningRecNoct.toFixed(3)) };
+    }
+    return r;
+  });
+};
+
 export default function HorasModule({ currentUser }: { currentUser?: AppUser | null } = {}) {
   // Access level: Washington (Admin) has full rights to everything; workers have self-registration access
   const isAdmin = currentUser?.rol === 'SUPER_ADMIN' || !currentUser;
@@ -177,10 +202,12 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     if (current) {
       try {
         const parsed = JSON.parse(current);
-        if (Array.isArray(parsed.records) && parsed.records.length > 0) return parsed.records;
+        if (Array.isArray(parsed.records) && parsed.records.length > 0) {
+          return repairMorningRecNoctIfMissing(parsed.records);
+        }
       } catch (e) {}
     }
-    return (SEED_OVERTIME_RECORDS as unknown) as OvertimeRecord[];
+    return repairMorningRecNoctIfMissing((SEED_OVERTIME_RECORDS as unknown) as OvertimeRecord[]);
   });
   const [workers, setWorkers] = useState<Worker[]>(() => {
     const current = localStorage.getItem('latin_overtime_state');
@@ -407,10 +434,11 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     // Establish live real-time Firestore subscriptions
     const unsubRecords = subscribeToCloud('horas_extras_state', 'records', (data) => {
       if (Array.isArray(data) && data.length > 0) {
-        const raw = JSON.stringify(data);
+        const repaired = repairMorningRecNoctIfMissing(data);
+        const raw = JSON.stringify(repaired);
         lastSavedRecords.current = raw;
-        setRecords(data);
-        updateLocal('records', data);
+        setRecords(repaired);
+        updateLocal('records', repaired);
       } else if (!data || (Array.isArray(data) && data.length === 0)) {
         // Auto-seed Firestore if missing or empty
         saveToCloud('horas_extras_state', 'records', SEED_OVERTIME_RECORDS);
@@ -600,12 +628,14 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     // Compute Nocturna overtime (remaining hours from gross overtime that happened at night)
     const overtimeNocturna = Math.max(0, rawOvertimeTotal - overtimeDiurna);
 
-    // 4. Night shifts Surcharges (Recargo Nocturnos) -> hours worked in standard night hours (e.g. 21:00 to 6:00 next day)
-    const nightSurchargeThreshold = config.nightSurchargeStartHour; // default 21:00
-    const recargoNocturnoRange = Math.max(
-      0,
-      Math.min(sal, ent + baseShiftHours, 30) - Math.max(ent, nightSurchargeThreshold)
-    );
+    // 4. Night shifts Surcharges (Recargo Nocturnos) -> hours worked within ordinary shift inside night hours:
+    //    (a) Madrugada: 00:00 a 06:00 AM del mismo día (ej. ingreso a las 05:00 -> 1.00h de 05:00 a 06:00)
+    //    (b) Noche / trasnocho: desde config.nightSurchargeStartHour (19:00 o 21:00) hasta 06:00 AM del día siguiente
+    const nightSurchargeThreshold = config.nightSurchargeStartHour; // default 21:00 (o 19:00 según ajustes)
+    const ordEnd = Math.min(sal, ent + baseShiftHours);
+    const recargoNocturnoMadrugada = Math.max(0, Math.min(ordEnd, 6) - Math.max(ent, 0));
+    const recargoNocturnoNoche = Math.max(0, Math.min(ordEnd, 30) - Math.max(ent, nightSurchargeThreshold));
+    const recargoNocturnoRange = recargoNocturnoMadrugada + recargoNocturnoNoche;
 
     const domFestValue = isSpecialDay ? workedHoursDecimal : 0;
     const ordinaryDiur = isSpecialDay ? 0 : overtimeDiurna;
@@ -959,10 +989,11 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       indexes[normalize].regs.push(r);
     });
 
-    // Excluir colaboradores sin horas registradas o con 0 horas netas en el estado activo (ej. sin horas pendientes)
+    // Excluir colaboradores sin horas registradas ni recargos nocturnos pendientes en el estado activo
     Object.keys(indexes).forEach(k => {
       const workerNetas = indexes[k].regs.reduce((acc, r) => acc + (r.netas || 0), 0);
-      if (indexes[k].regs.length === 0 || workerNetas <= 0) {
+      const workerRecNoct = indexes[k].regs.reduce((acc, r) => acc + (r.recNoct || 0), 0);
+      if (indexes[k].regs.length === 0 || (workerNetas <= 0 && workerRecNoct <= 0)) {
         delete indexes[k];
       }
     });
@@ -1198,6 +1229,8 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       netas: number;
       pendingNetas: number;
       paidNetas: number;
+      pendingRecNoct: number;
+      paidRecNoct: number;
       pendingCount: number;
       paidCount: number;
     }> = {};
@@ -1219,6 +1252,8 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           netas: 0,
           pendingNetas: 0,
           paidNetas: 0,
+          pendingRecNoct: 0,
+          paidRecNoct: 0,
           pendingCount: 0,
           paidCount: 0
         };
@@ -1233,23 +1268,25 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       summaryMap[key].netas += r.netas;
       if (r.pagado) {
         summaryMap[key].paidNetas += r.netas;
+        summaryMap[key].paidRecNoct += (r.recNoct || 0);
         summaryMap[key].paidCount += 1;
       } else {
         summaryMap[key].pendingNetas += r.netas;
+        summaryMap[key].pendingRecNoct += (r.recNoct || 0);
         summaryMap[key].pendingCount += 1;
       }
     });
 
-    // Filtro estricto: cuando seleccione el corte solo tomar los trabajadores que efectivamente hicieron extras (> 0h)
+    // Filtro estricto: cuando seleccione el corte solo tomar los trabajadores que efectivamente hicieron extras o recargos (> 0h)
     const rows = Object.values(summaryMap)
       .filter(row => {
         if (paymentFilter === 'pending') {
-          return (row.pendingNetas || 0) > 0;
+          return (row.pendingNetas || 0) > 0 || (row.pendingRecNoct || 0) > 0;
         }
         if (paymentFilter === 'paid') {
-          return (row.paidNetas || 0) > 0;
+          return (row.paidNetas || 0) > 0 || (row.paidRecNoct || 0) > 0;
         }
-        return (row.netas || 0) > 0;
+        return (row.netas || 0) > 0 || (row.recNoct || 0) > 0;
       })
       .sort((a, b) => a.nom.localeCompare(b.nom));
 
@@ -2691,7 +2728,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                           {/* 2. DIURNA */}
                           <div className="bg-slate-900/40 p-2.5 flex flex-col justify-center min-h-[50px]">
                             <span className="text-xs font-bold text-cyan-400 font-mono">
-                              {(r.extDiurna + r.extraOrd) > 0 ? (r.extDiurna + r.extraOrd).toFixed(2) : '—'}
+                              {r.extDiurna > 0 ? r.extDiurna.toFixed(2) : '—'}
                             </span>
                             <span className="text-[8px] font-mono text-slate-500 uppercase tracking-wider mt-0.5 font-bold">DIURNA</span>
                           </div>
@@ -2921,7 +2958,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
                           <div className="bg-[#031b24] p-2.5 flex flex-col justify-center">
                             <span className="text-xs font-black text-[#00c5d8]">
-                              {(wStats.extDiurna + wStats.extraOrd).toFixed(1)}h
+                              {wStats.extDiurna.toFixed(1)}h
                             </span>
                             <span className="text-[8px] text-slate-400 uppercase tracking-wider mt-0.5 font-bold">DIURNAS</span>
                           </div>
@@ -3204,7 +3241,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       </div>
                       <div className="bg-slate-900 p-4">
                         <span className="text-[10px] text-slate-400 uppercase block">DIURNAS / ORDINARIAS</span>
-                        <span className="text-md font-bold text-cyan-400 mt-1 block">{(personalStats.extDiurna + personalStats.extraOrd).toFixed(2)}h</span>
+                        <span className="text-md font-bold text-cyan-400 mt-1 block">{personalStats.extDiurna.toFixed(2)}h</span>
                       </div>
                       <div className="bg-slate-900 p-4">
                         <span className="text-[10px] text-slate-400 uppercase block">NOCTURNAS / RECARGOS</span>
