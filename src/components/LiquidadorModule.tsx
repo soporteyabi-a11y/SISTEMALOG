@@ -2538,8 +2538,8 @@ export default function LiquidadorModule() {
         <div id="printLiquidador" className="hidden print:block bg-white text-black p-2 font-sans">
           {/* Cabecera */}
           <div className="text-center pb-1.5 mb-2 border-b-2 border-black">
-            <div className="text-base font-extrabold tracking-wide uppercase">SISTEMALOG SAS</div>
-            <div className="text-[9px] text-gray-500 font-mono">NIT: 900.567.892-1 / Control y Liquidación de Operaciones</div>
+            <div className="text-base font-extrabold tracking-wide uppercase">LATIN PRODUCTS S.A.S.</div>
+            <div className="text-[9px] text-gray-500 font-mono">NIT: 800.225.074-3 / SISTEMALOG — Control y Liquidación de Operaciones</div>
             <div className="text-[10px] font-bold uppercase mt-1 bg-slate-100 py-0.5 px-2 border border-black inline-block tracking-widest">
               VALORACIÓN DE CARGA / LIQUIDACIÓN COMERCIAL
             </div>
@@ -2706,7 +2706,7 @@ export default function LiquidadorModule() {
           <div className="mt-6 grid grid-cols-2 gap-8 text-center text-[8.5px] font-sans">
             <div className="border-t border-black pt-1">
               <div className="font-bold uppercase">ELABORÓ / LIQUIDADOR DE CARGA</div>
-              <div className="text-gray-500 mt-0.5">SISTEMALOG SAS - Operaciones</div>
+              <div className="text-gray-500 mt-0.5">LATIN PRODUCTS S.A.S. - Operaciones</div>
             </div>
             <div className="border-t border-black pt-1">
               <div className="font-bold uppercase">RECIBIDO / DESPACHOS Y BODEGA</div>
@@ -2715,7 +2715,7 @@ export default function LiquidadorModule() {
           </div>
 
           <div className="text-center text-[7.5px] text-gray-500 mt-4 pt-1.5 border-t border-gray-200">
-            Este reporte es una valoración oficial interna de SISTEMALOG SAS. Todos los valores están sujetos a auditoría de facturación.
+            Este reporte es una valoración oficial interna de LATIN PRODUCTS S.A.S. Todos los valores están sujetos a auditoría de facturación.
           </div>
         </div>,
         document.body

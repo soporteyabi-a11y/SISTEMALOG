@@ -3515,11 +3515,11 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           <div className="border-b-2 border-slate-900 pb-3 mb-3 flex justify-between items-start">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xl font-black tracking-tight text-slate-950 font-mono">SISTEMALOG S.A.S.</span>
-                <span className="text-sm text-slate-700 font-bold">| LATIN PRODUCTS S.A.S.</span>
+                <span className="text-xl font-black tracking-tight text-slate-950 font-mono">LATIN PRODUCTS S.A.S.</span>
+                <span className="text-sm text-slate-700 font-bold">| SISTEMALOG</span>
               </div>
               <p className="text-[10px] text-slate-700 font-mono mt-0.5 font-semibold">
-                NIT: 901.458.921-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
+                NIT: 800.225.074-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
               </p>
               <p className="text-[9.5px] text-slate-600 font-mono">
                 Sistema Integral de Nómina, Turnos, Horas Extras y Recargos Nocturnos

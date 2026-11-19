@@ -1041,7 +1041,7 @@ export default function ProvisionesModule({ orders, carriers = [], onUpdateOrder
           {/* Left Column: Corporate Info */}
           <div className="col-span-7 p-3 flex flex-col justify-center space-y-1 bg-white text-black">
             <h2 className="text-sm font-bold text-black tracking-wider font-display uppercase">
-              SISTEMALOG S.A.S.
+              LATIN PRODUCTS S.A.S.
             </h2>
             <p className="text-[10px] text-gray-700 font-bold font-mono">NIT: 800225074-3</p>
             <p className="text-[9px] text-gray-600 uppercase leading-tight font-sans">

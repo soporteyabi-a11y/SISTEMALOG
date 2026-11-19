@@ -34,13 +34,15 @@ export function printSingleOrder(order: Order, carriers: Carrier[], customers: C
   if (!printWindow) return;
 
   const todayStr = new Date().toLocaleDateString('es-CO');
+  const rawOrderId = String(order.id || '').trim().toUpperCase();
+  const cleanSolicitudCode = rawOrderId.startsWith('SOL-') ? rawOrderId : `SOL-${rawOrderId}`;
 
   const html = `
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Solicitud de Vehículo - ${order.id}</title>
+  <title>Solicitud de Vehículo - ${cleanSolicitudCode}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
     
@@ -364,15 +366,15 @@ export function printSingleOrder(order: Order, carriers: Carrier[], customers: C
       <!-- Row 2: Company details, Solicitud info -->
       <tr>
         <td class="company-info-cell" colspan="1">
-          <div class="company-name">SISTEMALOG SAS</div>
+          <div class="company-name">LATIN PRODUCTS S.A.S.</div>
           Nit. 800.225.074-3<br>
           Cra 39 No. 14 - 62 Acopi - Yumbo<br>
           PBX: (02) 384 40 90<br>
           Móvil: 3215879382<br>
-          Correo: logistica@sistemalog.com.co
+          Correo: logistica@latinproducts.com.co
         </td>
         <td class="solicitud-details-cell" colspan="2">
-          <div class="solicitud-header">SOLICITUD NO. SOL-${order.id}</div>
+          <div class="solicitud-header">SOLICITUD NO. ${cleanSolicitudCode}</div>
           <table class="details-subtable">
             <tr>
               <td class="label-col">Orden de Compra</td>
@@ -685,9 +687,9 @@ export function printManifestDocument(data: ManifestPrintData) {
     <table class="header-table">
       <tr>
         <td style="width: 55%;">
-          <h1 class="logo-title">SISTEMALOG SAS</h1>
-          <p class="logo-sub">LATIN PRODUCTS S.A.S | CENTRO DE CONTROL LOGÍSTICO Y DESPACHO</p>
-          <span style="font-size: 9px; color: #64748b;">ACOPI - YUMBO | NIT 900.852.147-3</span>
+          <h1 class="logo-title">LATIN PRODUCTS S.A.S.</h1>
+          <p class="logo-sub">SISTEMALOG | CENTRO DE CONTROL LOGÍSTICO Y DESPACHO</p>
+          <span style="font-size: 9px; color: #64748b;">ACOPI - YUMBO | NIT 800.225.074-3</span>
         </td>
         <td style="width: 45%; text-align: right;">
           <div class="badge-modalidad">
@@ -779,7 +781,7 @@ export function printManifestDocument(data: ManifestPrintData) {
         <div style="height: 38px;"></div>
         <div class="sig-title">DESPACHADO EN MUELLE</div>
         <div>Julián Barrios / Auxiliar de Despacho</div>
-        <div style="font-size: 8px; color: #64748b;">SISTEMALOG SAS</div>
+        <div style="font-size: 8px; color: #64748b;">LATIN PRODUCTS S.A.S.</div>
       </div>
       <div class="sig-box">
         <div style="height: 38px;"></div>

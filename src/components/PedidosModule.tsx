@@ -1681,7 +1681,7 @@ export default function PedidosModule({
             <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-5 font-mono text-xs space-y-1.5 text-slate-400">
               <div>👤 <strong>Empleado:</strong> <span className="text-white">{employeeName}</span></div>
               <div>💳 <strong>Cédula:</strong> <span className="text-white">{employeeCedula}</span></div>
-              <div>🏢 <strong>Empresa:</strong> <span className="text-white">SISTEMALOG SAS</span></div>
+              <div>🏢 <strong>Empresa:</strong> <span className="text-white">LATIN PRODUCTS S.A.S.</span></div>
               {editOrderId && <div className="text-orange-400 font-semibold uppercase">✏️ MODIFICANDO PEDIDO EXISTENTE: {editOrderId}</div>}
             </div>
 
@@ -1873,8 +1873,8 @@ export default function PedidosModule({
                   onClick={() => {
                     if (lastSubmittedOrder) {
                       const ticketText = `============================================================
-              SISTEMALOG SAS
-        NIT: 900.567.892-1 / Pedidos de Empleados
+            LATIN PRODUCTS S.A.S.
+        NIT: 800.225.074-3 / Pedidos de Empleados
 ============================================================
 COMPROBANTE OFICIAL DE PEDIDO
 ============================================================
@@ -1895,7 +1895,7 @@ IVA Colectado (19%):${fmt(lastSubmittedOrder.iva)}
 ------------------------------------------------------------
 TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
 ============================================================
-  ¡Gracias por registrar tu pedido en SISTEMALOG SAS!
+  ¡Gracias por registrar tu pedido en LATIN PRODUCTS S.A.S. (SISTEMALOG)!
   El comprobante ya fue almacenado de forma segura en la
   nube y está programado para procesamiento inmediato.
 ============================================================`;
@@ -2870,7 +2870,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
                 <span className="text-[7.5px] text-[#00b4d8] font-bold tracking-wider mt-1 whitespace-nowrap">SISTEMA CONTROL LOGÍSTICO</span>
               </div>
               <div className="space-y-0.5" style={{ fontSize: '9px', lineHeight: '1.2' }}>
-                <strong className="text-gray-900 text-[10px] block font-bold">SISTEMALOG S.A.S.</strong>
+                <strong className="text-gray-900 text-[10px] block font-bold">LATIN PRODUCTS S.A.S.</strong>
                 <div>NIT: 800.225.074-3</div>
                 <div>RESPONSABLE DE IVA</div>
                 <div>TELÉFONO: 3844090</div>
@@ -2956,7 +2956,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
               <div><strong className="text-gray-550 uppercase font-bold text-gray-600">Ciudad:</strong> YUMBO, VALLE DEL CAUCA</div>
             </div>
             <div className="col-span-5 space-y-1 border-l border-gray-300 pl-3">
-              <div><strong className="text-gray-550 uppercase font-bold text-gray-600">Vendedor Autorizado:</strong> SISTEMALOG S.A.S.</div>
+              <div><strong className="text-gray-550 uppercase font-bold text-gray-600">Vendedor Autorizado:</strong> LATIN PRODUCTS S.A.S.</div>
               <div><strong className="text-gray-550 uppercase font-bold text-gray-600">Método de Pago:</strong> COMPRA DE EMPLEADO (CRÉDITO)</div>
               <div><strong className="text-gray-550 uppercase font-bold text-gray-600">Medio de Pago:</strong> DESCUENTO DIRECTO DE NÓMINA</div>
               <div><strong className="text-gray-550 uppercase font-bold text-gray-600">Estado Pedido:</strong> APROBADO / REGISTRADO</div>
@@ -3011,7 +3011,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
               </div>
               <div className="border border-gray-400 rounded-lg p-2 mt-2" style={{ fontSize: '8px', lineHeight: '1.3' }}>
                 <strong className="font-bold block text-gray-800 uppercase mb-0.5">OBSERVACIONES Y COMPROMISO:</strong>
-                <div>Este es un comprobante de pedido oficial e interno autorizado por el empleado. Por medio de la firma de este documento, el empleado acepta de forma voluntaria, incondicional y expresa el descuento por nómina del valor total neto arriba detallado, de conformidad con el estatuto interno de bienestar de SISTEMALOG S.A.S.</div>
+                <div>Este es un comprobante de pedido oficial e interno autorizado por el empleado. Por medio de la firma de este documento, el empleado acepta de forma voluntaria, incondicional y expresa el descuento por nómina del valor total neto arriba detallado, de conformidad con el estatuto interno de bienestar de LATIN PRODUCTS S.A.S.</div>
               </div>
             </div>
 
@@ -3054,7 +3054,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
             <div className="text-center">
               <div className="border-b border-gray-400 mx-auto w-[80%] h-12"></div>
               <span className="text-[8.5px] font-bold uppercase text-gray-700 block mt-1">AUTORIZADO Y AUDITADO POR</span>
-              <span className="text-[7.5px] text-gray-500 font-mono">SISTEMALOG S.A.S. - TALENTO HUMANO / LOGÍSTICA</span>
+              <span className="text-[7.5px] text-gray-500 font-mono">LATIN PRODUCTS S.A.S. - TALENTO HUMANO / LOGÍSTICA</span>
             </div>
           </div>
 
@@ -3062,7 +3062,7 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
           <div className="text-center text-[7.5px] text-gray-400 uppercase tracking-wide border-t border-gray-200 pt-3 mt-4" style={{ lineHeight: '1.4' }}>
             ACTIVIDAD ECONÓMICA CIIU 2023. TRIBUTAMOS EN YUMBO ACTIVIDAD INDUSTRIAL ICA 102-97 A LA TARIFA 7 X 1000. 
             <br />
-            ESTE COMPROBANTE DE VENTA DE CONTROL INTERNO GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADO CON ÉXITO EN EL SERVIDOR CLOUD DE OPERACIONES DE SISTEMALOG SAS.
+            ESTE COMPROBANTE DE VENTA DE CONTROL INTERNO GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADO CON ÉXITO EN EL SERVIDOR CLOUD DE SISTEMALOG PARA LATIN PRODUCTS S.A.S.
           </div>
         </div>,
         document.body
@@ -3257,9 +3257,9 @@ TOTAL PAGAR:        ${fmt(lastSubmittedOrder.total)}
 
           {/* Legal footnote */}
           <div className="text-center text-[8px] text-gray-500 uppercase tracking-wide border-t border-gray-300 pt-4 mt-8" style={{ lineHeight: '1.4' }}>
-            REPORTE OFICIAL GENERADO AUTOMÁTICAMENTE PARA CONTRALORÍA DE LOGÍSTICA Y RECURSOS HUMANOS - SISTEMALOG SAS.
+            REPORTE OFICIAL GENERADO AUTOMÁTICAMENTE PARA CONTRALORÍA DE LOGÍSTICA Y RECURSOS HUMANOS - LATIN PRODUCTS S.A.S.
             <br />
-            ESTA INFORMACIÓN GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADA CON ÉXITO EN EL SERVIDOR CLOUD DE OPERACIONES DE SISTEMALOG SAS.
+            ESTA INFORMACIÓN GOZA DE PLENA VALIDEZ Y HA SIDO ALMACENADA CON ÉXITO EN LA PLATAFORMA SISTEMALOG DE LATIN PRODUCTS S.A.S.
           </div>
         </div>,
         document.body
