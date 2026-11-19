@@ -290,4 +290,107 @@ export const sortOrdersBySearchRelevance = (orders: Order[], rawTerm: string): O
   });
 };
 
+/**
+ * Extracts numeric PV value from strings like "PV 2831", "PV-2831", "2831".
+ * Returns null if empty or non-numeric (e.g. "DONACION", "S/N").
+ */
+export const extractPvNumber = (pv?: string | number | null): number | null => {
+  if (pv === undefined || pv === null) return null;
+  const raw = String(pv).trim();
+  if (!raw) return null;
+  const matches = raw.match(/\d+/g);
+  if (!matches || matches.length === 0) return null;
+  const parsed = parseInt(matches[matches.length - 1], 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
+/**
+ * Extracts numeric portion of system ID (e.g. "SOL-4521" -> 4521).
+ */
+export const extractSolNumber = (id?: string | null): number => {
+  if (!id) return 0;
+  const match = String(id).match(/\d+/);
+  if (!match) return 0;
+  const parsed = parseInt(match[0], 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/**
+ * Sorts orders in ascending consecutive PV order (1409, 1410 ... 2831, 2832 ... 2867).
+ * Orders without numeric PV are placed after numbered PVs, tie-broken by SOL ID.
+ */
+export const compareOrdersByPvAsc = (a: Order, b: Order): number => {
+  const pvA = extractPvNumber(a?.pv);
+  const pvB = extractPvNumber(b?.pv);
+
+  if (pvA !== null && pvB !== null) {
+    if (pvA !== pvB) return pvA - pvB;
+    return extractSolNumber(a?.id) - extractSolNumber(b?.id);
+  }
+  if (pvA !== null && pvB === null) return -1;
+  if (pvA === null && pvB !== null) return 1;
+  return extractSolNumber(a?.id) - extractSolNumber(b?.id);
+};
+
+/**
+ * Sorts orders in descending PV order (2867, 2866 ... 1409).
+ * Orders without numeric PV are placed after numbered PVs.
+ */
+export const compareOrdersByPvDesc = (a: Order, b: Order): number => {
+  const pvA = extractPvNumber(a?.pv);
+  const pvB = extractPvNumber(b?.pv);
+
+  if (pvA !== null && pvB !== null) {
+    if (pvB !== pvA) return pvB - pvA;
+    return extractSolNumber(b?.id) - extractSolNumber(a?.id);
+  }
+  if (pvA !== null && pvB === null) return -1;
+  if (pvA === null && pvB !== null) return 1;
+  return extractSolNumber(b?.id) - extractSolNumber(a?.id);
+};
+
+/**
+ * Computes the next consecutive PV number across active (non-Anulado) orders.
+ */
+export const getNextConsecutivePv = (ordersList: Order[]): { maxNumber: number; nextNumber: number; formatted: string } => {
+  let maxNumber = 0;
+  for (const o of ordersList) {
+    if (!o || o.estado === 'Anulado') continue;
+    const num = extractPvNumber(o.pv);
+    // Keep sequential PV counter within realistic PV range (< 1,000,000) to avoid 10-digit OC refs hijacking it
+    if (num !== null && num > maxNumber && num < 1000000) {
+      maxNumber = num;
+    }
+  }
+  const nextNumber = maxNumber + 1;
+  return {
+    maxNumber,
+    nextNumber,
+    formatted: `PV ${nextNumber}`
+  };
+};
+
+/**
+ * Checks if another active (non-Anulado, non-split) order already uses the same PV.
+ */
+export const findExistingOrderByPv = (
+  ordersList: Order[],
+  pvInput?: string | number | null,
+  excludeId?: string
+): Order | undefined => {
+  const raw = String(pvInput ?? '').trim();
+  if (!raw) return undefined;
+  const targetNum = extractPvNumber(raw);
+  const targetClean = raw.toLowerCase().replace(/^pv[\s\-:]*/i, '').trim();
+
+  return ordersList.find(o => {
+    if (!o || o.estado === 'Anulado' || o.isSplit) return false;
+    if (excludeId && o.id === excludeId) return false;
+    const oNum = extractPvNumber(o.pv);
+    if (targetNum !== null && oNum !== null) {
+      return oNum === targetNum;
+    }
+    const oClean = String(o.pv || '').toLowerCase().replace(/^pv[\s\-:]*/i, '').trim();
+    return Boolean(targetClean && oClean && oClean === targetClean);
+  });
+};

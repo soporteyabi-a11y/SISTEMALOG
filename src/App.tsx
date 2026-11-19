@@ -14,7 +14,16 @@ import {
 
 import { Order, Carrier, Customer, Novedad, Reminder, AppUser } from './types';
 import { USERS_ROSTER, findUserByEmail, canUserAccessTab, loadUsersRoster, saveUsersRoster } from './data/usersRoster';
-import { matchOrderSearch, normalizeText, sortOrdersBySearchRelevance, deduplicateOrders } from './utils/searchHelper';
+import {
+  matchOrderSearch,
+  normalizeText,
+  sortOrdersBySearchRelevance,
+  deduplicateOrders,
+  compareOrdersByPvAsc,
+  compareOrdersByPvDesc,
+  getNextConsecutivePv,
+  findExistingOrderByPv
+} from './utils/searchHelper';
 import { SEED_CARRIERS, SEED_CUSTOMERS, SEED_ORDERS, SEED_NOVEDADES, SEED_REMINDERS } from './data/seed';
 import * as XLSX from 'xlsx';
 import { printSingleOrder, printManifestDocument, ManifestPrintData } from './utils/printRequest';
@@ -460,9 +469,10 @@ export default function App() {
       if (Array.isArray(freshOrders)) {
         const decompressed = freshOrders.map(decompressOrderFromCloud);
         const { cleanedList } = deduplicateOrders(decompressed);
-        orderCount = cleanedList.length;
-        setOrders(cleanedList);
-        safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
+        const sortedList = [...cleanedList].sort(compareOrdersByPvAsc);
+        orderCount = sortedList.length;
+        setOrders(sortedList);
+        safeLocalStorage.setItem('lp_orders', JSON.stringify(sortedList));
       }
       const freshCarriers = await forceRefreshFromCloud('app_state', 'carriers');
       if (Array.isArray(freshCarriers)) {
@@ -572,8 +582,10 @@ export default function App() {
   const [despachadoFilterMes, setDespachadoFilterMes] = useState('');
   const [despachadoPage, setDespachadoPage] = useState(1);
   const [despachadoItemsPerPage, setDespachadoItemsPerPage] = useState(15);
+  const [despachadoSortOrder, setDespachadoSortOrder] = useState<'pv_asc' | 'pv_desc'>('pv_asc');
   const [pendienteSearch, setPendienteSearch] = useState('');
   const [pendientePage, setPendientePage] = useState(1);
+  const [pendienteSortOrder, setPendienteSortOrder] = useState<'pv_asc' | 'pv_desc'>('pv_asc');
   const [customerSearch, setCustomerSearch] = useState('');
   const [orderFormClientSearch, setOrderFormClientSearch] = useState('');
   const [carrierPage, setCarrierPage] = useState(1);
@@ -590,7 +602,8 @@ export default function App() {
     despachadoFilterFactura,
     despachadoFilterPv,
     despachadoFilterMes,
-    despachadoItemsPerPage
+    despachadoItemsPerPage,
+    despachadoSortOrder
   ]);
 
   useEffect(() => {
@@ -747,7 +760,7 @@ export default function App() {
         ...updated,
         estado: normalizeEstado(updated.estado || "Pendiente")
       };
-    });
+    }).sort(compareOrdersByPvAsc);
     setOrders(migratedInitialOrders);
 
     const parseJSONSafely = (str: string | null, fallback: any) => {
@@ -891,9 +904,10 @@ export default function App() {
         }
         if (targetList.length === 0) targetList = SEED_ORDERS;
         const { cleanedList } = deduplicateOrders(targetList);
+        const sortedList = [...cleanedList].sort(compareOrdersByPvAsc);
 
-        setOrders(cleanedList);
-        safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
+        setOrders(sortedList);
+        safeLocalStorage.setItem('lp_orders', JSON.stringify(sortedList));
       }
     });
 
@@ -999,8 +1013,9 @@ export default function App() {
               }).filter(Boolean) as Order[];
             }
             const { cleanedList } = deduplicateOrders(decompressed);
-            setOrders(cleanedList);
-            safeLocalStorage.setItem('lp_orders', JSON.stringify(cleanedList));
+            const sortedList = [...cleanedList].sort(compareOrdersByPvAsc);
+            setOrders(sortedList);
+            safeLocalStorage.setItem('lp_orders', JSON.stringify(sortedList));
           }
         }).catch(() => {});
       }
@@ -1037,8 +1052,9 @@ export default function App() {
       forceFullOverwrite?: boolean;
     }
   ) => {
-    setOrders(updated);
-    safeLocalStorage.setItem('lp_orders', JSON.stringify(updated));
+    const orderedLocal = [...updated].sort(compareOrdersByPvAsc);
+    setOrders(orderedLocal);
+    safeLocalStorage.setItem('lp_orders', JSON.stringify(orderedLocal));
 
     const userEmail = currentUser?.email || 'soporteyabi@gmail.com';
     const touchedOrders = options?.touchedOrders || [];
@@ -1047,7 +1063,7 @@ export default function App() {
 
     cloudOrdersSaveChainRef.current = cloudOrdersSaveChainRef.current
       .then(async () => {
-        let finalOrders = updated;
+        let finalOrders = orderedLocal;
         let resolvedTouched = [...touchedOrders];
 
         if (!forceFullOverwrite) {
@@ -1139,10 +1155,10 @@ export default function App() {
                 .map(c => mergedById.get(c.id) || c);
 
               const { cleanedList } = deduplicateOrders([...addedToTop, ...orderedCloud]);
-              finalOrders = cleanedList;
+              finalOrders = [...cleanedList].sort(compareOrdersByPvAsc);
 
-              // Refresh local UI state if cloud merge brought in orders from other PCs or re-IDed a collision
-              if (finalOrders.length !== updated.length || addedToTop.some(a => !updated.some(u => u.id === a.id))) {
+              // Refresh local UI state if cloud merge brought in orders from other PCs, re-IDed a collision, or normalized PV order
+              if (finalOrders.length !== orderedLocal.length || addedToTop.some(a => !orderedLocal.some(u => u.id === a.id))) {
                 setOrders(finalOrders);
                 safeLocalStorage.setItem('lp_orders', JSON.stringify(finalOrders));
               }
@@ -1376,7 +1392,7 @@ export default function App() {
       creadoPor: filled.creadoPor || authorStamp,
       creadoEn: filled.creadoEn || new Date().toISOString(),
     };
-    const updated = [orderWithStamp, ...orders];
+    const updated = [...orders, orderWithStamp].sort(compareOrdersByPvAsc);
     saveOrders(updated, { touchedOrders: [orderWithStamp] });
 
     // Enqueue Sync Event for new order
@@ -1481,9 +1497,10 @@ export default function App() {
     });
 
     const { cleanedList, removedCount } = deduplicateOrders(currentOrders);
+    const sortedBatch = [...cleanedList].sort(compareOrdersByPvAsc);
 
-    saveOrders(cleanedList, { touchedOrders: touchedBatch });
-    setOrders(cleanedList);
+    saveOrders(sortedBatch, { touchedOrders: touchedBatch });
+    setOrders(sortedBatch);
 
     // Enqueue sync events for batch items
     filled.forEach(item => {
@@ -1522,8 +1539,9 @@ export default function App() {
     if (exists) {
       updated = orders.map(o => matchFn(o) ? { ...o, ...stampedOrder, id: o.id } : o);
     } else {
-      updated = [stampedOrder, ...orders];
+      updated = [...orders, stampedOrder];
     }
+    updated = [...updated].sort(compareOrdersByPvAsc);
     const touchedUpdated = updated.find(o => o.id === stampedOrder.id) || stampedOrder;
     saveOrders(updated, { touchedOrders: [touchedUpdated] });
 
@@ -2741,9 +2759,10 @@ export default function App() {
       matchedCustomerObj = customers.find(c => c.nombre.trim().toUpperCase() === resolvedClient.trim().toUpperCase());
     }
 
+    const nextConsecutivePv = getNextConsecutivePv(orders).formatted;
     const newOrder: Order = {
       id: newId,
-      pv: parsedPdfData.pv || "",
+      pv: (parsedPdfData.pv && String(parsedPdfData.pv).trim()) ? String(parsedPdfData.pv).trim() : nextConsecutivePv,
       oc: parsedPdfData.oc || "",
       fechaIngreso: parsedPdfData.fecha || parsedPdfData.fechaIngreso || new Date().toISOString().split('T')[0],
       fechaSalida: "",
@@ -2902,10 +2921,11 @@ export default function App() {
       }, 1000);
       const maxNumericId = Math.max(activeMax, deletedMax);
       const newId = `SOL-${maxNumericId + 1}`;
+      const nextPv = getNextConsecutivePv(orders).formatted;
 
       setEditingOrder({
         id: newId,
-        pv: "",
+        pv: nextPv,
         oc: "",
         tipoPedido: "CLIENTE",
         fechaIngreso: new Date().toISOString().split('T')[0],
@@ -3546,6 +3566,10 @@ export default function App() {
       });
     }
 
+    if (!despachadoSearch.trim()) {
+      list = [...list].sort(despachadoSortOrder === 'pv_asc' ? compareOrdersByPvAsc : compareOrdersByPvDesc);
+    }
+
     return list;
   }, [
     despachadosList,
@@ -3554,7 +3578,8 @@ export default function App() {
     despachadoFilterCarrier,
     despachadoFilterFactura,
     despachadoFilterPv,
-    despachadoFilterMes
+    despachadoFilterMes,
+    despachadoSortOrder
   ]);
 
   const totalDespachadosPages = useMemo(() => {
@@ -3580,10 +3605,12 @@ export default function App() {
   }, [orders]);
 
   const filteredPendientes = useMemo(() => {
-    if (!pendienteSearch.trim()) return pendientesList;
-    let filtered = pendientesList.filter(o => matchOrderSearch(o, pendienteSearch));
+    if (!pendienteSearch.trim()) {
+      return [...pendientesList].sort(pendienteSortOrder === 'pv_asc' ? compareOrdersByPvAsc : compareOrdersByPvDesc);
+    }
+    const filtered = pendientesList.filter(o => matchOrderSearch(o, pendienteSearch));
     return sortOrdersBySearchRelevance(filtered, pendienteSearch);
-  }, [pendientesList, pendienteSearch]);
+  }, [pendientesList, pendienteSearch, pendienteSortOrder]);
 
   const paginatedPendientes = useMemo(() => {
     const startIndex = (pendientePage - 1) * 12;
@@ -3704,14 +3731,17 @@ export default function App() {
   };
 
   const exportPendientesToExcel = () => {
-    const headers = ["Flete ID", "Cliente Solicitante", "Localidad", "Cajas", "Peso (kg)", "Valor Comercial", "Estado"];
+    const headers = ["Flete ID", "Pedido PV", "Orden OC", "Cliente Solicitante", "Localidad", "Cajas", "Peso (kg)", "Valor Comercial", "Fecha Ingreso", "Estado"];
     const rows = filteredPendientes.map(o => [
       o.id,
+      o.pv || '',
+      o.oc || '',
       o.cliente,
       o.ciudad,
       o.cajas,
       o.peso,
       o.venta,
+      o.fechaIngreso || '',
       o.estado
     ]);
     handleExportToExcel(
@@ -4942,6 +4972,22 @@ export default function App() {
                     </select>
                   </div>
 
+                  {/* PV Sort order selector */}
+                  <div className="flex items-center gap-1 text-xs text-slate-400">
+                    <span>Orden:</span>
+                    <select
+                      value={despachadoSortOrder}
+                      onChange={e => {
+                        setDespachadoSortOrder(e.target.value as 'pv_asc' | 'pv_desc');
+                        setDespachadoPage(1);
+                      }}
+                      className="bg-slate-900 border border-slate-700 text-yellow-400 font-bold text-xs rounded px-2 py-0.5 outline-none focus:border-yellow-400 cursor-pointer"
+                    >
+                      <option value="pv_asc">PV Ascendente (Consecutivo)</option>
+                      <option value="pv_desc">PV Descendente</option>
+                    </select>
+                  </div>
+
                   {/* Export Options (Complete Information) */}
                   <div className="flex items-center gap-2">
                     <button
@@ -5135,6 +5181,22 @@ export default function App() {
                     >
                       &raquo;
                     </button>
+                  </div>
+
+                  {/* Sort PV selector */}
+                  <div className="flex items-center gap-1 text-xs text-slate-400">
+                    <span>Orden:</span>
+                    <select
+                      value={pendienteSortOrder}
+                      onChange={e => {
+                        setPendienteSortOrder(e.target.value as 'pv_asc' | 'pv_desc');
+                        setPendientePage(1);
+                      }}
+                      className="bg-slate-900 border border-slate-700 text-yellow-400 font-bold text-xs rounded px-2 py-1 outline-none focus:border-yellow-400 cursor-pointer"
+                    >
+                      <option value="pv_asc">PV Ascendente (Consecutivo)</option>
+                      <option value="pv_desc">PV Descendente</option>
+                    </select>
                   </div>
 
                   {/* Export button */}
@@ -6201,9 +6263,35 @@ export default function App() {
                       type="text" 
                       value={editingOrder.pv}
                       onChange={e => setEditingOrder({ ...editingOrder, pv: e.target.value })}
-                      placeholder="E.g., 4500308925"
+                      placeholder={getNextConsecutivePv(orders).formatted}
                       className="bg-slate-950 border border-slate-800 text-white rounded p-2.5 w-full outline-none font-bold focus:border-[#38bdf8]"
                     />
+                    {(() => {
+                      const nextPvInfo = getNextConsecutivePv(orders);
+                      const isNewRecord = !orders.some(o => o.id === editingOrder.id);
+                      const dupMatch = !editingOrder.isSplit
+                        ? findExistingOrderByPv(orders, editingOrder.pv, editingOrder.id)
+                        : undefined;
+                      return (
+                        <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] pt-0.5">
+                          {isNewRecord && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingOrder({ ...editingOrder, pv: nextPvInfo.formatted })}
+                              className="text-cyan-400 hover:text-cyan-300 underline decoration-dotted cursor-pointer font-mono"
+                              title="Aplicar siguiente consecutivo PV"
+                            >
+                              Consecutivo: {nextPvInfo.formatted}
+                            </button>
+                          )}
+                          {dupMatch && (
+                            <span className="text-amber-400 font-mono">
+                              ⚠ Ya existe en {dupMatch.id}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-1">

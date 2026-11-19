@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Order, Customer, Carrier } from '../types';
-import { matchOrderSearch, sortOrdersBySearchRelevance } from '../utils/searchHelper';
+import { matchOrderSearch, sortOrdersBySearchRelevance, compareOrdersByPvAsc, compareOrdersByPvDesc } from '../utils/searchHelper';
 import * as XLSX from 'xlsx';
 import { 
   Plus, FileSpreadsheet, Search, CheckCircle, Clock, Trash2, 
@@ -37,7 +37,7 @@ export default function OrdersModule({
   const [statusFilter, setStatusFilter] = useState('');
   const [carrierFilter, setCarrierFilter] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState(15);
-  const [sortOrder, setSortOrder] = useState<'id_desc' | 'id_asc' | 'date_desc' | 'date_asc' | 'client_asc'>('id_desc');
+  const [sortOrder, setSortOrder] = useState<'pv_asc' | 'pv_desc' | 'id_desc' | 'id_asc' | 'date_desc' | 'date_asc' | 'client_asc'>('pv_asc');
   const [currentPage, setCurrentPage] = useState(1);
 
   // Selected items state for Consolidation
@@ -82,7 +82,11 @@ export default function OrdersModule({
 
     // Apply sorting when not using keyword search
     if (!searchTerm.trim()) {
-      if (sortOrder === 'id_desc') {
+      if (sortOrder === 'pv_asc') {
+        result.sort(compareOrdersByPvAsc);
+      } else if (sortOrder === 'pv_desc') {
+        result.sort(compareOrdersByPvDesc);
+      } else if (sortOrder === 'id_desc') {
         result.sort((a, b) => {
           const numA = parseInt((a.id || '').replace(/\D/g, ''), 10) || 0;
           const numB = parseInt((b.id || '').replace(/\D/g, ''), 10) || 0;
@@ -1058,6 +1062,8 @@ export default function OrdersModule({
             onChange={e => { setSortOrder(e.target.value as any); setCurrentPage(1); }}
             className="bg-slate-950/80 border border-slate-800 text-xs rounded px-3 py-2 w-full text-white outline-none focus:border-hud-accent/60"
           >
+            <option value="pv_asc">PV Ascendente (Consecutivo)</option>
+            <option value="pv_desc">PV Descendente (Mayor a Menor)</option>
             <option value="id_desc">Código Descendente</option>
             <option value="id_asc">Código Ascendente</option>
             <option value="date_desc">Fecha Inversa</option>
