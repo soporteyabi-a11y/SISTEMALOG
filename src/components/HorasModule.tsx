@@ -167,21 +167,54 @@ const parseTimeHoursSafe = (timeStr: string): number | null => {
   return h + m / 60;
 };
 
-// Completa el recargo nocturno de madrugada (00:00 a 06:00 AM) en turnos ordinarios pendientes que ingresaron antes de las 06:00
-const repairMorningRecNoctIfMissing = (list: OvertimeRecord[]): OvertimeRecord[] => {
+// 1) Corrige turnos de sábado pendientes para que nunca liquiden recargo Dominical/Festivo (domFest = 0)
+// 2) Completa el recargo nocturno de madrugada (00:00 a 06:00 AM) en turnos ordinarios pendientes que ingresaron antes de las 06:00
+const repairOvertimeRecords = (list: OvertimeRecord[]): OvertimeRecord[] => {
   return list.map(r => {
-    if (r.pagado || r.tipo !== 'ord' || (r.recNoct || 0) > 0) return r;
-    const ent = parseTimeHoursSafe(r._ent);
-    let sal = parseTimeHoursSafe(r._sal);
-    if (ent === null || sal === null) return r;
-    if (sal < ent) sal += 24;
-    const baseHours = Number(r.base) > 0 ? Number(r.base) : (r.jorn === 'mie' ? 9.25 : 9);
-    const ordEnd = Math.min(sal, ent + baseHours);
-    const morningRecNoct = Math.max(0, Math.min(ordEnd, 6) - Math.max(ent, 0));
-    if (morningRecNoct > 0) {
-      return { ...r, recNoct: Number(morningRecNoct.toFixed(3)) };
+    let next = r;
+
+    if (!next.pagado && next.tipo === 'sab') {
+      const needsDomReset = (next.domFest || 0) !== 0;
+      const missingExtras = (next.extDiurna || 0) === 0 && (next.extNocturna || 0) === 0 && (next.hT || 0) > 0;
+      const needsExtraOrdSync = (next.extraOrd || 0) === 0 && (next.extDiurna || 0) > 0;
+      if (needsDomReset || missingExtras || needsExtraOrdSync) {
+        let extD = next.extDiurna || 0;
+        let extN = next.extNocturna || 0;
+        if (missingExtras) {
+          const ent = parseTimeHoursSafe(next._ent);
+          let sal = parseTimeHoursSafe(next._sal);
+          if (ent !== null && sal !== null) {
+            if (sal < ent) sal += 24;
+            const total = sal - ent;
+            extD = Number(Math.max(0, Math.min(sal, 22) - Math.max(ent, 6)).toFixed(3));
+            extN = Number(Math.max(0, total - extD).toFixed(3));
+          }
+        }
+        next = {
+          ...next,
+          domFest: 0,
+          extDiurna: extD,
+          extNocturna: extN,
+          extraOrd: extD,
+        };
+      }
     }
-    return r;
+
+    if (!next.pagado && next.tipo === 'ord' && (next.recNoct || 0) === 0) {
+      const ent = parseTimeHoursSafe(next._ent);
+      let sal = parseTimeHoursSafe(next._sal);
+      if (ent !== null && sal !== null) {
+        if (sal < ent) sal += 24;
+        const baseHours = Number(next.base) > 0 ? Number(next.base) : (next.jorn === 'mie' ? 9.25 : 9);
+        const ordEnd = Math.min(sal, ent + baseHours);
+        const morningRecNoct = Math.max(0, Math.min(ordEnd, 6) - Math.max(ent, 0));
+        if (morningRecNoct > 0) {
+          next = { ...next, recNoct: Number(morningRecNoct.toFixed(3)) };
+        }
+      }
+    }
+
+    return next;
   });
 };
 
@@ -203,11 +236,11 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       try {
         const parsed = JSON.parse(current);
         if (Array.isArray(parsed.records) && parsed.records.length > 0) {
-          return repairMorningRecNoctIfMissing(parsed.records);
+          return repairOvertimeRecords(parsed.records);
         }
       } catch (e) {}
     }
-    return repairMorningRecNoctIfMissing((SEED_OVERTIME_RECORDS as unknown) as OvertimeRecord[]);
+    return repairOvertimeRecords((SEED_OVERTIME_RECORDS as unknown) as OvertimeRecord[]);
   });
   const [workers, setWorkers] = useState<Worker[]>(() => {
     const current = localStorage.getItem('latin_overtime_state');
@@ -333,7 +366,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   const [workerFilterSearch, setWorkerFilterSearch] = useState<string>('');
   const [isWorkerModalOpen, setIsWorkerModalOpen] = useState<boolean>(false);
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'pending' | 'paid'>('pending');
-  const [printIncludeShiftDetails, setPrintIncludeShiftDetails] = useState<boolean>(false);
+  const [printIncludeShiftDetails, setPrintIncludeShiftDetails] = useState<boolean>(true);
 
   // Personal consultation search states
   const [personalSearchWorker, setPersonalSearchWorker] = useState<string>('');
@@ -342,6 +375,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
   // Preview / Computed buffer for the form before saving
   const [computedPreview, setComputedPreview] = useState<Partial<OvertimeRecord> | null>(null);
+  const [paymentPromptRecord, setPaymentPromptRecord] = useState<OvertimeRecord | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -414,8 +448,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   // Format decimal hours to human readable "Xh YYm"
   const formatHoursHuman = (decimalHours: number): string => {
     if (!decimalHours || decimalHours <= 0) return '0h 00m';
-    const h = Math.floor(decimalHours);
-    const m = Math.round((decimalHours - h) * 60);
+    const totalMins = Math.round(decimalHours * 60);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
     return `${h}h ${String(m).padStart(2, '0')}m`;
   };
 
@@ -434,7 +469,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     // Establish live real-time Firestore subscriptions
     const unsubRecords = subscribeToCloud('horas_extras_state', 'records', (data) => {
       if (Array.isArray(data) && data.length > 0) {
-        const repaired = repairMorningRecNoctIfMissing(data);
+        const repaired = repairOvertimeRecords(data);
         const raw = JSON.stringify(repaired);
         lastSavedRecords.current = raw;
         setRecords(repaired);
@@ -598,13 +633,16 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     }
 
     const workedHoursDecimal = sal - ent;
-    const isSpecialDay = type === 'dom' || type === 'fest' || type === 'sab';
+    // Días con base 0h (todo el tiempo laborado es extra): sábado, domingo y festivo.
+    // Solo domingo y festivo generan recargo Dominical/Festivo (domFest). Sábado genera extras diurnas/nocturnas ordinarias.
+    const isZeroBaseDay = type === 'dom' || type === 'fest' || type === 'sab';
+    const isDomFestDay = type === 'dom' || type === 'fest';
 
     // 1. Determine daily base hours before overtime kicks in according to current laws (Configurable!)
     let baseShiftHours = 0;
-    if (!isSpecialDay) {
+    if (!isZeroBaseDay) {
       if (jorn === 'mie') {
-        baseShiftHours = Number(config.wedBaseHours); // Wednesday Shift Base Hour (e.g. 10 or 9 or 8)
+        baseShiftHours = Number(config.wedBaseHours); // Wednesday Shift Base Hour (e.g. 9.25)
       } else {
         baseShiftHours = Number(config.normalBaseHours); // Daily shift base (e.g. 9 or 8)
       }
@@ -613,8 +651,8 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     // 2. Computed Gross Overtime Hours
     const rawOvertimeTotal = Math.max(0, workedHoursDecimal - baseShiftHours);
 
-    // 3. Extent of worked horas inside standard daytime or night limits
-    const overtimeStartPoint = isSpecialDay ? ent : ent + baseShiftHours;
+    // 3. Extent of worked hours inside standard daytime or night limits
+    const overtimeStartPoint = isZeroBaseDay ? ent : ent + baseShiftHours;
 
     // Daily night overtime hours start threshold (standard e.g. 22:00)
     const nightStart = config.nightOvertimeStartHour; 
@@ -637,8 +675,8 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     const recargoNocturnoNoche = Math.max(0, Math.min(ordEnd, 30) - Math.max(ent, nightSurchargeThreshold));
     const recargoNocturnoRange = recargoNocturnoMadrugada + recargoNocturnoNoche;
 
-    const domFestValue = isSpecialDay ? workedHoursDecimal : 0;
-    const ordinaryDiur = isSpecialDay ? 0 : overtimeDiurna;
+    const domFestValue = isDomFestDay ? workedHoursDecimal : 0;
+    const ordinaryDiur = isDomFestDay ? 0 : overtimeDiurna;
 
     return {
       hT: Number(workedHoursDecimal.toFixed(3)),
@@ -1163,29 +1201,28 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     triggerToast(`🔓 Corte reabierto: ${paidRecords.length} turnos desmarcados para corrección`, 'info');
   };
 
-  // 7. Action: Alternar pago de un turno individual (para corrección inmediata de errores)
-  const handleToggleShiftPayment = (id: number) => {
+  // 7. Action: Establecer explícitamente el estado de pago de un turno (con confirmación previa)
+  const handleSetShiftPaymentStatus = (id: number, markPaid: boolean) => {
     const today = new Date().toISOString().split('T')[0];
     const corteLabel = getHistoryRangeLabel();
-    let isNowPaid = false;
     const updated = records.map(r => {
       if (r.id === id) {
-        isNowPaid = !r.pagado;
         return {
           ...r,
-          pagado: isNowPaid,
-          fechaPago: isNowPaid ? (r.fechaPago || today) : undefined,
-          corteLiquidado: isNowPaid ? (r.corteLiquidado || corteLabel) : undefined
+          pagado: markPaid,
+          fechaPago: markPaid ? (r.fechaPago || today) : undefined,
+          corteLiquidado: markPaid ? (r.corteLiquidado || corteLabel) : undefined
         };
       }
       return r;
     });
 
     saveRecords(updated);
+    setPaymentPromptRecord(null);
     triggerToast(
-      isNowPaid 
-        ? '✅ Turno amarrado como PAGADO (no volverá a sumarse a pendientes)' 
-        : '🔓 Turno desmarcado a PENDIENTE (habilitado para corregir)',
+      markPaid
+        ? '✅ Turno amarrado como PAGADO (no volverá a sumarse a pendientes)'
+        : '⏳ Turno dejado como PENDIENTE (habilitado para liquidar o corregir)',
       'success'
     );
   };
@@ -1669,7 +1706,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     }`}
                   >
                     <span className="font-bold">SÁBADO</span>
-                    <span className="text-[9px] opacity-70">Overtime Completo</span>
+                    <span className="text-[9px] opacity-70">Extras Diurnas (No Dom/Fest)</span>
                   </button>
 
                   <button
@@ -1714,7 +1751,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       Miércoles del año en curso — {config.wedBaseHours}h Base (Sugerido hasta {config.wedEndTime})
                     </option>
                     <option value="esp">
-                      Fin de Semana / Festivos / Ausente — 0h Base
+                      Sábado / Domingo / Festivo — 0h Base (Todo es Extra)
                     </option>
                   </select>
                 </div>
@@ -2443,7 +2480,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 <div className="grid grid-cols-2 md:grid-cols-7 gap-px bg-slate-800 text-center font-mono">
                   <div className="bg-slate-900 p-4">
                     <span className="text-[10px] text-slate-500 uppercase block">TRABAJADAS</span>
-                    <span className="text-lg font-bold text-slate-300 mt-1 block">{activeWorkerAggregateStats.hT.toFixed(2)}h</span>
+                    <span className="text-lg font-bold text-slate-300 mt-1 block">{formatHoursHuman(activeWorkerAggregateStats.hT)}</span>
                   </div>
                   <div className="bg-slate-900 p-4">
                     <span className="text-[10px] text-slate-500 uppercase block">EXTRA TOTAL</span>
@@ -2544,7 +2581,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                                 r.tipo === 'dom' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
                                 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                               }`}>
-                                {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominica' : 'Festivo'}
+                                {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
                               </span>
                             </td>
                             <td className="p-4 text-center text-slate-300 whitespace-nowrap">{r._ent} a {r._sal}</td>
@@ -2562,9 +2599,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                               {r.pagado ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleShiftPayment(r.id)}
-                                  className="px-2 py-1 rounded text-[9px] font-bold uppercase font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/40 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
-                                  title={`Amarrado como PAGADO${r.fechaPago ? ` el ${r.fechaPago}` : ''}. Clic para desmarcar y permitir corrección.`}
+                                  onClick={() => setPaymentPromptRecord(r)}
+                                  className="px-2 py-1 rounded text-[9px] font-bold uppercase font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/25 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                                  title={`Estado actual: PAGADO${r.fechaPago ? ` (${r.fechaPago})` : ''}. Clic para elegir si mantener pagado o devolver a pendiente.`}
                                 >
                                   <Check className="w-3 h-3 text-emerald-400" />
                                   <span>Pagado {r.fechaPago ? `(${r.fechaPago.slice(5)})` : ''} 🔒</span>
@@ -2572,9 +2609,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleToggleShiftPayment(r.id)}
-                                  className="px-2 py-1 rounded text-[9px] font-bold uppercase font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-emerald-950/40 hover:text-emerald-300 hover:border-emerald-500/40 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
-                                  title="Turno pendiente por liquidar. Clic para amarrar como pagado."
+                                  onClick={() => setPaymentPromptRecord(r)}
+                                  className="px-2 py-1 rounded text-[9px] font-bold uppercase font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-amber-500/25 transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm"
+                                  title="Turno pendiente por liquidar. Clic para elegir si dejar pendiente o marcar como pagado."
                                 >
                                   <span>⏳ Pendiente</span>
                                 </button>
@@ -2605,8 +2642,8 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                         <tr className="bg-slate-950 border-t-2 border-cyan-500/30 text-xs text-white uppercase font-bold">
                           <td className="p-4">TOTAL ACUMULADO</td>
                           <td colSpan={3}></td>
-                          <td className="p-4 text-center">
-                            {filteredRecords.reduce((acc, r) => acc + r.hT, 0).toFixed(1)}h
+                          <td className="p-4 text-center whitespace-nowrap">
+                            {formatHoursHuman(filteredRecords.reduce((acc, r) => acc + r.hT, 0))}
                           </td>
                           <td className="p-4 text-center text-slate-300">
                             {filteredRecords.reduce((acc, r) => acc + r.extraTotal, 0).toFixed(1)}h
@@ -2654,7 +2691,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                               r.tipo === 'dom' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
                               'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                             }`}>
-                              {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominica' : 'Festivo'}
+                              {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
                             </span>
 
                             {r.comp > 0 && (
@@ -2667,9 +2704,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                             {r.pagado ? (
                               <button
                                 type="button"
-                                onClick={() => handleToggleShiftPayment(r.id)}
-                                className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-500/40 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
-                                title={`Turno amarrado como PAGADO${r.fechaPago ? ` el ${r.fechaPago}` : ''}. Clic para desmarcar y permitir corrección.`}
+                                onClick={() => setPaymentPromptRecord(r)}
+                                className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-emerald-500/15 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/25 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                                title={`Estado actual: PAGADO${r.fechaPago ? ` (${r.fechaPago})` : ''}. Clic para elegir si mantener pagado o devolver a pendiente.`}
                               >
                                 <Check className="w-2.5 h-2.5 text-emerald-400" />
                                 <span>Pagado {r.fechaPago ? `(${r.fechaPago.slice(5)})` : ''} 🔒</span>
@@ -2677,9 +2714,9 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => handleToggleShiftPayment(r.id)}
-                                className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-emerald-950/40 hover:text-emerald-300 hover:border-emerald-500/40 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
-                                title="Turno pendiente por liquidar. Clic para amarrar como pagado."
+                                onClick={() => setPaymentPromptRecord(r)}
+                                className="px-2 py-0.5 rounded text-[9px] font-bold font-mono bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-amber-500/25 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                                title="Turno pendiente por liquidar. Clic para elegir si dejar pendiente o marcar como pagado."
                               >
                                 <span>⏳ Pendiente</span>
                               </button>
@@ -3229,7 +3266,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     <div className="grid grid-cols-2 md:grid-cols-6 gap-px bg-slate-800 text-center font-mono text-xs">
                       <div className="bg-slate-900 p-4">
                         <span className="text-[10px] text-slate-500 uppercase block">H. TRABAJADAS</span>
-                        <span className="text-md font-bold text-slate-300 mt-1 block">{personalStats.hT.toFixed(2)}h</span>
+                        <span className="text-md font-bold text-slate-300 mt-1 block">{formatHoursHuman(personalStats.hT)}</span>
                       </div>
                       <div className="bg-slate-900 p-4">
                         <span className="text-[10px] text-slate-500 uppercase block">LIMITE BASE</span>
@@ -3305,7 +3342,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                             <tr className="bg-slate-950 border-t-2 border-cyan-500/30 text-xs text-white uppercase font-bold">
                               <td className="p-4">TOTALES ACUMULADOS</td>
                               <td colSpan={2}></td>
-                              <td className="p-4 text-center">{personalStats.hT.toFixed(1)}h</td>
+                              <td className="p-4 text-center whitespace-nowrap">{formatHoursHuman(personalStats.hT)}</td>
                               <td className="p-4 text-center text-slate-400">{personalStats.base.toFixed(1)}h</td>
                               <td className="p-4 text-center text-slate-300">{personalStats.extraTotal.toFixed(1)}h</td>
                               <td className="p-4 text-center text-rose-400">-{personalStats.comp.toFixed(1)}h</td>
@@ -3604,6 +3641,113 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
       </div>
 
+      {/* Modal de Confirmación / Selección de Estado de Pago */}
+      {paymentPromptRecord && (
+        <div
+          className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[12500] flex items-center justify-center p-4"
+          onClick={() => setPaymentPromptRecord(null)}
+        >
+          <div
+            className="bg-[#031b24] border-2 border-[#00c5d8] rounded-2xl p-6 max-w-md w-full space-y-5 shadow-2xl font-mono text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-[#00c5d8]/25">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#00c5d8] block">
+                  Gestión de Estado de Pago
+                </span>
+                <h4 className="text-base font-black text-white uppercase mt-0.5">
+                  ¿Qué estado deseas asignar a este turno?
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentPromptRecord(null)}
+                className="text-slate-400 hover:text-white font-bold text-sm px-2 py-1 rounded hover:bg-slate-800 cursor-pointer"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-[#02141c] border border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-black text-white uppercase text-sm">{paymentPromptRecord.nom}</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[9px] font-black uppercase border ${
+                    paymentPromptRecord.pagado
+                      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                      : 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                  }`}
+                >
+                  {paymentPromptRecord.pagado ? 'Actual: Pagado' : 'Actual: Pendiente'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1 text-[11px] text-slate-300">
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block">Fecha y Tipo</span>
+                  <strong className="text-slate-100">{paymentPromptRecord.fec}</strong>{' '}
+                  <span className="text-slate-400">
+                    ({paymentPromptRecord.tipo === 'ord'
+                      ? 'Ordinario'
+                      : paymentPromptRecord.tipo === 'sab'
+                      ? 'Sábado'
+                      : paymentPromptRecord.tipo === 'dom'
+                      ? 'Dominical'
+                      : 'Festivo'})
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block">Horario Trabajado</span>
+                  <strong className="text-slate-100">
+                    {paymentPromptRecord._ent} a {paymentPromptRecord._sal}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block">H. Trabajadas</span>
+                  <strong className="text-cyan-300">{formatHoursHuman(paymentPromptRecord.hT)}</strong>
+                </div>
+                <div>
+                  <span className="text-[9px] text-slate-500 uppercase block">H. Extras Netas</span>
+                  <strong className="text-emerald-400">{paymentPromptRecord.netas.toFixed(2)}h</strong>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              Elige <strong className="text-amber-300">Dejar Pendiente</strong> si aún falta por liquidar o corregir, o{' '}
+              <strong className="text-emerald-300">Marcar como Pagado</strong> para amarrarlo como ya liquidado.
+            </p>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2 border-t border-[#00c5d8]/20">
+              <button
+                type="button"
+                onClick={() => handleSetShiftPaymentStatus(paymentPromptRecord.id, false)}
+                className="flex-1 px-4 py-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/60 text-amber-300 font-black uppercase text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>⏳ Dejar Pendiente</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetShiftPaymentStatus(paymentPromptRecord.id, true)}
+                className="flex-1 px-4 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black uppercase text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-[0_0_14px_rgba(16,185,129,0.35)]"
+              >
+                <Check className="w-4 h-4" />
+                <span>Marcar como Pagado</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPaymentPromptRecord(null)}
+              className="w-full py-2.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-400 hover:text-white font-bold uppercase text-[10px] transition-colors cursor-pointer"
+            >
+              Cancelar sin cambios
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* 📄 FORMATO OFICIAL A4 IMPRESIÓN DE NÓMINA & CORTES 12/27 (LEY 2466)       */}
       {/* RENDERIZADO MEDIANTE PORTAL A DOCUMENT.BODY PARA IMPRESIÓN 100% CONFIABLE  */}
@@ -3714,7 +3858,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     <td className="border border-slate-700 p-1.5 font-bold uppercase">{row.nom}</td>
                     <td className="border border-slate-700 p-1.5">{row.car} ({row.are})</td>
                     <td className="border border-slate-700 p-1.5 text-center">{row.count}</td>
-                    <td className="border border-slate-700 p-1.5 text-center">{row.hT.toFixed(1)}h</td>
+                    <td className="border border-slate-700 p-1.5 text-center whitespace-nowrap font-semibold">{formatHoursHuman(row.hT)}</td>
                     <td className="border border-slate-700 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
                     <td className="border border-slate-700 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
                     <td className="border border-slate-700 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
@@ -3745,7 +3889,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     TOTALES GENERALES DEL CORTE:
                   </td>
                   <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.count}</td>
-                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.hT.toFixed(1)}h</td>
+                  <td className="border border-slate-900 p-1.5 text-center whitespace-nowrap">{formatHoursHuman(printPayrollSummary.grandTotals.hT)}</td>
                   <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
                   <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
                   <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
@@ -3765,21 +3909,22 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
             </table>
           </div>
 
-          {/* TABLA 2: Detalle Cronológico (Solo se imprime si el usuario activa 'printIncludeShiftDetails') */}
+          {/* TABLA 2: Detalle Cronológico de Turnos Trabajados */}
           {printIncludeShiftDetails && filteredRecords.length > 0 && (
             <div className="mb-4">
               <div className="text-[9.5px] font-mono font-black uppercase text-slate-900 mb-1">
-                2. Detalle Cronológico de Turnos Registrados en este Corte ({filteredRecords.length} turnos)
+                2. Detalle Cronológico de Horas Trabajadas y Turnos en este Corte ({filteredRecords.length} turnos)
               </div>
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-slate-200 text-slate-950 text-[7.5px] uppercase font-bold text-center">
                     <th className="border border-slate-700 p-1 w-5">#</th>
                     <th className="border border-slate-700 p-1 text-left w-14">Fecha</th>
+                    <th className="border border-slate-700 p-1 text-center w-14">Tipo Día</th>
                     <th className="border border-slate-700 p-1 text-left">Colaborador</th>
                     <th className="border border-slate-700 p-1 text-center w-12">Entrada</th>
                     <th className="border border-slate-700 p-1 text-center w-12">Salida</th>
-                    <th className="border border-slate-700 p-1 text-center w-10">H. Trab</th>
+                    <th className="border border-slate-700 p-1 text-center w-14">H. Trab.</th>
                     <th className="border border-slate-700 p-1 text-center w-10">Diurna</th>
                     <th className="border border-slate-700 p-1 text-center w-10">Noct</th>
                     <th className="border border-slate-700 p-1 text-center w-10">Recargo</th>
@@ -3790,14 +3935,17 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                   </tr>
                 </thead>
                 <tbody className="text-[7.5px] font-mono text-slate-900">
-                  {filteredRecords.slice(0, 50).map((r, idx) => (
+                  {filteredRecords.map((r, idx) => (
                     <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
                       <td className="border border-slate-600 p-1 text-center">{idx + 1}</td>
-                      <td className="border border-slate-600 p-1 font-bold">{r.fec}</td>
+                      <td className="border border-slate-600 p-1 font-bold whitespace-nowrap">{r.fec}</td>
+                      <td className="border border-slate-600 p-1 text-center font-semibold uppercase">
+                        {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
+                      </td>
                       <td className="border border-slate-600 p-1 font-bold uppercase">{r.nom}</td>
                       <td className="border border-slate-600 p-1 text-center">{r._ent}</td>
                       <td className="border border-slate-600 p-1 text-center">{r._sal}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r.hT ? r.hT.toFixed(1) : '—'}h</td>
+                      <td className="border border-slate-600 p-1 text-center font-bold whitespace-nowrap">{r.hT ? formatHoursHuman(r.hT) : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.extDiurna > 0 ? `${r.extDiurna.toFixed(2)}h` : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.extNocturna > 0 ? `${r.extNocturna.toFixed(2)}h` : '—'}</td>
                       <td className="border border-slate-600 p-1 text-center">{r.recNoct > 0 ? `${r.recNoct.toFixed(2)}h` : '—'}</td>
@@ -3813,14 +3961,33 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       <td className="border border-slate-600 p-1 text-[7px] truncate max-w-[130px] text-slate-700">{r.creadoPor || 'Sistema'}</td>
                     </tr>
                   ))}
-                  {filteredRecords.length > 50 && (
-                    <tr>
-                      <td colSpan={13} className="border border-slate-600 p-1 text-center text-slate-500 italic">
-                        Mostrando primeros 50 registros de {filteredRecords.length} turnos amarrados en este reporte.
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
+                <tfoot>
+                  <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[8px]">
+                    <td colSpan={6} className="border border-slate-700 p-1 text-right uppercase">
+                      TOTAL HORAS TRABAJADAS &amp; EXTRAS EN TURNOS:
+                    </td>
+                    <td className="border border-slate-700 p-1 text-center whitespace-nowrap">
+                      {formatHoursHuman(filteredRecords.reduce((acc, r) => acc + (r.hT || 0), 0))}
+                    </td>
+                    <td className="border border-slate-700 p-1 text-center">
+                      {filteredRecords.reduce((acc, r) => acc + (r.extDiurna || 0), 0).toFixed(2)}h
+                    </td>
+                    <td className="border border-slate-700 p-1 text-center">
+                      {filteredRecords.reduce((acc, r) => acc + (r.extNocturna || 0), 0).toFixed(2)}h
+                    </td>
+                    <td className="border border-slate-700 p-1 text-center">
+                      {filteredRecords.reduce((acc, r) => acc + (r.recNoct || 0), 0).toFixed(2)}h
+                    </td>
+                    <td className="border border-slate-700 p-1 text-center">
+                      {filteredRecords.reduce((acc, r) => acc + (r.domFest || 0), 0).toFixed(2)}h
+                    </td>
+                    <td className="border border-slate-700 p-1 text-center bg-slate-300">
+                      {filteredRecords.reduce((acc, r) => acc + (r.netas || 0), 0).toFixed(2)}h
+                    </td>
+                    <td colSpan={2} className="border border-slate-700 p-1"></td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           )}
