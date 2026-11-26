@@ -359,7 +359,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
   const [corteEndDate, setCorteEndDate] = useState<string>(initialPeriod.corteEndDate);
   const [filterWeekDate, setFilterWeekDate] = useState<string>(initialPeriod.todayStr);
   const [historyRangeType, setHistoryRangeType] = useState<'all' | 'weekly' | 'fortnightly' | 'monthly'>('fortnightly');
-  const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('cards');
+  const [historyViewMode, setHistoryViewMode] = useState<'table' | 'cards'>('table');
   const [filterWorker, setFilterWorker] = useState<string>('__all');
   const [activeWorkerTab, setActiveWorkerTab] = useState<string>('__global');
   const [historySearchTerm, setHistorySearchTerm] = useState<string>('');
@@ -1250,14 +1250,21 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
     }, 150);
   };
 
-  // Group filtered records by worker for the printable A4 payroll report
+  // Group filtered records by worker for the printable A4 payroll report & in-app worked-hours summary
   const printPayrollSummary = useMemo(() => {
     const summaryMap: Record<string, { 
       nom: string; 
       car: string; 
       are: string; 
       count: number; 
-      hT: number; 
+      hT: number;
+      base: number;
+      ordCount: number;
+      ordHT: number;
+      sabCount: number;
+      sabHT: number;
+      domFestCount: number;
+      domFestHT: number;
       extDiurna: number; 
       extNocturna: number; 
       recNoct: number; 
@@ -1281,6 +1288,13 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
           are: r.are || 'Operaciones',
           count: 0,
           hT: 0,
+          base: 0,
+          ordCount: 0,
+          ordHT: 0,
+          sabCount: 0,
+          sabHT: 0,
+          domFestCount: 0,
+          domFestHT: 0,
           extDiurna: 0,
           extNocturna: 0,
           recNoct: 0,
@@ -1296,40 +1310,49 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
         };
       }
       summaryMap[key].count += 1;
-      summaryMap[key].hT += r.hT;
-      summaryMap[key].extDiurna += r.extDiurna;
-      summaryMap[key].extNocturna += r.extNocturna;
-      summaryMap[key].recNoct += r.recNoct;
-      summaryMap[key].domFest += r.domFest;
-      summaryMap[key].comp += r.comp;
-      summaryMap[key].netas += r.netas;
+      summaryMap[key].hT += r.hT || 0;
+      summaryMap[key].base += r.base || 0;
+      if (r.tipo === 'sab') {
+        summaryMap[key].sabCount += 1;
+        summaryMap[key].sabHT += r.hT || 0;
+      } else if (r.tipo === 'dom' || r.tipo === 'fest') {
+        summaryMap[key].domFestCount += 1;
+        summaryMap[key].domFestHT += r.hT || 0;
+      } else {
+        summaryMap[key].ordCount += 1;
+        summaryMap[key].ordHT += r.hT || 0;
+      }
+      summaryMap[key].extDiurna += r.extDiurna || 0;
+      summaryMap[key].extNocturna += r.extNocturna || 0;
+      summaryMap[key].recNoct += r.recNoct || 0;
+      summaryMap[key].domFest += r.domFest || 0;
+      summaryMap[key].comp += r.comp || 0;
+      summaryMap[key].netas += r.netas || 0;
       if (r.pagado) {
-        summaryMap[key].paidNetas += r.netas;
+        summaryMap[key].paidNetas += r.netas || 0;
         summaryMap[key].paidRecNoct += (r.recNoct || 0);
         summaryMap[key].paidCount += 1;
       } else {
-        summaryMap[key].pendingNetas += r.netas;
+        summaryMap[key].pendingNetas += r.netas || 0;
         summaryMap[key].pendingRecNoct += (r.recNoct || 0);
         summaryMap[key].pendingCount += 1;
       }
     });
 
-    // Filtro estricto: cuando seleccione el corte solo tomar los trabajadores que efectivamente hicieron extras o recargos (> 0h)
     const rows = Object.values(summaryMap)
-      .filter(row => {
-        if (paymentFilter === 'pending') {
-          return (row.pendingNetas || 0) > 0 || (row.pendingRecNoct || 0) > 0;
-        }
-        if (paymentFilter === 'paid') {
-          return (row.paidNetas || 0) > 0 || (row.paidRecNoct || 0) > 0;
-        }
-        return (row.netas || 0) > 0 || (row.recNoct || 0) > 0;
-      })
+      .filter(row => (row.hT || 0) > 0 || (row.netas || 0) > 0 || (row.recNoct || 0) > 0)
       .sort((a, b) => a.nom.localeCompare(b.nom));
 
     const grandTotals = rows.reduce((acc, row) => ({
       count: acc.count + row.count,
       hT: acc.hT + row.hT,
+      base: acc.base + row.base,
+      ordCount: acc.ordCount + row.ordCount,
+      ordHT: acc.ordHT + row.ordHT,
+      sabCount: acc.sabCount + row.sabCount,
+      sabHT: acc.sabHT + row.sabHT,
+      domFestCount: acc.domFestCount + row.domFestCount,
+      domFestHT: acc.domFestHT + row.domFestHT,
       extDiurna: acc.extDiurna + row.extDiurna,
       extNocturna: acc.extNocturna + row.extNocturna,
       recNoct: acc.recNoct + row.recNoct,
@@ -1340,10 +1363,13 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       paidNetas: acc.paidNetas + row.paidNetas,
       pendingCount: acc.pendingCount + row.pendingCount,
       paidCount: acc.paidCount + row.paidCount,
-    }), { count: 0, hT: 0, extDiurna: 0, extNocturna: 0, recNoct: 0, domFest: 0, comp: 0, netas: 0, pendingNetas: 0, paidNetas: 0, pendingCount: 0, paidCount: 0 });
+    }), {
+      count: 0, hT: 0, base: 0, ordCount: 0, ordHT: 0, sabCount: 0, sabHT: 0, domFestCount: 0, domFestHT: 0,
+      extDiurna: 0, extNocturna: 0, recNoct: 0, domFest: 0, comp: 0, netas: 0, pendingNetas: 0, paidNetas: 0, pendingCount: 0, paidCount: 0
+    });
 
     return { rows, grandTotals };
-  }, [filteredRecords, paymentFilter]);
+  }, [filteredRecords]);
 
   return (
     <div className="bg-[#02141c] min-height-screen text-slate-100 font-sans border border-[#00c5d8]/25 rounded-2xl overflow-hidden shadow-2xl relative">
@@ -2420,6 +2446,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 {Object.keys(recordsIndexedByWorker).map(k => {
                   const chunk = recordsIndexedByWorker[k];
                   const workerNetas = chunk.regs.reduce((acc, r) => acc + (r.netas || 0), 0);
+                  const workerWorked = chunk.regs.reduce((acc, r) => acc + (r.hT || 0), 0);
                   return (
                     <button
                       key={k}
@@ -2438,12 +2465,14 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       </span>
                       <span className="font-bold">{chunk.nom.split(' ')[0]}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
-                        activeWorkerTab === k ? 'bg-slate-950 text-[#00c5d8]' : 'bg-slate-950/70 text-[#00c5d8] border border-[#00c5d8]/20'
-                      }`}>
-                        {workerNetas.toFixed(1)}h
+                        activeWorkerTab === k ? 'bg-slate-950 text-[#00c5d8]' : 'bg-slate-950/70 text-white border border-[#00c5d8]/20'
+                      }`} title="Horas efectivamente trabajadas">
+                        {formatHoursHuman(workerWorked)}
                       </span>
-                      <span className="text-[9px] text-slate-400">
-                        ({chunk.regs.length})
+                      <span className={`text-[9.5px] font-bold ${
+                        activeWorkerTab === k ? 'text-slate-900' : 'text-[#00c5d8]'
+                      }`} title="Horas extras netas">
+                        +{workerNetas.toFixed(1)}h ext
                       </span>
                     </button>
                   );
@@ -2469,10 +2498,10 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
 
                   <div className="text-right">
                     <span className="text-[28px] font-mono font-black text-cyan-400 block drop-shadow-[0_0_10px_rgba(34,211,238,0.25)]">
-                      {activeWorkerAggregateStats.netas.toFixed(2)}h
+                      {formatHoursHuman(activeWorkerAggregateStats.hT)}
                     </span>
                     <span className="text-[9px] font-mono text-cyan-500 uppercase tracking-widest mt-0.5 block">
-                      HORAS NETAS TOTALES ACUMULADAS
+                      TOTAL HORAS EFECTIVAMENTE TRABAJADAS ({activeWorkerAggregateStats.netas.toFixed(2)}h NETAS EXTRAS)
                     </span>
                   </div>
                 </div>
@@ -2480,7 +2509,7 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 <div className="grid grid-cols-2 md:grid-cols-7 gap-px bg-slate-800 text-center font-mono">
                   <div className="bg-slate-900 p-4">
                     <span className="text-[10px] text-slate-500 uppercase block">TRABAJADAS</span>
-                    <span className="text-lg font-bold text-slate-300 mt-1 block">{formatHoursHuman(activeWorkerAggregateStats.hT)}</span>
+                    <span className="text-lg font-bold text-slate-100 mt-1 block">{formatHoursHuman(activeWorkerAggregateStats.hT)}</span>
                   </div>
                   <div className="bg-slate-900 p-4">
                     <span className="text-[10px] text-slate-500 uppercase block">EXTRA TOTAL</span>
@@ -2506,6 +2535,123 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                     <span className="text-[10px] text-emerald-400 uppercase block font-semibold">NETAS A PAGAR</span>
                     <span className="text-lg font-bold text-emerald-400 mt-1 block">{activeWorkerAggregateStats.netas.toFixed(2)}h</span>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Consolidado de Horas Efectivamente Trabajadas por Colaborador (Siempre visible en informe) */}
+            {printPayrollSummary.rows.length > 0 && (
+              <div className="bg-[#031b24] border border-[#00c5d8]/35 rounded-xl overflow-hidden shadow-lg">
+                <div className="px-5 py-3.5 bg-[#02141c] border-b border-[#00c5d8]/25 flex flex-wrap items-center justify-between gap-2 font-mono">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-[#00c5d8]" />
+                    <span className="text-xs font-black uppercase text-[#00c5d8] tracking-wider">
+                      Consolidado de Horas Efectivamente Trabajadas por Colaborador
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 uppercase">
+                    {printPayrollSummary.rows.length} colaboradores &bull; Total Trabajado:{' '}
+                    <strong className="text-white">{formatHoursHuman(printPayrollSummary.grandTotals.hT)}</strong>
+                    {printPayrollSummary.grandTotals.sabCount > 0 && (
+                      <span className="ml-2 text-purple-300">
+                        (Incluye {printPayrollSummary.grandTotals.sabCount} sábados = {formatHoursHuman(printPayrollSummary.grandTotals.sabHT)})
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="overflow-x-auto font-mono text-[11px]">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-950/90 border-b border-slate-800 text-slate-400 uppercase text-[10px] tracking-wider">
+                        <th className="p-3">Colaborador</th>
+                        <th className="p-3 text-center">Turnos</th>
+                        <th className="p-3 text-center text-[#00c5d8] font-black">H. Efectivamente Trabajadas</th>
+                        <th className="p-3 text-center">L-V Ordinario</th>
+                        <th className="p-3 text-center text-purple-300">Sábados (Extras)</th>
+                        <th className="p-3 text-center text-amber-300">Dom / Fest</th>
+                        <th className="p-3 text-center text-cyan-400">Ext. Diurna</th>
+                        <th className="p-3 text-center text-purple-400">Ext. Noct.</th>
+                        <th className="p-3 text-center text-rose-400">Rec. Noct.</th>
+                        <th className="p-3 text-center text-emerald-400 font-black">H. Netas Extras</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70">
+                      {printPayrollSummary.rows.map(row => (
+                        <tr key={row.nom} className="hover:bg-slate-900/60 transition-colors">
+                          <td className="p-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveWorkerTab(row.nom.trim().toLowerCase());
+                                setFilterWorker(row.nom);
+                              }}
+                              className="text-left font-bold text-white uppercase hover:text-[#00c5d8] transition-colors cursor-pointer"
+                            >
+                              {row.nom}
+                            </button>
+                            <span className="text-[9px] text-slate-500 block uppercase">{row.car}</span>
+                          </td>
+                          <td className="p-3 text-center text-slate-200 font-bold">
+                            {row.count}
+                            {row.sabCount > 0 && (
+                              <span className="block text-[9px] text-purple-300 font-semibold">
+                                ({row.sabCount} sáb)
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center font-black text-white text-xs bg-cyan-950/20 border-x border-slate-800 whitespace-nowrap">
+                            {formatHoursHuman(row.hT)}
+                            <span className="block text-[9px] text-slate-400 font-normal">({row.hT.toFixed(2)}h)</span>
+                          </td>
+                          <td className="p-3 text-center text-slate-300 whitespace-nowrap">
+                            {row.ordHT > 0 ? formatHoursHuman(row.ordHT) : '—'}
+                          </td>
+                          <td className="p-3 text-center whitespace-nowrap">
+                            {row.sabHT > 0 ? (
+                              <span className="px-2 py-0.5 rounded bg-purple-500/15 border border-purple-500/30 text-purple-300 font-bold">
+                                {formatHoursHuman(row.sabHT)}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className="p-3 text-center text-amber-400 whitespace-nowrap">
+                            {row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}
+                          </td>
+                          <td className="p-3 text-center text-cyan-400 font-bold">
+                            {row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}
+                          </td>
+                          <td className="p-3 text-center text-purple-400">
+                            {row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}
+                          </td>
+                          <td className="p-3 text-center text-rose-400">
+                            {row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}
+                          </td>
+                          <td className="p-3 text-center font-black text-emerald-400 text-xs bg-emerald-950/15">
+                            {row.netas.toFixed(2)}h
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-950 border-t-2 border-[#00c5d8]/40 text-xs font-black text-white uppercase">
+                        <td className="p-3">TOTALES DEL PERÍODO</td>
+                        <td className="p-3 text-center">{printPayrollSummary.grandTotals.count}</td>
+                        <td className="p-3 text-center text-[#00c5d8] whitespace-nowrap">
+                          {formatHoursHuman(printPayrollSummary.grandTotals.hT)}
+                        </td>
+                        <td className="p-3 text-center text-slate-300 whitespace-nowrap">
+                          {formatHoursHuman(printPayrollSummary.grandTotals.ordHT)}
+                        </td>
+                        <td className="p-3 text-center text-purple-300 whitespace-nowrap">
+                          {printPayrollSummary.grandTotals.sabHT > 0 ? formatHoursHuman(printPayrollSummary.grandTotals.sabHT) : '—'}
+                        </td>
+                        <td className="p-3 text-center text-amber-400">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
+                        <td className="p-3 text-center text-cyan-400">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
+                        <td className="p-3 text-center text-purple-400">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
+                        <td className="p-3 text-center text-rose-400">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
+                        <td className="p-3 text-center text-emerald-400">{printPayrollSummary.grandTotals.netas.toFixed(2)}h</td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </div>
               </div>
             )}
@@ -3910,8 +4056,18 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                           <td className="text-center font-bold">{idx + 1}</td>
                           <td className="font-bold uppercase">{row.nom}</td>
                           <td>{row.car} ({row.are})</td>
-                          <td className="text-center">{row.count}</td>
-                          <td className="text-center font-bold">{formatHoursHuman(row.hT)}</td>
+                          <td className="text-center">
+                            {row.count}
+                            {row.sabCount > 0 && (
+                              <span className="block text-[6.5px] text-slate-600 font-semibold">({row.sabCount} Sáb)</span>
+                            )}
+                          </td>
+                          <td className="text-center font-bold">
+                            {formatHoursHuman(row.hT)}
+                            {row.sabHT > 0 && (
+                              <span className="block text-[6.5px] text-slate-600 font-normal">Sáb: {formatHoursHuman(row.sabHT)}</span>
+                            )}
+                          </td>
                           <td className="text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
                           <td className="text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
                           <td className="text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
@@ -3949,10 +4105,23 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                 </div>
 
                 {/* 4. TABLA 2: DETALLE CRONOLÓGICO DE HORAS TRABAJADAS (SIN COLUMNA SELLO / AUTORÍA) */}
-                {printIncludeShiftDetails && filteredRecords.length > 0 && (
+                {printIncludeShiftDetails && filteredRecords.length > 0 && (() => {
+                  const chronologicalRecords = [...filteredRecords].sort(
+                    (a, b) => a.fec.localeCompare(b.fec) || a._ent.localeCompare(b._ent)
+                  );
+                  const satRecords = chronologicalRecords.filter(r => r.tipo === 'sab');
+                  const satHours = satRecords.reduce((acc, r) => acc + (r.hT || 0), 0);
+                  return (
                   <div className="mb-3">
-                    <div className="text-[9px] font-black uppercase text-[#0c2340] tracking-wide mb-1">
-                      2. Detalle Cronológico de Horas Trabajadas y Turnos ({filteredRecords.length} turnos)
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[9px] font-black uppercase text-[#0c2340] tracking-wide">
+                        2. Detalle Cronológico de Horas Trabajadas y Turnos ({chronologicalRecords.length} turnos)
+                      </span>
+                      {satRecords.length > 0 && (
+                        <span className="text-[7.5px] font-bold text-[#0c2340]">
+                          Incluye {satRecords.length} turno(s) de Sábado ({formatHoursHuman(satHours)} trabajadas en extras ordinarias)
+                        </span>
+                      )}
                     </div>
                     <table className="nomina-table">
                       <thead>
@@ -3973,12 +4142,21 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                         </tr>
                       </thead>
                       <tbody className="font-mono">
-                        {filteredRecords.map((r, idx) => (
-                          <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                        {chronologicalRecords.map((r, idx) => (
+                          <tr
+                            key={r.id || idx}
+                            className={
+                              r.tipo === 'sab'
+                                ? 'bg-slate-100/90'
+                                : idx % 2 === 0
+                                ? 'bg-white'
+                                : 'bg-slate-50'
+                            }
+                          >
                             <td className="text-center">{idx + 1}</td>
                             <td className="text-center font-bold">{r.fec}</td>
-                            <td className="text-center uppercase font-semibold">
-                              {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
+                            <td className="text-center uppercase font-bold">
+                              {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado (Ext)' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
                             </td>
                             <td className="font-bold uppercase">{r.nom}</td>
                             <td className="text-center">{r._ent}</td>
@@ -3998,34 +4176,35 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
                       <tfoot>
                         <tr className="nomina-total-row font-mono">
                           <td colSpan={6} className="text-right uppercase">
-                            TOTAL HORAS TRABAJADAS Y EXTRAS EN TURNOS:
+                            TOTAL HORAS TRABAJADAS Y EXTRAS ({satRecords.length > 0 ? `${satRecords.length} SÁB: ${formatHoursHuman(satHours)}` : `${chronologicalRecords.length} TURNOS`}):
                           </td>
                           <td className="text-center">
-                            {formatHoursHuman(filteredRecords.reduce((acc, r) => acc + (r.hT || 0), 0))}
+                            {formatHoursHuman(chronologicalRecords.reduce((acc, r) => acc + (r.hT || 0), 0))}
                           </td>
                           <td className="text-center">
-                            {filteredRecords.reduce((acc, r) => acc + (r.extDiurna || 0), 0).toFixed(2)}h
+                            {chronologicalRecords.reduce((acc, r) => acc + (r.extDiurna || 0), 0).toFixed(2)}h
                           </td>
                           <td className="text-center">
-                            {filteredRecords.reduce((acc, r) => acc + (r.extNocturna || 0), 0).toFixed(2)}h
+                            {chronologicalRecords.reduce((acc, r) => acc + (r.extNocturna || 0), 0).toFixed(2)}h
                           </td>
                           <td className="text-center">
-                            {filteredRecords.reduce((acc, r) => acc + (r.recNoct || 0), 0).toFixed(2)}h
+                            {chronologicalRecords.reduce((acc, r) => acc + (r.recNoct || 0), 0).toFixed(2)}h
                           </td>
                           <td className="text-center">
-                            {filteredRecords.reduce((acc, r) => acc + (r.domFest || 0), 0).toFixed(2)}h
+                            {chronologicalRecords.reduce((acc, r) => acc + (r.domFest || 0), 0).toFixed(2)}h
                           </td>
                           <td className="text-center">
-                            {filteredRecords.reduce((acc, r) => acc + (r.netas || 0), 0).toFixed(2)}h
+                            {chronologicalRecords.reduce((acc, r) => acc + (r.netas || 0), 0).toFixed(2)}h
                           </td>
                           <td className="text-center">
-                            {filteredRecords.filter(r => !r.pagado).length}P / {filteredRecords.filter(r => r.pagado).length}L
+                            {chronologicalRecords.filter(r => !r.pagado).length}P / {chronologicalRecords.filter(r => r.pagado).length}L
                           </td>
                         </tr>
                       </tfoot>
                     </table>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* 5. RESUMEN FINAL ESTILO FACTURA + NOTAS LEGALES */}
                 <div className="grid grid-cols-12 gap-3 mt-2 nomina-avoid-break">

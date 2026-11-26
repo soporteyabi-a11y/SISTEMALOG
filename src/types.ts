@@ -76,6 +76,14 @@ export interface Customer {
   creadoEn?: string;
 }
 
+export interface NovedadItem {
+  codigoBarras?: string;
+  descripcion: string;
+  unidades: string;
+  valorUnitario?: string;
+  valorTotal?: string;
+}
+
 export interface Novedad {
   id: string;
   titulo: string;
@@ -89,6 +97,17 @@ export interface Novedad {
   fecha: string;
   creadoPor?: string;
   creadoEn?: string;
+  // Campos estructurados estilo Nota / Ficha Formal de Control
+  factura?: string;
+  nit?: string;
+  codigo?: string;
+  motivoCodigo?: string;
+  motivosSeleccionados?: string[];
+  items?: NovedadItem[];
+  observaciones?: string;
+  elaboradoPorCedula?: string;
+  descuento?: string;
+  iva?: string;
 }
 
 export interface Reminder {
