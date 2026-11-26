@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { Novedad, NovedadItem } from '../types';
 import {
   Plus, Search, Image as ImageIcon, MessageSquare,
@@ -426,23 +426,20 @@ export default function NovedadesModule({
     });
   };
 
-  const printHistory = () => {
-    document.body.classList.remove('print-novedad-mode');
-    const original = document.title;
-    document.title = 'HISTORIAL_DE_NOVEDADES_LATIN_PRODUCTS';
-    window.print();
-    document.title = original;
-  };
-
   const handlePrintSingleNovedad = (nov: Novedad) => {
-    setActivePrintNovedad(nov);
     const originalTitle = document.title;
     document.title = `NOTA_NOVEDAD_${nov.id}_LATIN_PRODUCTS`;
+    flushSync(() => {
+      setActivePrintNovedad(nov);
+    });
     document.body.classList.add('print-novedad-mode');
     setTimeout(() => {
       window.print();
-      document.title = originalTitle;
-    }, 120);
+      setTimeout(() => {
+        document.body.classList.remove('print-novedad-mode');
+        document.title = originalTitle;
+      }, 1000);
+    }, 150);
   };
 
   const handlePrintDraftFromForm = () => {
@@ -534,13 +531,15 @@ export default function NovedadesModule({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={printHistory}
-            className="bg-slate-900 border border-slate-800 hover:border-hud-accent text-slate-300 text-xs font-mono font-bold tracking-wider px-4 py-2 rounded-lg cursor-pointer transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5"
-          >
-            <Printer className="w-3.5 h-3.5" /> Imprimir Historial
-          </button>
+          {isOpenForm && (
+            <button
+              type="button"
+              onClick={handlePrintDraftFromForm}
+              className="bg-slate-900 border border-slate-700 hover:border-hud-accent text-slate-200 text-xs font-mono font-bold tracking-wider px-4 py-2.5 rounded-lg cursor-pointer transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5"
+            >
+              <Printer className="w-3.5 h-3.5" /> Imprimir Nota
+            </button>
+          )}
 
           <button
             type="button"
@@ -571,7 +570,7 @@ export default function NovedadesModule({
                 onClick={handlePrintDraftFromForm}
                 className="text-xs text-slate-200 hover:text-white flex items-center gap-1.5 px-2.5 py-1 rounded border border-slate-700 hover:border-slate-500 transition cursor-pointer"
               >
-                <Printer className="w-3.5 h-3.5" /> Vista Previa Impresión
+                <Printer className="w-3.5 h-3.5" /> Imprimir Nota
               </button>
               <button
                 type="button"
@@ -1019,7 +1018,14 @@ export default function NovedadesModule({
               ))}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handlePrintDraftFromForm}
+                className="bg-white hover:bg-slate-200 border border-slate-400 text-xs font-bold text-slate-800 px-4 py-2 rounded-lg cursor-pointer transition inline-flex items-center gap-1.5"
+              >
+                <Printer className="w-3.5 h-3.5" /> Imprimir Nota
+              </button>
               <button
                 type="button"
                 onClick={handleCloseForm}
@@ -1611,6 +1617,24 @@ export default function NovedadesModule({
                       </div>
                     </div>
                   </div>
+
+                  {/* Soporte Fotográfico opcional si existe enlace válido */}
+                  {doc.imageLink && (
+                    <div className="border border-slate-500 p-2 text-center novedad-avoid-break">
+                      <div className="text-[8px] font-bold uppercase text-slate-700 mb-1.5">
+                        EVIDENCIA FOTOGRÁFICA ADJUNTA
+                      </div>
+                      <img
+                        src={doc.imageLink}
+                        alt={doc.titulo}
+                        referrerPolicy="no-referrer"
+                        className="max-h-36 mx-auto object-contain"
+                        onError={e => {
+                          (e.currentTarget.parentElement as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  )}
 
                   {/* Firmas */}
                   <div className="grid grid-cols-2 gap-14 pt-12 px-4 novedad-avoid-break">
