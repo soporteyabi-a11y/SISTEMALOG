@@ -3749,286 +3749,375 @@ export default function HorasModule({ currentUser }: { currentUser?: AppUser | n
       )}
 
       {/* ========================================================================= */}
-      {/* 📄 FORMATO OFICIAL A4 IMPRESIÓN DE NÓMINA & CORTES 12/27 (LEY 2466)       */}
-      {/* RENDERIZADO MEDIANTE PORTAL A DOCUMENT.BODY PARA IMPRESIÓN 100% CONFIABLE  */}
+      {/* 📄 INFORME OFICIAL ESTILO FACTURA PROFESIONAL (CORTES 12/27 LEY 2466)     */}
       {/* ========================================================================= */}
       {typeof document !== 'undefined' && createPortal(
-        <div id="printNominaA4">
-          {/* Cabecera Corporativa Oficial */}
-          <div className="border-b-2 border-slate-900 pb-3 mb-3 flex justify-between items-start">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl font-black tracking-tight text-slate-950 font-mono">LATIN PRODUCTS S.A.S.</span>
-              </div>
-              <p className="text-[10px] text-slate-700 font-mono mt-0.5 font-semibold">
-                NIT: 800.225.074-3 • Centro Logístico Acopi-Yumbo • Valle del Cauca, Colombia
-              </p>
-              <p className="text-[9.5px] text-slate-600 font-mono">
-                Sistema Integral de Nómina, Turnos, Horas Extras y Recargos Nocturnos
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="inline-block border-2 border-slate-900 bg-slate-100 text-slate-950 font-mono font-black text-[10px] px-3 py-1 rounded">
-                LEY 2466 DE 2025/2026
-              </span>
-              <p className="text-[10px] font-mono text-slate-700 mt-1 font-semibold">
-                Fecha de Emisión: <strong>{new Date().toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</strong>
-              </p>
-            </div>
-          </div>
+        <div id="printNominaA4" className="bg-white text-slate-900">
+          {(() => {
+            const now = new Date();
+            const docTitle =
+              paymentFilter === 'pending'
+                ? 'INFORME DE LIQUIDACIÓN DE HORAS EXTRAS PENDIENTES'
+                : paymentFilter === 'paid'
+                ? 'COMPROBANTE DE HORAS EXTRAS LIQUIDADAS Y PAGADAS'
+                : 'INFORME CONSOLIDADO DE HORAS EXTRAS Y RECARGOS';
+            const corteBadgeText =
+              corteStats.pendingCount === 0 && corteStats.paidCount > 0
+                ? 'LIQUIDADO Y PAGADO'
+                : corteStats.paidCount === 0
+                ? 'PENDIENTE DE PAGO'
+                : `PARCIAL (${corteStats.paidCount} PAG / ${corteStats.pendingCount} PEND)`;
 
-          {/* Bloque Informativo de Período Amarrado */}
-          <div className="bg-slate-50 border-2 border-slate-900 rounded-lg p-3 mb-4 flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-1.5">
-                <h2 className="text-sm font-black uppercase text-slate-950 font-mono tracking-wide">
-                  {paymentFilter === 'pending'
-                    ? 'PLANILLA DE LIQUIDACIÓN DE HORAS EXTRAS PENDIENTES'
-                    : paymentFilter === 'paid'
-                    ? 'COMPROBANTE DE HORAS EXTRAS LIQUIDADAS Y PAGADAS'
-                    : 'PLANILLA OFICIAL CONSOLIDADA DE HORAS EXTRAS & RECARGOS'}
-                </h2>
-                {corteStats.pendingCount === 0 && corteStats.paidCount > 0 ? (
-                  <span className="text-[9px] font-black uppercase font-mono px-2 py-0.5 rounded bg-emerald-100 border border-emerald-800 text-emerald-950">
-                    CORTE LIQUIDADO & PAGADO 🔒
-                  </span>
-                ) : corteStats.paidCount === 0 ? (
-                  <span className="text-[9px] font-black uppercase font-mono px-2 py-0.5 rounded bg-amber-100 border border-amber-800 text-amber-950">
-                    PENDIENTE DE PAGO ⏳
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-black uppercase font-mono px-2 py-0.5 rounded bg-blue-100 border border-blue-800 text-blue-950">
-                    PARCIALMENTE PAGADO ({corteStats.paidCount} Pagados / {corteStats.pendingCount} Pendientes)
-                  </span>
+            return (
+              <>
+                {/* 1. CABECERA CORPORATIVA ESTILO FACTURA */}
+                <div className="grid grid-cols-12 gap-3 pb-3 border-b-2 border-[#0c2340] items-start">
+                  <div className="col-span-8 flex items-start gap-3">
+                    <div
+                      className="border-[3px] border-[#0c2340] px-3 py-2 flex flex-col items-center justify-center text-center shrink-0"
+                      style={{ minWidth: '132px', borderColor: '#0c2340' }}
+                    >
+                      <span className="text-[#0c2340] font-black text-lg tracking-tight leading-none">LATIN</span>
+                      <span className="text-[#0c2340] font-bold text-base tracking-widest leading-none mt-0.5">PRODUCTS</span>
+                      <span className="text-[7px] text-[#0284c7] font-bold tracking-wider mt-1 whitespace-nowrap">
+                        S.A.S. • CONTROL LOGÍSTICO
+                      </span>
+                    </div>
+                    <div className="space-y-0.5 text-[8.5px] leading-tight text-slate-700 pt-0.5">
+                      <strong className="text-[#0c2340] text-[10px] block font-extrabold tracking-tight">
+                        LATIN PRODUCTS S.A.S.
+                      </strong>
+                      <div>NIT: 800.225.074-3 &bull; RESPONSABLE DE IVA</div>
+                      <div>DIRECCIÓN: CARRERA 39 14-62 ACOPI - YUMBO, VALLE DEL CAUCA</div>
+                      <div>TELÉFONO: 3844090 &bull; ACTIVIDAD ECONÓMICA CIIU: 2023</div>
+                      <div className="font-semibold text-slate-800">
+                        GESTIÓN DE NÓMINA, TURNOS Y HORAS EXTRAS &bull; LEY 2466 VIGENTE
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-4 flex flex-col items-end justify-between">
+                    <table className="nomina-table border border-slate-400 text-center" style={{ maxWidth: '155px', marginTop: 0, marginBottom: '4px' }}>
+                      <thead>
+                        <tr>
+                          <th colSpan={3} className="py-0.5 text-[7px]">FECHA DE EMISIÓN</th>
+                        </tr>
+                        <tr>
+                          <th className="w-1/3 py-0.5 text-[6.5px]">DÍA</th>
+                          <th className="w-1/3 py-0.5 text-[6.5px]">MES</th>
+                          <th className="w-1/3 py-0.5 text-[6.5px]">AÑO</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="font-mono font-bold text-[8.5px]">
+                          <td className="text-center py-0.5">{String(now.getDate()).padStart(2, '0')}</td>
+                          <td className="text-center py-0.5">{String(now.getMonth() + 1).padStart(2, '0')}</td>
+                          <td className="text-center py-0.5">{now.getFullYear()}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+
+                    <div className="text-right">
+                      <span className="text-[7px] font-bold uppercase tracking-widest text-slate-500 block">
+                        DOCUMENTO DE LIQUIDACIÓN DE NÓMINA
+                      </span>
+                      <span className="text-[11px] font-black text-[#0c2340] tracking-wide uppercase">
+                        CORTE {corteType === 'corte12' ? 'DEL 12' : corteType === 'corte27' ? 'DEL 27' : 'GENERAL'} &bull; {now.getFullYear()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. BLOQUE INFORMATIVO DE PERÍODO Y ESTADO (ESTILO RECUADRO CLIENTE/FACTURA) */}
+                <div className="border border-slate-400 rounded-md p-2.5 my-3 grid grid-cols-12 gap-3 bg-slate-50/60 text-[8.5px] leading-snug">
+                  <div className="col-span-7 space-y-0.5">
+                    <div className="text-[9.5px] font-black text-[#0c2340] uppercase tracking-tight mb-1">
+                      {docTitle}
+                    </div>
+                    <div>
+                      <strong className="text-slate-600 uppercase">Período Liquidado:</strong>{' '}
+                      <span className="font-bold text-slate-950 uppercase">{getHistoryRangeLabel()}</span>
+                    </div>
+                    <div>
+                      <strong className="text-slate-600 uppercase">Límites de Fecha:</strong>{' '}
+                      <span className="font-mono font-bold text-slate-900">
+                        Del {corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}
+                      </span>
+                    </div>
+                    <div>
+                      <strong className="text-slate-600 uppercase">Base Horaria:</strong>{' '}
+                      <span className="text-slate-800">
+                        L-V ordinario ({config.normalBaseHours}h / Miér {config.wedBaseHours}h) &bull; Sábado 100% extras ordinarias
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="col-span-5 border-l border-slate-300 pl-3 space-y-0.5 flex flex-col justify-center">
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="text-slate-600 uppercase">Estado Corte:</strong>
+                      <span className="px-2 py-0.5 rounded border border-slate-500 bg-white font-black text-[7.5px] text-[#0c2340]">
+                        {corteBadgeText}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <strong className="text-slate-600 uppercase">Colaboradores con Extras:</strong>
+                      <span className="font-mono font-bold text-slate-950">{printPayrollSummary.rows.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <strong className="text-slate-600 uppercase">Turnos Auditados:</strong>
+                      <span className="font-mono font-bold text-slate-950">{printPayrollSummary.grandTotals.count}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <strong className="text-slate-600 uppercase">Total Horas Trabajadas:</strong>
+                      <span className="font-mono font-black text-[#0c2340]">
+                        {formatHoursHuman(printPayrollSummary.grandTotals.hT)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. TABLA 1: RESUMEN CONSOLIDADO POR COLABORADOR */}
+                <div className="mb-3">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[9px] font-black uppercase text-[#0c2340] tracking-wide">
+                      1. Consolidado por Colaborador ({printPayrollSummary.rows.length} colaboradores con extras)
+                    </span>
+                    <span className="text-[7.5px] text-slate-500 italic">
+                      Valores expresados en horas decimales (h) y tiempo exacto trabajado (h/m)
+                    </span>
+                  </div>
+                  <table className="nomina-table">
+                    <thead>
+                      <tr>
+                        <th className="text-center w-[3%]">N°</th>
+                        <th className="text-left w-[16%]">Colaborador</th>
+                        <th className="text-left w-[13%]">Cargo / Área</th>
+                        <th className="text-center w-[5%]">Turnos</th>
+                        <th className="text-center w-[8%]">H. Trab.</th>
+                        <th className="text-center w-[8%]">Ext. Diur (1.25)</th>
+                        <th className="text-center w-[8%]">Ext. Noct (1.75)</th>
+                        <th className="text-center w-[8%]">Rec. Noct (0.35)</th>
+                        <th className="text-center w-[7%]">Dom/Fest (1.75)</th>
+                        <th className="text-center w-[6%]">Comp (-)</th>
+                        <th className="text-center w-[6%]">Pend.</th>
+                        <th className="text-center w-[6%]">Pag.</th>
+                        <th className="text-center w-[6%]">Netas</th>
+                      </tr>
+                    </thead>
+                    <tbody className="font-mono">
+                      {printPayrollSummary.rows.map((row, idx) => (
+                        <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                          <td className="text-center font-bold">{idx + 1}</td>
+                          <td className="font-bold uppercase">{row.nom}</td>
+                          <td>{row.car} ({row.are})</td>
+                          <td className="text-center">{row.count}</td>
+                          <td className="text-center font-bold">{formatHoursHuman(row.hT)}</td>
+                          <td className="text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
+                          <td className="text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
+                          <td className="text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
+                          <td className="text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
+                          <td className="text-center">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
+                          <td className="text-center font-bold">{row.pendingNetas > 0 ? `${row.pendingNetas.toFixed(2)}h` : '0.00h'}</td>
+                          <td className="text-center">{row.paidNetas > 0 ? `${row.paidNetas.toFixed(2)}h` : '—'}</td>
+                          <td className="text-center font-black">{row.netas.toFixed(2)}h</td>
+                        </tr>
+                      ))}
+                      {printPayrollSummary.rows.length === 0 && (
+                        <tr>
+                          <td colSpan={13} className="p-4 text-center text-slate-500">
+                            No hay colaboradores con horas extras en el período seleccionado ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}).
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="nomina-total-row font-mono">
+                        <td colSpan={3} className="text-right uppercase">TOTAL CONSOLIDADO DEL CORTE:</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.count}</td>
+                        <td className="text-center">{formatHoursHuman(printPayrollSummary.grandTotals.hT)}</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
+                        <td className="text-center">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h</td>
+                        <td className="text-center">{printPayrollSummary.grandTotals.netas.toFixed(2)}h</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* 4. TABLA 2: DETALLE CRONOLÓGICO DE HORAS TRABAJADAS (SIN COLUMNA SELLO / AUTORÍA) */}
+                {printIncludeShiftDetails && filteredRecords.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-[9px] font-black uppercase text-[#0c2340] tracking-wide mb-1">
+                      2. Detalle Cronológico de Horas Trabajadas y Turnos ({filteredRecords.length} turnos)
+                    </div>
+                    <table className="nomina-table">
+                      <thead>
+                        <tr>
+                          <th className="text-center w-[3%]">#</th>
+                          <th className="text-center w-[9%]">Fecha</th>
+                          <th className="text-center w-[9%]">Tipo Día</th>
+                          <th className="text-left w-[16%]">Colaborador</th>
+                          <th className="text-center w-[6%]">Ent.</th>
+                          <th className="text-center w-[6%]">Sal.</th>
+                          <th className="text-center w-[9%]">H. Trab.</th>
+                          <th className="text-center w-[7%]">Diurna</th>
+                          <th className="text-center w-[6%]">Noct.</th>
+                          <th className="text-center w-[7%]">Rec. N</th>
+                          <th className="text-center w-[6%]">Dom/F</th>
+                          <th className="text-center w-[7%]">Netas</th>
+                          <th className="text-center w-[9%]">Estado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono">
+                        {filteredRecords.map((r, idx) => (
+                          <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
+                            <td className="text-center">{idx + 1}</td>
+                            <td className="text-center font-bold">{r.fec}</td>
+                            <td className="text-center uppercase font-semibold">
+                              {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
+                            </td>
+                            <td className="font-bold uppercase">{r.nom}</td>
+                            <td className="text-center">{r._ent}</td>
+                            <td className="text-center">{r._sal}</td>
+                            <td className="text-center font-bold">{r.hT ? formatHoursHuman(r.hT) : '—'}</td>
+                            <td className="text-center">{r.extDiurna > 0 ? `${r.extDiurna.toFixed(2)}h` : '—'}</td>
+                            <td className="text-center">{r.extNocturna > 0 ? `${r.extNocturna.toFixed(2)}h` : '—'}</td>
+                            <td className="text-center">{r.recNoct > 0 ? `${r.recNoct.toFixed(2)}h` : '—'}</td>
+                            <td className="text-center">{r.domFest > 0 ? `${r.domFest.toFixed(2)}h` : '—'}</td>
+                            <td className="text-center font-bold bg-slate-100">{r.netas.toFixed(2)}h</td>
+                            <td className="text-center font-bold">
+                              {r.pagado ? 'PAGADO' : 'PENDIENTE'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="nomina-total-row font-mono">
+                          <td colSpan={6} className="text-right uppercase">
+                            TOTAL HORAS TRABAJADAS Y EXTRAS EN TURNOS:
+                          </td>
+                          <td className="text-center">
+                            {formatHoursHuman(filteredRecords.reduce((acc, r) => acc + (r.hT || 0), 0))}
+                          </td>
+                          <td className="text-center">
+                            {filteredRecords.reduce((acc, r) => acc + (r.extDiurna || 0), 0).toFixed(2)}h
+                          </td>
+                          <td className="text-center">
+                            {filteredRecords.reduce((acc, r) => acc + (r.extNocturna || 0), 0).toFixed(2)}h
+                          </td>
+                          <td className="text-center">
+                            {filteredRecords.reduce((acc, r) => acc + (r.recNoct || 0), 0).toFixed(2)}h
+                          </td>
+                          <td className="text-center">
+                            {filteredRecords.reduce((acc, r) => acc + (r.domFest || 0), 0).toFixed(2)}h
+                          </td>
+                          <td className="text-center">
+                            {filteredRecords.reduce((acc, r) => acc + (r.netas || 0), 0).toFixed(2)}h
+                          </td>
+                          <td className="text-center">
+                            {filteredRecords.filter(r => !r.pagado).length}P / {filteredRecords.filter(r => r.pagado).length}L
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 )}
-              </div>
-              <p className="text-[11px] text-slate-800 font-mono">
-                Período Liquidado: <strong className="text-slate-950 uppercase">{getHistoryRangeLabel()}</strong>
-              </p>
-              <p className="text-[9.5px] text-slate-600 font-mono mt-0.5">
-                Límites de Corte: Del <strong>{corteStartDate || 'Primer registro'}</strong> al <strong>{corteEndDate || 'Último registro'}</strong> &bull; Colaboradores con horas extras: <strong>{printPayrollSummary.rows.length}</strong>
-              </p>
-            </div>
-            <div className="text-right text-[10px] font-mono space-y-1 bg-white border border-slate-300 p-2.5 rounded shadow-sm min-w-[210px]">
-              <div className="text-slate-600">Turnos en el corte: <strong className="text-slate-900">{printPayrollSummary.grandTotals.count}</strong></div>
-              <div className="text-amber-900 font-bold">
-                A Liquidar / Pagar: <strong className="text-amber-950 font-black text-sm">{printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h</strong>
-              </div>
-              <div className="text-emerald-900">
-                Horas Ya Pagadas: <strong>{printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h</strong>
-              </div>
-              <div className="text-slate-900 border-t border-slate-300 pt-0.5 font-bold">
-                Total Netas Período: <strong>{printPayrollSummary.grandTotals.netas.toFixed(2)}h</strong>
-              </div>
-            </div>
-          </div>
 
-          {/* TABLA 1: Resumen Oficial Consolidado por Colaborador */}
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-1.5">
-              <div className="text-[10px] font-mono font-black uppercase text-slate-950 tracking-wider">
-                1. Consolidado de Liquidación de Horas Extras por Colaborador ({printPayrollSummary.rows.length} colaboradores con extras)
-              </div>
-              <span className="text-[9px] font-mono text-slate-600 italic">
-                * Solo incluye colaboradores con horas extras en el corte
-              </span>
-            </div>
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-slate-200 text-slate-950 text-[9px] uppercase font-black text-center">
-                  <th className="border border-slate-800 p-1.5 text-left w-6">N°</th>
-                  <th className="border border-slate-800 p-1.5 text-left">Colaborador / Trabajador</th>
-                  <th className="border border-slate-800 p-1.5 text-left">Cargo / Proceso</th>
-                  <th className="border border-slate-800 p-1.5">Turnos</th>
-                  <th className="border border-slate-800 p-1.5">H. Trab.</th>
-                  <th className="border border-slate-800 p-1.5">Ext. Diurna (1.25)</th>
-                  <th className="border border-slate-800 p-1.5">Ext. Nocturna (1.75)</th>
-                  <th className="border border-slate-800 p-1.5">Recargo Noct. (0.35)</th>
-                  <th className="border border-slate-800 p-1.5">Dom. / Fest. (1.75)</th>
-                  <th className="border border-slate-800 p-1.5">Comp. (-)</th>
-                  <th className="border border-slate-800 p-1.5 bg-amber-100 font-black">Pendientes</th>
-                  <th className="border border-slate-800 p-1.5 bg-emerald-100 font-black">Pagadas</th>
-                  <th className="border border-slate-800 p-1.5 bg-slate-300 font-black">Total Netas</th>
-                </tr>
-              </thead>
-              <tbody className="text-[9px] font-mono text-slate-900">
-                {printPayrollSummary.rows.map((row, idx) => (
-                  <tr key={row.nom} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                    <td className="border border-slate-700 p-1.5 text-center font-bold">{idx + 1}</td>
-                    <td className="border border-slate-700 p-1.5 font-bold uppercase">{row.nom}</td>
-                    <td className="border border-slate-700 p-1.5">{row.car} ({row.are})</td>
-                    <td className="border border-slate-700 p-1.5 text-center">{row.count}</td>
-                    <td className="border border-slate-700 p-1.5 text-center whitespace-nowrap font-semibold">{formatHoursHuman(row.hT)}</td>
-                    <td className="border border-slate-700 p-1.5 text-center">{row.extDiurna > 0 ? `${row.extDiurna.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-700 p-1.5 text-center">{row.extNocturna > 0 ? `${row.extNocturna.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-700 p-1.5 text-center">{row.recNoct > 0 ? `${row.recNoct.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-700 p-1.5 text-center">{row.domFest > 0 ? `${row.domFest.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-700 p-1.5 text-center text-rose-700">{row.comp > 0 ? `-${row.comp.toFixed(2)}h` : '—'}</td>
-                    <td className="border border-slate-700 p-1.5 text-center font-black bg-amber-50/70 text-amber-950">
-                      {row.pendingNetas > 0 ? `${row.pendingNetas.toFixed(2)}h` : '0.00h'}
-                    </td>
-                    <td className="border border-slate-700 p-1.5 text-center font-bold bg-emerald-50/70 text-emerald-950">
-                      {row.paidNetas > 0 ? `${row.paidNetas.toFixed(2)}h` : '—'}
-                    </td>
-                    <td className="border border-slate-700 p-1.5 text-center font-black bg-slate-100 text-slate-950">
-                      {row.netas.toFixed(2)}h
-                    </td>
-                  </tr>
-                ))}
-                {printPayrollSummary.rows.length === 0 && (
-                  <tr>
-                    <td colSpan={13} className="border border-slate-700 p-6 text-center text-slate-600 font-mono">
-                      No hay colaboradores con horas extras en el período seleccionado ({corteStartDate || 'Inicio'} al {corteEndDate || 'Fin'}).
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[9.5px]">
-                  <td colSpan={3} className="border border-slate-900 p-1.5 text-right uppercase">
-                    TOTALES GENERALES DEL CORTE:
-                  </td>
-                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.count}</td>
-                  <td className="border border-slate-900 p-1.5 text-center whitespace-nowrap">{formatHoursHuman(printPayrollSummary.grandTotals.hT)}</td>
-                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.extDiurna.toFixed(2)}h</td>
-                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.extNocturna.toFixed(2)}h</td>
-                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.recNoct.toFixed(2)}h</td>
-                  <td className="border border-slate-900 p-1.5 text-center">{printPayrollSummary.grandTotals.domFest.toFixed(2)}h</td>
-                  <td className="border border-slate-900 p-1.5 text-center text-rose-700">-{printPayrollSummary.grandTotals.comp.toFixed(2)}h</td>
-                  <td className="border border-slate-900 p-1.5 text-center bg-amber-100 text-amber-950 font-black text-xs">
-                    {printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h
-                  </td>
-                  <td className="border border-slate-900 p-1.5 text-center bg-emerald-100 text-emerald-950 font-bold text-xs">
-                    {printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h
-                  </td>
-                  <td className="border border-slate-900 p-1.5 text-center bg-slate-300 text-slate-950 font-black text-xs">
-                    {printPayrollSummary.grandTotals.netas.toFixed(2)}h
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+                {/* 5. RESUMEN FINAL ESTILO FACTURA + NOTAS LEGALES */}
+                <div className="grid grid-cols-12 gap-3 mt-2 nomina-avoid-break">
+                  <div className="col-span-7 border border-slate-400 rounded-md p-2.5 bg-slate-50/60 text-[8px] leading-relaxed text-slate-700">
+                    <strong className="block text-[#0c2340] uppercase font-black mb-1">
+                      PARÁMETROS DE LIQUIDACIÓN Y OBSERVACIONES (LEY 2466):
+                    </strong>
+                    <div>
+                      &bull; <strong>Jornada ordinaria (Lun–Vie):</strong> {config.normalBaseHours}h base diarias (Miércoles {config.wedBaseHours}h).
+                    </div>
+                    <div>
+                      &bull; <strong>Sábados:</strong> Liquidados al 100% como horas extras diurnas/nocturnas (no aplica recargo dominical).
+                    </div>
+                    <div>
+                      &bull; <strong>Multiplicadores vigentes:</strong> Ext. Diurna x{config.extraDiurnaMultiplier}, Ext. Nocturna x{config.extraNocturnaMultiplier}, Recargo Noct. x{config.recNoctMultiplier} (desde {config.nightSurchargeStartHour}:00), Dom/Fest x{config.domFestMultiplier}. Cortes quincenales: días 12 y 27.
+                    </div>
+                  </div>
 
-          {/* TABLA 2: Detalle Cronológico de Turnos Trabajados */}
-          {printIncludeShiftDetails && filteredRecords.length > 0 && (
-            <div className="mb-4">
-              <div className="text-[9.5px] font-mono font-black uppercase text-slate-900 mb-1">
-                2. Detalle Cronológico de Horas Trabajadas y Turnos en este Corte ({filteredRecords.length} turnos)
-              </div>
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="bg-slate-200 text-slate-950 text-[7.5px] uppercase font-bold text-center">
-                    <th className="border border-slate-700 p-1 w-5">#</th>
-                    <th className="border border-slate-700 p-1 text-left w-14">Fecha</th>
-                    <th className="border border-slate-700 p-1 text-center w-14">Tipo Día</th>
-                    <th className="border border-slate-700 p-1 text-left">Colaborador</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Entrada</th>
-                    <th className="border border-slate-700 p-1 text-center w-12">Salida</th>
-                    <th className="border border-slate-700 p-1 text-center w-14">H. Trab.</th>
-                    <th className="border border-slate-700 p-1 text-center w-10">Diurna</th>
-                    <th className="border border-slate-700 p-1 text-center w-10">Noct</th>
-                    <th className="border border-slate-700 p-1 text-center w-10">Recargo</th>
-                    <th className="border border-slate-700 p-1 text-center w-10">Dom/Fest</th>
-                    <th className="border border-slate-700 p-1 text-center w-10 font-black bg-slate-300">Netas</th>
-                    <th className="border border-slate-700 p-1 text-center w-20">Estado Pago</th>
-                    <th className="border border-slate-700 p-1 text-left">Sello / Autoría</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[7.5px] font-mono text-slate-900">
-                  {filteredRecords.map((r, idx) => (
-                    <tr key={r.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}>
-                      <td className="border border-slate-600 p-1 text-center">{idx + 1}</td>
-                      <td className="border border-slate-600 p-1 font-bold whitespace-nowrap">{r.fec}</td>
-                      <td className="border border-slate-600 p-1 text-center font-semibold uppercase">
-                        {r.tipo === 'ord' ? 'Ordinario' : r.tipo === 'sab' ? 'Sábado' : r.tipo === 'dom' ? 'Dominical' : 'Festivo'}
-                      </td>
-                      <td className="border border-slate-600 p-1 font-bold uppercase">{r.nom}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r._ent}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r._sal}</td>
-                      <td className="border border-slate-600 p-1 text-center font-bold whitespace-nowrap">{r.hT ? formatHoursHuman(r.hT) : '—'}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r.extDiurna > 0 ? `${r.extDiurna.toFixed(2)}h` : '—'}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r.extNocturna > 0 ? `${r.extNocturna.toFixed(2)}h` : '—'}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r.recNoct > 0 ? `${r.recNoct.toFixed(2)}h` : '—'}</td>
-                      <td className="border border-slate-600 p-1 text-center">{r.domFest > 0 ? `${r.domFest.toFixed(2)}h` : '—'}</td>
-                      <td className="border border-slate-600 p-1 text-center font-bold bg-slate-100">{r.netas.toFixed(2)}h</td>
-                      <td className="border border-slate-600 p-1 text-center font-bold">
-                        {r.pagado ? (
-                          <span className="text-emerald-800">✅ PAGADO {r.fechaPago ? `(${r.fechaPago.slice(5)})` : ''}</span>
-                        ) : (
-                          <span className="text-amber-800">⏳ PENDIENTE</span>
-                        )}
-                      </td>
-                      <td className="border border-slate-600 p-1 text-[7px] truncate max-w-[130px] text-slate-700">{r.creadoPor || 'Sistema'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-200 text-slate-950 font-mono font-black text-[8px]">
-                    <td colSpan={6} className="border border-slate-700 p-1 text-right uppercase">
-                      TOTAL HORAS TRABAJADAS &amp; EXTRAS EN TURNOS:
-                    </td>
-                    <td className="border border-slate-700 p-1 text-center whitespace-nowrap">
-                      {formatHoursHuman(filteredRecords.reduce((acc, r) => acc + (r.hT || 0), 0))}
-                    </td>
-                    <td className="border border-slate-700 p-1 text-center">
-                      {filteredRecords.reduce((acc, r) => acc + (r.extDiurna || 0), 0).toFixed(2)}h
-                    </td>
-                    <td className="border border-slate-700 p-1 text-center">
-                      {filteredRecords.reduce((acc, r) => acc + (r.extNocturna || 0), 0).toFixed(2)}h
-                    </td>
-                    <td className="border border-slate-700 p-1 text-center">
-                      {filteredRecords.reduce((acc, r) => acc + (r.recNoct || 0), 0).toFixed(2)}h
-                    </td>
-                    <td className="border border-slate-700 p-1 text-center">
-                      {filteredRecords.reduce((acc, r) => acc + (r.domFest || 0), 0).toFixed(2)}h
-                    </td>
-                    <td className="border border-slate-700 p-1 text-center bg-slate-300">
-                      {filteredRecords.reduce((acc, r) => acc + (r.netas || 0), 0).toFixed(2)}h
-                    </td>
-                    <td colSpan={2} className="border border-slate-700 p-1"></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
+                  <div className="col-span-5">
+                    <table className="nomina-table" style={{ marginTop: 0, marginBottom: 0 }}>
+                      <tbody>
+                        <tr>
+                          <td className="font-bold uppercase w-[58%] bg-slate-50">TOTAL H. TRABAJADAS:</td>
+                          <td className="text-right font-mono font-bold w-[42%]">
+                            {formatHoursHuman(printPayrollSummary.grandTotals.hT)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="font-bold uppercase bg-slate-50">RECARGOS NOCTURNOS:</td>
+                          <td className="text-right font-mono font-bold">
+                            {printPayrollSummary.grandTotals.recNoct.toFixed(2)}h
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="font-bold uppercase bg-slate-50">HORAS YA PAGADAS:</td>
+                          <td className="text-right font-mono font-bold">
+                            {printPayrollSummary.grandTotals.paidNetas.toFixed(2)}h
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="font-bold uppercase bg-slate-50">TOTAL NETAS PERÍODO:</td>
+                          <td className="text-right font-mono font-bold">
+                            {printPayrollSummary.grandTotals.netas.toFixed(2)}h
+                          </td>
+                        </tr>
+                        <tr className="nomina-total-row">
+                          <td className="uppercase text-[8.5px]">NETAS POR LIQUIDAR:</td>
+                          <td className="text-right font-mono text-[9.5px]">
+                            {printPayrollSummary.grandTotals.pendingNetas.toFixed(2)}h
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
 
-          {/* Parámetros de Ley 2466 aplicados */}
-          <div className="border border-slate-400 rounded p-2 mb-4 bg-slate-50 text-[8.5px] font-mono text-slate-800 flex justify-between items-center">
-            <div>
-              <strong>Reglas de Ley 2466 aplicadas:</strong> Jornada base: {config.normalBaseHours}h (Miér {config.wedBaseHours}h) • Franja nocturna iniciada a las {config.nightSurchargeStartHour}:00 • Multiplicadores: Ext. Diurna x{config.extraDiurnaMultiplier}, Ext. Nocturna x{config.extraNocturnaMultiplier}, Recargo x{config.recNoctMultiplier}, Dom/Fest x{config.domFestMultiplier}.
-            </div>
-            <div className="font-bold text-slate-950">
-              Cortes: 12 y 27 de cada mes
-            </div>
-          </div>
+                {/* 6. BLOQUE OFICIAL DE FIRMAS Y PIE DE PÁGINA */}
+                <div className="grid grid-cols-3 gap-6 pt-4 border-t-2 border-[#0c2340] text-slate-900 mt-5 nomina-avoid-break">
+                  <div className="text-center">
+                    <div className="border-b border-slate-500 mb-1.5 h-10"></div>
+                    <p className="text-[9px] font-black uppercase tracking-wide text-[#0c2340]">Washington Quiñones</p>
+                    <p className="text-[7.5px] text-slate-600 font-semibold">Aux coordinador logistico</p>
+                    <span className="inline-block mt-1 text-[7px] text-[#0c2340] border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">
+                      ELABORÓ
+                    </span>
+                  </div>
 
-          {/* Bloque de Firmas y Autorizaciones Oficiales (Washington Elabora, Diana Aprueba, Sin Correos) */}
-          <div className="grid grid-cols-3 gap-6 pt-5 border-t-2 border-slate-900 text-slate-900 font-mono mt-5">
-            <div className="text-center">
-              <div className="border-b border-slate-700 mb-2 h-12"></div>
-              <p className="text-[10px] font-black uppercase tracking-wide">Washington Quiñones</p>
-              <p className="text-[8.5px] text-slate-700 font-semibold">Aux coordinador logistico</p>
-              <span className="inline-block mt-1 text-[8px] text-slate-900 border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">ELABORÓ</span>
-            </div>
+                  <div className="text-center">
+                    <div className="border-b border-slate-500 mb-1.5 h-10"></div>
+                    <p className="text-[9px] font-black uppercase tracking-wide text-[#0c2340]">Diana Agudelo</p>
+                    <p className="text-[7.5px] text-slate-600 font-semibold">SST &amp; Talento Humano</p>
+                    <span className="inline-block mt-1 text-[7px] text-[#0c2340] border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">
+                      REVISÓ Y APROBÓ
+                    </span>
+                  </div>
 
-            <div className="text-center">
-              <div className="border-b border-slate-700 mb-2 h-12"></div>
-              <p className="text-[10px] font-black uppercase tracking-wide">Diana Agudelo</p>
-              <p className="text-[8.5px] text-slate-700 font-semibold">SST & Talento Humano</p>
-              <span className="inline-block mt-1 text-[8px] text-slate-900 border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">REVISÓ Y APROBÓ</span>
-            </div>
+                  <div className="text-center">
+                    <div className="border-b border-slate-500 mb-1.5 h-10"></div>
+                    <p className="text-[9px] font-black uppercase tracking-wide text-[#0c2340]">Contabilidad &amp; Nómina</p>
+                    <p className="text-[7.5px] text-slate-600 font-semibold">Pagaduría Latin Products SAS</p>
+                    <span className="inline-block mt-1 text-[7px] text-[#0c2340] border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">
+                      RECIBIÓ CONFORME
+                    </span>
+                  </div>
+                </div>
 
-            <div className="text-center">
-              <div className="border-b border-slate-700 mb-2 h-12"></div>
-              <p className="text-[10px] font-black uppercase tracking-wide">Contabilidad & Nómina</p>
-              <p className="text-[8.5px] text-slate-700 font-semibold">Pagaduría Latin Products SAS</p>
-              <span className="inline-block mt-1 text-[8px] text-slate-900 border border-slate-400 bg-slate-100 px-2 py-0.5 rounded font-black tracking-wider">RECIBIÓ CONFORME</span>
-            </div>
-          </div>
-
-          <div className="mt-4 text-[7.5px] font-mono text-slate-500 text-center border-t border-slate-300 pt-1.5">
-            Documento generado por SISTEMALOG • Plataforma Logística para LATIN PRODUCTS S.A.S. • Impresión formato A4 conforme a Ley 2466
-          </div>
+                <div className="mt-4 text-[7.5px] font-mono text-slate-500 text-center border-t border-slate-300 pt-1.5">
+                  Documento generado por SISTEMALOG • Plataforma Logística para LATIN PRODUCTS S.A.S. • Informe formato A4 conforme a Ley 2466
+                </div>
+              </>
+            );
+          })()}
         </div>,
         document.body
       )}
